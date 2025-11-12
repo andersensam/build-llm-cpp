@@ -1,4 +1,9 @@
-.o
-.a
-.venv
+build/
 .DS_Store
+.vscode
+*.a
+*.o
+exe/
+target/
+models/
+data/emnist*
