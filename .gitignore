@@ -6,4 +6,4 @@ build/
 exe/
 target/
 models/
-data/emnist*
+data/

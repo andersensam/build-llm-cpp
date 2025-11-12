@@ -6,7 +6,7 @@
  *    \:.\ \  \ \\. \`-\  \ \\:\/.:| |\:\____/\\ \ `\ \ \ /____\:\\:\____/\\. \`-\  \ \ /____\:\\:.\ \  \ \\. \  \  \ \
  *     \__\/\__\/ \__\/ \__\/ \____/_/ \_____\/ \_\/ \_\/ \_____\/ \_____\/ \__\/ \__\/ \_____\/ \__\/\__\/ \__\/ \__\/    
  *                                                                                                               
- * Project: Basic Neural Network in C++
+ * Project: Large Language Model in C++
  * @author : Samuel Andersen
  * @version: 2025-11-11
  *
@@ -16,7 +16,6 @@
  */
 
 #include "include/main.hpp"
-
 
 int main(int argc, char* argv[]) {
     return 0;
