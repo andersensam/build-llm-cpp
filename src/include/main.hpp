@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2025-11-11
+ * @version: 2025-11-25
  *
  * General Notes:
  *
@@ -23,6 +23,9 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <fstream>
+#include <regex>
+#include <map>
 
 /* Local dependencies */
 #include "Log.hpp"
