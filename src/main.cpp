@@ -23,15 +23,7 @@ int main(int argc, char* argv[]) {
 
     Tokenizer t = Tokenizer("../data/the-verdict.txt");
 
-    std::vector<std::string> test_tokenizer;
-    test_tokenizer.push_back("this");
-    test_tokenizer.push_back("is");
-    test_tokenizer.push_back("a");
-    test_tokenizer.push_back("test");
-    test_tokenizer.push_back("for");
-    test_tokenizer.push_back("the");
-    test_tokenizer.push_back("tokenizer");
-
+    std::vector<std::string> test_tokenizer = Tokenizer_NS::split_input("It's the last he painted, you know, Mrs. Gisburn said with pardonable pride.");
     auto enc = t.tokenize(test_tokenizer);
 
     std::cout << "Tokenized contents: ";
@@ -44,7 +36,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Detokenized contents: ";
     for (const std::string* tk : dec) {
-        std::cout << *tk << " ";
+        std::cout << *tk << "";
     }
     std::cout << "\n";
 

@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2025-12-03
+ * @version: 2025-12-12
  *
  * General Notes:
  *
@@ -36,8 +36,8 @@ class Tokenizer {
 private:
     /* Private data elements */
 
-    /** The uint32_t representation of the newest token (1..n), with n=0 being <|unk|> */
-    uint32_t m_max_token = 1;
+    /** The uint32_t representation of the newest token (2..n), with n=0 being <|unk|>, n=1 is <|endoftext|> */
+    uint32_t m_max_token = 2;
 
     /** Map of strings to uint32_t tokens */
     std::map<std::string, uint32_t> m_vocab = std::map<std::string, uint32_t>();

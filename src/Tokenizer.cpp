@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2025-12-03
+ * @version: 2025-12-12
  *
  * General Notes:
  *
@@ -81,6 +81,8 @@ Tokenizer::Tokenizer(const std::string& path) {
 
     // Ensure we add the unknown token, <|unk|>
     m_vocab["<|unk|>"] = 0;
+    // Add the end of text token
+    m_vocab["<|endoftext|>"] = 1;
 
     // Add any new tokens from the provided text file
     add_vocab_from_text_file(path);
@@ -145,7 +147,10 @@ std::vector<uint32_t>&& Tokenizer::tokenize(const std::vector<std::string>& inpu
 std::vector<const std::string*>&& Tokenizer::detokenize(const std::vector<uint32_t>& input) {
 
     std::vector<const std::string*>* dk = new std::vector<const std::string*>();
-    dk->resize(input.size());
+
+    // Ensure we add the end of text token to the very end
+    dk->resize(input.size() + 1);
+    (*dk)[input.size()] = m_tokens[1];
 
     for (size_t i = 0; i < input.size(); ++i) {
 
@@ -167,15 +172,21 @@ std::vector<std::string>&& Tokenizer_NS::split_input(const std::string& target_s
     // Allocate a new vector for storing the results
     std::vector<std::string>* split = new std::vector<std::string>();
 
-    // Strip out unwanted characters from the input
-    std::regex match("([,.:;?_!\"()']|--|\\s)");
+    // Set up the regex to search for characters that split tokens
+    std::regex match("([,.:;?_!\"()'\\s-]+)");
+
+    // Set the regex iterator to get clusters of characters that *do not* match
     std::sregex_token_iterator iter(target_str.begin(), target_str.end(), match, -1);
+    // Set another regex iterator to get the split character itself
+    std::sregex_token_iterator split_iter(target_str.begin(), target_str.end(), match, 0);
     std::sregex_token_iterator end;
 
     // Iterate over the matches and add the strings to the result vector
-    while (iter != end) {
+    while (iter != end && split_iter != end) {
         split->push_back(*iter);
+        split->push_back(*split_iter);
         ++iter;
+        ++split_iter;
     }
 
     // Return the new vector and allow its lifetime to be managed by the receiver
