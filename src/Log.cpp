@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2025-11-11
+ * @version: 2026-04-14
  *
  * General Notes:
  *
@@ -23,15 +23,7 @@ const char* LOG_PRIORITY_MAP[4] = {"INFO", "ERROR", "WARNING", "DEBUG"};
 
 void Log::log_message(Log_Priority priority, const char* caller, const std::string& message) {
 
-    // Setup a buffer and get the current time
-    char buffer[100];
-    memset(buffer, '\0', 100);
-    time_t t = time(NULL);
-
-    // Format a time string, storing in the buffer
-    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localtime(&t));
-
-    std::cerr << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[priority], caller) << message << "\n";
+    log_message(priority, caller, message.c_str());
 }
 
 void Log::log_message(Log_Priority priority, const char* caller, const char* message) {
@@ -44,5 +36,20 @@ void Log::log_message(Log_Priority priority, const char* caller, const char* mes
     // Format a time string, storing in the buffer
     strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localtime(&t));
 
-    std::cerr << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[priority], caller) << message << "\n";
+    if (priority == Log_Priority::ERROR) {
+        std::cerr << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[priority], caller) << message << "\n";
+    }
+    else {
+        std::cout << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[priority], caller) << message << "\n";
+    }
+}
+
+void Log::log_message(Log_Priority priority, const std::string& caller, const char* message) {
+
+    log_message(priority, caller.c_str(), message);
+}
+
+void Log::log_message(Log_Priority priority, const std::string& caller, const std::string& message) {
+
+    log_message(priority, caller.c_str(), message.c_str());
 }

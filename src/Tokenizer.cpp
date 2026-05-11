@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2025-12-12
+ * @version: 2026-04-14
  *
  * General Notes:
  *
@@ -61,7 +61,7 @@ bool Tokenizer::create_or_update_mapping(void) {
     return true;
 }
 
-bool Tokenizer::known(const std::string& str) {
+bool Tokenizer::known(const std::string& str) const {
 
     if (m_vocab.count(str) > 0) {
         return true;
@@ -69,7 +69,7 @@ bool Tokenizer::known(const std::string& str) {
     return false;
 }
 
-bool Tokenizer::known(const uint32_t& id) {
+bool Tokenizer::known(const uint32_t& id) const {
 
     if (id < m_tokens.size()) {
         return true;
@@ -121,13 +121,14 @@ bool Tokenizer::add_vocab_from_text_file(const std::string& path) {
     return updated;
 }
 
-std::vector<uint32_t>&& Tokenizer::tokenize(const std::vector<std::string>& input) {
+std::vector<uint32_t>&& Tokenizer::tokenize(const std::vector<std::string>& input) const {
 
     // Allocate a new vector for the results
     std::vector<uint32_t>* tk = new std::vector<uint32_t>();
 
     // Allocate space all at once to be more efficient than push_back
-    tk->resize(input.size());
+    tk->resize(input.size() + 1);
+    (*tk)[input.size()] = 1;
 
     for (size_t i = 0; i < input.size(); ++i) {
 
@@ -144,13 +145,10 @@ std::vector<uint32_t>&& Tokenizer::tokenize(const std::vector<std::string>& inpu
     return std::move(*tk);
 }
 
-std::vector<const std::string*>&& Tokenizer::detokenize(const std::vector<uint32_t>& input) {
+std::vector<const std::string*>&& Tokenizer::detokenize(const std::vector<uint32_t>& input) const {
 
     std::vector<const std::string*>* dk = new std::vector<const std::string*>();
-
-    // Ensure we add the end of text token to the very end
-    dk->resize(input.size() + 1);
-    (*dk)[input.size()] = m_tokens[1];
+    dk->resize(input.size());
 
     for (size_t i = 0; i < input.size(); ++i) {
 
@@ -165,6 +163,61 @@ std::vector<const std::string*>&& Tokenizer::detokenize(const std::vector<uint32
     }
 
     return std::move(*dk);
+}
+
+std::vector<const std::string*>&& Tokenizer::detokenize(const std::span<uint32_t>& input) const {
+
+    std::vector<const std::string*>* dk = new std::vector<const std::string*>();
+    dk->resize(input.size());
+
+    for (size_t i = 0; i < input.size(); ++i) {
+
+        if (known(input[i])) {
+
+            (*dk)[i] = m_tokens[input[i]];
+        }
+        else {
+            // The unknown token lives at index zero
+            (*dk)[i] = m_tokens[0];
+        }
+    }
+
+    return std::move(*dk);
+}
+
+std::vector<uint32_t>&& Tokenizer::tokenize_text_file(const std::string& path) const {
+    
+    std::ifstream file = std::ifstream(path, std::ios::in);
+    std::vector<uint32_t>* tk = new std::vector<uint32_t>();
+
+    if (file) {
+        // Create a string to store the incoming line
+        std::string str;
+        // Iterate over the contents of the file's lines
+        while (!file.eof()) {
+            std::getline(file, str);
+            std::vector<std::string> r = split_input(str);
+            // Tokenize the current string (vector)
+            auto partial_tk = tokenize(r);
+            // Iterate over the individual tokens and add them to the final return value
+            for (auto token : partial_tk) {
+                // Strip out <|endoftext|> tokens that would otherwise apprear
+                if (token != 1) {
+                    tk->push_back(token);
+                }
+            }
+
+        }
+        file.close();
+    }
+    else {
+        log_message(Log_Priority::ERROR, "Tokenizer::tokenize_text_file",
+            "Unable to open file for reading");
+    }
+
+    // Add a final <|endoftext|> token
+    tk->push_back(1);
+    return std::move(*tk);
 }
 
 std::vector<std::string>&& Tokenizer_NS::split_input(const std::string& target_str) {
@@ -191,4 +244,53 @@ std::vector<std::string>&& Tokenizer_NS::split_input(const std::string& target_s
 
     // Return the new vector and allow its lifetime to be managed by the receiver
     return std::move(*split);
+}
+
+std::string Tokenizer_NS::vector_to_string(const std::vector<const std::string*>& target) {
+
+    std::string result = "";
+
+    for (const std::string* sp : target) {
+        result += *sp;
+    }
+
+    return result;
+}
+
+bool Tokenizer_NS::test_tokenizer(const Tokenizer& test_tokenizer, const std::string& test_string) {
+
+    // Split and encode the input string
+    auto split_string= Tokenizer_NS::split_input(test_string);
+    auto enc = test_tokenizer.tokenize(split_string);
+
+    std::cout << "Tokenized contents: ";
+    for (const auto tk : enc) {
+        std::cout << tk << " ";
+    }
+    std::cout << "\n";
+
+    // Detokenize the contents (back into a vector of strings)
+    auto dec = test_tokenizer.detokenize(enc);
+
+    std::cout << "Detokenized contents: ";
+    for (const std::string* tk : dec) {
+        std::cout << *tk << "";
+    }
+    std::cout << "\n";
+
+    // Create a slice of the encoded vector to compare with the original
+    // string, stripping <|endoftext|>
+    std::span<uint32_t> enc_no_eot = std::span(enc).subspan(0, enc.size() - 1);
+
+    // Detokenize the span and convert into a string
+    auto dec_no_eot = test_tokenizer.detokenize(enc_no_eot);
+    auto ret_string = Tokenizer_NS::vector_to_string(dec_no_eot);
+
+    std::cout << "String output: " << ret_string << "\n";
+
+    if (test_string == ret_string) {
+        return true;
+    }
+
+    return false;
 }

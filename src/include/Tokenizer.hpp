@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2025-12-12
+ * @version: 2026-04-14
  *
  * General Notes:
  *
@@ -19,13 +19,14 @@
 #define TOKENIZER_HPP
 
 /* Standard dependencies */
-#include <vector>
+#include <fstream>
 #include <iostream>
+#include <map>
+#include <regex>
+#include <span>
 #include <sstream>
 #include <string>
-#include <fstream>
-#include <regex>
-#include <map>
+#include <vector>
 
 /* Local dependencies */
 #include "Log.hpp"
@@ -65,14 +66,14 @@ private:
      * @param str String to check
      * @returns True if a valid token id exists, false otherwise
      */
-    bool known(const std::string& str);
+    bool known(const std::string& str) const;
 
     /**
      * Check to see if a particular uint32_t corresponds to a string
      * @param id uint32_t token id to check for
      * @returns True if yes, false otherwise
      */
-    bool known(const uint32_t& id);
+    bool known(const uint32_t& id) const;
 
 public:
     /* Public functions */
@@ -100,14 +101,28 @@ public:
      * @param input Vector of strings to tokenize
      * @returns Returns a vector of uint32_t tokens
      */
-    std::vector<uint32_t>&& tokenize(const std::vector<std::string>& input);
+    std::vector<uint32_t>&& tokenize(const std::vector<std::string>& input) const;
 
     /**
      * Detokenize an input and return a vector of strings
      * @param input Vector of uint32_t tokens
      * @returns Returns a vector of strings
      */
-    std::vector<const std::string*>&& detokenize(const std::vector<uint32_t>& input);
+    std::vector<const std::string*>&& detokenize(const std::vector<uint32_t>& input) const;
+
+    /**
+     * Detokenize an input span (instead of vector) and return a vector of strings
+     * @param input Span of uint32_t tokens
+     * @returns Returns a vector of strings
+     */
+    std::vector<const std::string*>&& detokenize(const std::span<uint32_t>& input) const;
+    
+    /**
+     * Tokenize a text file
+     * @param path Path to the text file to tokenize
+     * @returns Returns a vector of uint32_t tokens
+     */
+    std::vector<uint32_t>&& tokenize_text_file(const std::string& path) const;
 
 };
 
@@ -117,6 +132,22 @@ public:
  * @returns Returns a vector of strings containing the splits
  */
 std::vector<std::string>&& split_input(const std::string& target_str);
+
+/**
+ * Concatenate strings in a vector and return a string
+ * @param target Reference to a vector containing the strings
+ * @returns Returns a new string
+ */
+std::string vector_to_string(const std::vector<const std::string*>& target);
+
+/**
+ * Test a tokenizer for splitting, encoding, and decoding a provided string
+ * @param test_tokenizer Reference to an initialized tokenizer to rest
+ * @param test_string String to run the tokenizer test against
+ * @returns Returns true if the input string and the detokenized string are the same
+ * but returns false if they differ
+ */
+bool test_tokenizer(const Tokenizer& test_tokenizer, const std::string& test_string);
 
 };
 

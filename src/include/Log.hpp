@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Lange Language Model in C++
  * @author : Samuel Andersen
- * @version: 2025-11-11
+ * @version: 2026-04-14
  *
  * General Notes:
  *
@@ -47,6 +47,22 @@ void log_message(Log_Priority priority, const char* caller, const std::string& m
  * @param message Message to actually output
  */
 void log_message(Log_Priority priority, const char* caller, const char* message);
+
+/**
+ * Log a message to the console
+ * @param priority Priority of the message
+ * @param caller Name of the caller to the log
+ * @param message Message to actually output
+ */
+void log_message(Log_Priority priority, const std::string& caller, const std::string& message);
+
+/**
+ * Log a message to the console
+ * @param priority Priority of the message
+ * @param caller Name of the caller to the log
+ * @param message Message to actually output
+ */
+void log_message(Log_Priority priority, const std::string& caller, const char* message);
 
 };
 

@@ -15,8 +15,8 @@
  * TODO: Continue adding functionality 
  */
 
-#ifndef MAIN_HPP
-#define MAIN_HPP
+#ifndef BUILD_LLM_TESTS_HPP
+#define BUILD_LLM_TESTS_HPP
 
 /* Standard dependencies */
 #include <vector>
@@ -24,5 +24,15 @@
 /* Local dependencies */
 #include "Log.hpp"
 #include "Tokenizer.hpp"
+
+namespace BuildLLM_Tests_NS {
+
+    /**
+     * Test the Tokenizer
+     * @param t Tokenizer to run tests against
+     * @returns Returns true if all tests pass
+     */
+    bool run_tokenizer_tests(const Tokenizer_NS::Tokenizer& t);
+};
 
 #endif

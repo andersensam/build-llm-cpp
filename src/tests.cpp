@@ -15,14 +15,39 @@
  * TODO: Continue adding functionality 
  */
 
-#ifndef MAIN_HPP
-#define MAIN_HPP
+#include "include/tests.hpp"
 
-/* Standard dependencies */
-#include <vector>
+using Log::Log_Priority;
+using Log::log_message;
+using Tokenizer_NS::Tokenizer;
 
-/* Local dependencies */
-#include "Log.hpp"
-#include "Tokenizer.hpp"
+bool BuildLLM_Tests_NS::run_tokenizer_tests(const Tokenizer& t) {
 
-#endif
+    // Set the default return value to true
+    bool ret = true;
+    // Set the name of the callsite
+    const std::string callsite = "BuildLLM_Tests_NS::run_tokenizer_tests";
+
+    // Run the tests
+    bool res1 = Tokenizer_NS::test_tokenizer(t, "It's the last he painted, you know, Mrs. Gisburn said with pardonable pride.");
+    bool res2 = Tokenizer_NS::test_tokenizer(t, "This is yet another test to see how this tokenizer works.");
+
+    if (res1) {
+        log_message(Log_Priority::INFO, callsite, "Test 1 passed successfully.");
+    }
+    else {
+        log_message(Log_Priority::ERROR, callsite, "Test 1 failed.");
+        ret = false;
+    }
+
+    if (res2) {
+        log_message(Log_Priority::INFO, callsite, "Test 2 passed successfully.");
+    }
+    else {
+        log_message(Log_Priority::ERROR, callsite, "Test 2 failed.");
+        ret = false;
+    }
+
+    return ret;
+
+}
