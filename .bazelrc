@@ -1,0 +1,11 @@
+build --cxxopt=-std=c++23
+build --host_cxxopt=-std=c++23
+build --test_output=errors
+build:release --cxxopt=-O3
+build:debug --cxxopt=-O0 
+build:debug --cxxopt=-Wall 
+build:debug --cxxopt=-Wextra
+build:debug --cxxopt=-Wpedantic 
+build:debug --cxxopt=-g
+build:debug --cxxopt=-fsanitize=address,undefined
+build:debug --linkopt=-fsanitize=address,undefined

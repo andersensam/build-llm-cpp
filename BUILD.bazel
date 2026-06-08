@@ -1,0 +1,52 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "llmlog",
+    srcs = glob(
+        [
+            "src/Log.cpp"
+        ]
+    ),
+    hdrs = glob(
+        [
+            "src/include/Log.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+)
+
+cc_library(
+    name = "tokenizer",
+    srcs = glob(
+        [
+            "src/Tokenizer.cpp"
+        ]
+    ),
+    hdrs = glob(
+        [
+            "src/include/Tokenizer.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":llmlog"
+    ]
+)
+
+cc_binary(
+    name = "build-llm-cpp",
+    srcs = glob(
+        [
+            "src/main.cpp"
+        ]
+    ),
+    includes = [],
+    deps = [
+        ":llmlog",
+        ":tokenizer"
+    ]
+)
