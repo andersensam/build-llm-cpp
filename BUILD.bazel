@@ -33,7 +33,26 @@ cc_library(
     strip_include_prefix = "src",
     includes = [],
     deps = [
-        ":llmlog"
+        ":llmlog",
+    ]
+)
+
+cc_library(
+    name = "bpe",
+    srcs = glob(
+        [
+            "src/BytePairEncoding.cpp"
+        ]
+    ),
+    hdrs = glob(
+        [
+            "src/include/BytePairEncoding.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":llmlog",
     ]
 )
 
@@ -47,6 +66,7 @@ cc_binary(
     includes = [],
     deps = [
         ":llmlog",
-        ":tokenizer"
+        ":tokenizer",
+        ":bpe",
     ]
 )
