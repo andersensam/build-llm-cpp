@@ -21,12 +21,15 @@
 
 /* Local dependencies */
 #include "include/Log.hpp"
+#include "include/Tokenizer.hpp"
 #include "include/BytePairEncoding.hpp"
 
 int main(int argc, char* argv[]) {
 
     std::string input = BytePairEncoding_NS::text_file_to_string("./data/the-verdict.txt");
-    auto bpv = BytePairEncoding_NS::string_to_uint8_t_vector(input);
+    //auto bpv = BytePairEncoding_NS::string_to_uint8_t_vector("hug pug pun bun hugs");
+    auto ss = Tokenizer_NS::split_input("hug pug pun bun hugs");
+    auto bpv = BytePairEncoding_NS::string_vector_to_uint8_t_vector(ss);
 
     std::map<uint8_t, size_t> counts = std::map<uint8_t, size_t>();
 

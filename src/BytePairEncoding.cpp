@@ -27,8 +27,31 @@ std::string&& BytePairEncoding_NS::text_file_to_string(const std::string& path) 
 
 std::vector<uint8_t>&& BytePairEncoding_NS::string_to_uint8_t_vector(const std::string& s) {
 
-    // Allocate a new vector to store the bytes in, reducing the reallocations
     std::vector<uint8_t>* ret_val = new std::vector<uint8_t>(s.begin(), s.end());
+
+    return std::move(*ret_val);
+}
+
+std::vector<uint8_t>&& BytePairEncoding_NS::string_vector_to_uint8_t_vector(const std::vector<std::string>& v) {
+
+    // Allocate a new vector to store the bytes in
+    std::vector<uint8_t>* ret_val = new std::vector<uint8_t>();
+
+    // Calculate the total size of the vector that we need
+    size_t target_size = 0;
+    for (const std::string& s : v) {
+        target_size += s.size();
+    }
+
+    // Resize the vector to avoid tons of smaller allocations later
+    ret_val->reserve(target_size);
+
+    // Loop over the strings and covert each of the individual characters to their uint8_t representations
+    for (const std::string& s : v) {
+        for (char c : s) {
+            ret_val->push_back(static_cast<uint8_t>(c));
+        }
+    }
 
     return std::move(*ret_val);
 }

@@ -53,6 +53,7 @@ cc_library(
     includes = [],
     deps = [
         ":llmlog",
+        ":tokenizer",
     ]
 )
 

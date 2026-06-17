@@ -32,6 +32,7 @@
 
 /* Local dependencies */
 #include "Log.hpp"
+#include "Tokenizer.hpp"
 
 namespace BytePairEncoding_NS {
 
@@ -51,11 +52,17 @@ public:
 std::string&& text_file_to_string(const std::string& path);
 
 /**
- * Convert a text string into a vector of bytes
+ * Convert a text string into a vector of uint8_t
  * @param s String to convert
- * @returns Returns std::vector<bytes>
+ * @returns Returns std::vector<uint8_t>
  */
 std::vector<uint8_t>&& string_to_uint8_t_vector(const std::string& s);
+
+/** Convert a vector of strings into a vector of uint8_t
+ * @param v Vector of strings to convert
+ * @returns Returns std::vector<uint8_t>
+ */
+std::vector<uint8_t>&& string_vector_to_uint8_t_vector(const std::vector<std::string>& v);
 
 };
 
