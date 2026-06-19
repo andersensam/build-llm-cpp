@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-06-16
+ * @version: 2026-06-18
  *
  * General Notes:
  *
@@ -28,23 +28,9 @@ int main(int argc, char* argv[]) {
 
     std::string input = BytePairEncoding_NS::text_file_to_string("./data/the-verdict.txt");
     //auto bpv = BytePairEncoding_NS::string_to_uint8_t_vector("hug pug pun bun hugs");
-    auto ss = Tokenizer_NS::split_input("hug pug pun bun hugs");
-    auto bpv = BytePairEncoding_NS::string_vector_to_uint8_t_vector(ss);
-
-    std::map<uint8_t, size_t> counts = std::map<uint8_t, size_t>();
-
-    for (uint8_t current_byte : bpv) {
-        if (counts.count(current_byte) != 0) {
-            counts[current_byte] += 1;
-        }
-        else {
-            counts[current_byte] = 1;
-        }
-    }
-
-    for (std::map<uint8_t, size_t>::iterator i = counts.begin(); i != counts.end(); ++i) {
-        std::cout << "Char: '" << static_cast<char>(i->first) << "'. Count: " << i->second << "\n";
-    }
+    //auto ss = Tokenizer_NS::split_input("hug pug pun bun hugs pug pug pug pug hugs hug pug");
+    //auto bpv = BytePairEncoding_NS::string_vector_to_uint8_t_vector(ss);
+    auto bpv = BytePairEncoding_NS::string_to_uint8_t_vector("hug pug pun bun hugs pug pug pug pug hugs hug pug.");
 
     std::map<uint16_t, size_t> pair_counts = std::map<uint16_t, size_t>();
 
@@ -61,15 +47,15 @@ int main(int argc, char* argv[]) {
 
     }
 
-    unsigned mask = (1 << 8) - 1;
-
     for (std::map<uint16_t, size_t>::iterator i = pair_counts.begin(); i != pair_counts.end(); ++i) {
 
-        char second_char = static_cast<char>(i->first & mask);
-        char first_char = static_cast<char>(i->first >> 8);
+        auto [first_char, second_char] = BytePairEncoding_NS::uint16_t_to_char_pair(i->first);
 
         std::cout << "BytePair '" << first_char << second_char << "'. Count: " << i->second << "\n";
     }
+
+    auto [fc, sc] = BytePairEncoding_NS::uint16_t_to_char_pair(BytePairEncoding_NS::search_top_byte_pair(bpv));
+    std::cout << "Most frequent pair: " << fc << sc << "\n";
 
     return 0;
 }

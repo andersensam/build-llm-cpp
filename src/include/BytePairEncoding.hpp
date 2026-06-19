@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Lange Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-06-16
+ * @version: 2026-06-18
  *
  * General Notes:
  *
@@ -29,10 +29,14 @@
 #include <vector>
 #include <iterator>
 #include <cstddef>
+#include <functional>
 
 /* Local dependencies */
 #include "Log.hpp"
 #include "Tokenizer.hpp"
+
+// Have the mask used to extract the first char from a uint16_t stored for use
+inline constexpr unsigned FIRST_CHAR_MASK = (1 << 8) - 1;
 
 namespace BytePairEncoding_NS {
 
@@ -63,6 +67,19 @@ std::vector<uint8_t>&& string_to_uint8_t_vector(const std::string& s);
  * @returns Returns std::vector<uint8_t>
  */
 std::vector<uint8_t>&& string_vector_to_uint8_t_vector(const std::vector<std::string>& v);
+
+/** Unpack two chars from a single uint16_t 
+ * @param char_pair uint16_t containing two uint8_t (char)
+ * @returns Returns std::pair<char, char>
+ */
+std::pair<char, char> uint16_t_to_char_pair(const uint16_t& char_pair);
+
+/**
+ * Scan through a vector of uint8_t and find the byte pair with the highest frequency
+ * @param v Vector of uint8_t to analyze
+ * @returns Returns a uint16_t containing the two characters making up the byte pair
+ */
+uint16_t search_top_byte_pair(const std::vector<uint8_t>& v);
 
 };
 
