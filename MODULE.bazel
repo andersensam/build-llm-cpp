@@ -5,3 +5,12 @@ module(
 
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "platforms", version = "1.0.0")
+
+# clang-tidy
+bazel_dep(name = "bazel_clang_tidy", version = "0.0.0")
+
+git_override(
+    module_name = "bazel_clang_tidy",
+    commit = "c4d35e0d0b838309358e57a2efed831780f85cd0",
+    remote = "https://github.com/erenon/bazel_clang_tidy.git",
+)

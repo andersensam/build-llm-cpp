@@ -9,3 +9,7 @@ build:debug --cxxopt=-Wpedantic
 build:debug --cxxopt=-g
 build:debug --cxxopt=-fsanitize=address,undefined
 build:debug --linkopt=-fsanitize=address,undefined
+
+# Required for bazel_clang_tidy to operate as expected
+build:clang-tidy --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect
+build:clang-tidy --output_groups=report
