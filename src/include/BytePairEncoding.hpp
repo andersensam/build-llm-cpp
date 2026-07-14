@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Lange Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-06-22
+ * @version: 2026-06-30
  *
  * General Notes:
  *
@@ -22,9 +22,6 @@
 #include <fstream>
 #include <iostream>
 #include <map>
-#include <regex>
-#include <span>
-#include <sstream>
 #include <string>
 #include <vector>
 #include <iterator>
@@ -33,12 +30,11 @@
 
 /* Local dependencies */
 #include "Log.hpp"
-#include "Tokenizer.hpp"
+
+namespace BytePairEncoding_NS {
 
 // Have the mask used to extract the first char from a uint16_t stored for use
 inline constexpr unsigned FIRST_CHAR_MASK = (1 << 8) - 1;
-
-namespace BytePairEncoding_NS {
 
 /**
  * Object for storing information about a specific byte pair, including its contents
@@ -48,7 +44,7 @@ class BytePositionInfo {
 private:
     /* Private data elements */
     /**
-     * The target bytep air
+     * The target byte pair
      */
     uint16_t m_byte_pair = 0;
 
@@ -106,6 +102,9 @@ public:
     BytePositionInfo&& clone() const;
 };
 
+/**
+ * Tokenizer for Byte Pair Encoding (BPE)
+ */
 class BytePairEncodingTokenizer {
 private:
     /* Private data elements */

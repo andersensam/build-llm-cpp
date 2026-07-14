@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Lange Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-04-14
+ * @version: 2026-06-30
  *
  * General Notes:
  *
@@ -25,12 +25,12 @@
 
 namespace Log {
 
-typedef enum {
+enum class Log_Priority : uint8_t {
     INFO = 0,
     ERROR = 1,
     WARNING = 2,
     DEBUG = 3
-} Log_Priority;
+};
 
 /**
  * Log a message to the console
@@ -64,6 +64,6 @@ void log_message(Log_Priority priority, const std::string& caller, const std::st
  */
 void log_message(Log_Priority priority, const std::string& caller, const char* message);
 
-};
+}; // namespace Log
 
 #endif

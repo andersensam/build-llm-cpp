@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Lange Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-06-22
+ * @version: 2026-07-13
  *
  * General Notes:
  *

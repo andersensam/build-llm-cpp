@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-04-14
+ * @version: 2026-06-30
  *
  * General Notes:
  *
@@ -37,10 +37,10 @@ void Log::log_message(Log_Priority priority, const char* caller, const char* mes
     strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localtime(&t));
 
     if (priority == Log_Priority::ERROR) {
-        std::cerr << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[priority], caller) << message << "\n";
+        std::cerr << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[static_cast<uint8_t>(priority)], caller) << message << "\n";
     }
     else {
-        std::cout << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[priority], caller) << message << "\n";
+        std::cout << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[static_cast<uint8_t>(priority)], caller) << message << "\n";
     }
 }
 
