@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Lange Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-06-30
+ * @version: 2026-07-14
  *
  * General Notes:
  *
@@ -22,8 +22,12 @@
 #include <iostream>
 #include <cstring>
 #include <ctime>
+#include <string_view>
+#include <array>
 
 namespace Log {
+
+inline constexpr size_t LOG_BUFFER_SIZE = 100;
 
 enum class Log_Priority : uint8_t {
     INFO = 0,
@@ -63,6 +67,13 @@ void log_message(Log_Priority priority, const std::string& caller, const std::st
  * @param message Message to actually output
  */
 void log_message(Log_Priority priority, const std::string& caller, const char* message);
+
+/**
+ * Map a Log_Priority to a string
+ * @param priority Priority of the message
+ * @returns Returns a std::string_view of the Log Priority
+ */
+constexpr std::string_view get_log_priority(Log_Priority priority);
 
 }; // namespace Log
 

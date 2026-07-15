@@ -23,10 +23,53 @@ BytePositionInfo::BytePositionInfo() {
     // Blank since we already set defaults in the class header
 }
 
-BytePositionInfo::BytePositionInfo(uint16_t byte_pair, std::pair<size_t, size_t> position) {
+BytePositionInfo::BytePositionInfo(uint16_t byte_pair, std::pair<size_t, size_t> position) : m_byte_pair(byte_pair) {
 
-    m_byte_pair = byte_pair;
     m_positions.push_back(position);
+}
+
+BytePositionInfo::BytePositionInfo(const BytePositionInfo& target) : m_byte_pair(target.m_byte_pair), m_positions(target.m_positions.size()) {
+
+    for (size_t i = 0; i < target.m_positions.size(); ++i) {
+
+        m_positions.at(i) = target.m_positions.at(i);
+    }
+}
+
+BytePositionInfo& BytePositionInfo::operator=(const BytePositionInfo& target) {
+
+    if (this == &target) {
+        return *this;
+    }
+
+    this->m_byte_pair = target.m_byte_pair;
+    this->m_positions.resize(target.m_positions.size());
+
+    for (size_t i = 0; i < target.m_positions.size(); ++i) {
+        this->m_positions.at(i) = target.m_positions.at(i);
+    }
+
+    return *this;
+}
+
+BytePositionInfo::BytePositionInfo(BytePositionInfo&& target) noexcept : m_byte_pair(target.m_byte_pair), m_positions(std::move(target.m_positions)) {
+    // Blank since moving the vector is enough to initialize
+}
+
+BytePositionInfo& BytePositionInfo::operator=(BytePositionInfo&& target) noexcept {
+
+    if (this == &target) {
+        return *this;
+    }
+
+    this->m_byte_pair = target.m_byte_pair;
+    this->m_positions = std::move(target.m_positions);
+
+    return *this;
+}
+
+BytePositionInfo::~BytePositionInfo() {
+    // Blank since we don't need to do anything except allow objects to go out of scope
 }
 
 uint16_t BytePositionInfo::get_byte_pair() const {
@@ -49,22 +92,9 @@ void BytePositionInfo::add_position(std::pair<size_t, size_t> location) {
     m_positions.push_back(location);
 }
 
-BytePositionInfo&& BytePositionInfo::clone() const {
-
-    BytePositionInfo* target = new BytePositionInfo();
-    target->m_byte_pair = m_byte_pair;
-    target->m_positions.resize(m_positions.size());
-
-    for (size_t i = 0; i < m_positions.size(); ++i) {
-        target->m_positions[i] = m_positions[i];
-    }
-
-    return std::move(*target);
-}
-
 BytePairEncodingTokenizer::BytePairEncodingTokenizer() {
     
-    for (uint16_t i = 0; i < 256; ++i) {
+    for (uint16_t i = 0; i <= MAX_FIRST_CHAR_VAL; ++i) {
         m_vocab[i] = static_cast<size_t>(i);
         m_token_ids.push_back(i);
     }
@@ -75,8 +105,8 @@ BytePairEncodingTokenizer::BytePairEncodingTokenizer() {
 BytePairEncodingTokenizer::BytePairEncodingTokenizer(const std::string& path) {
 
     // Initialize with the same basics as the default constructor
-    for (uint16_t i = 0; i < 256; ++i) {
-        m_vocab[i] = static_cast<size_t>(i);
+    for (uint16_t i = 0; i <= MAX_FIRST_CHAR_VAL; ++i) {
+        m_vocab.at(i) = static_cast<size_t>(i);
         m_token_ids.push_back(i);
     }
 
@@ -105,7 +135,7 @@ size_t BytePairEncodingTokenizer::add_token(uint16_t t) {
     }
 
     // Add the new token to the vocabulary
-    m_vocab[t] = m_vocab_size;
+    m_vocab.at(t) = m_vocab_size;
     m_token_ids.push_back(t);
     m_vocab_size += 1;
 
@@ -151,7 +181,7 @@ bool BytePairEncodingTokenizer::update_vocabulary(const std::string& s) {
         // Iterate over the positions and delete them from the source vector
         for (size_t i = 0; i < pos.size(); ++i) {
             // Get the position pair from the vector
-            const std::pair<size_t, size_t>& p = pos[pos.size() - 1 - i];
+            const std::pair<size_t, size_t>& p = pos.at(pos.size() - 1 - i);
             // Use a helper function to delete the positions from the source vector
             remove_pair_from_vector(string_vector, p);
         }
@@ -160,10 +190,10 @@ bool BytePairEncodingTokenizer::update_vocabulary(const std::string& s) {
     return (original_vocab_size != m_vocab_size);
 }
 
-std::vector<size_t>&& BytePairEncodingTokenizer::tokenize(const std::string& s) const {
+std::vector<size_t> BytePairEncodingTokenizer::tokenize(const std::string& s) const {
 
     // Create an output vector that we will return later -- we'll build this token by token
-    std::vector<size_t>* output = new std::vector<size_t>();
+    std::vector<size_t> output;
 
     // Convert the string to uint8_t vector to start processing
     std::vector<uint8_t> input = string_to_uint8_t_vector(s);
@@ -177,68 +207,68 @@ std::vector<size_t>&& BytePairEncodingTokenizer::tokenize(const std::string& s) 
             continue;
         }
         // Convert the two uint8_t (char) into a uint16_t
-        uint16_t token = chars_to_uint16_t(input[i], input[i + 1]);
+        uint16_t token = chars_to_uint16_t(input.at(i), input.at(i + 1));
         // Check if the token is a byte pair (must be >= 256 since single characters are 0-255)
-        if (token >= 256 && known(token)) {
-            output->push_back(m_vocab.at(token));
+        if (token > MAX_FIRST_CHAR_VAL && known(token)) {
+            output.push_back(m_vocab.at(token));
             // Since we are pushing back a byte pair, we skip the next token in the loop
             skip_next_character = true;
         }
         else {
             // Since single characters all have token ids mapping to their uint8_t values, we can
             // just cast to size_t and call it good enough
-            output->push_back(static_cast<size_t>(input[i]));
+            output.push_back(static_cast<size_t>(input.at(i)));
         }
     }
     // If the final character of the input was *not* ingested as a byte pair, add it to
     // our output as a single character
     if (!skip_next_character) {
-        output->push_back(static_cast<size_t>(input[input.size() - 1]));
+        output.push_back(static_cast<size_t>(input.at(input.size() - 1)));
     }
     
-    return std::move(*output);
+    return output;
 }
 
-std::string&& BytePairEncodingTokenizer::detokenize_to_string(const std::vector<size_t>& v) const {
+std::string BytePairEncodingTokenizer::detokenize_to_string(const std::vector<size_t>& v) const {
 
-    std::string* output = new std::string();
+    std::string output;
     // Reserve at least the size of v to avoid tons of allocations
-    output->reserve(v.size());
+    output.reserve(v.size());
 
     for (size_t id : v) {
-        if (id < 256) {
-            (*output) += static_cast<char>(id);
+        if (id < MAX_FIRST_CHAR_VAL) {
+            output += static_cast<char>(id);
         }
         else {
-            auto [c1, c2] = uint16_t_to_char_pair(m_token_ids[id]);
-            (*output) += c1;
-            (*output) += c2;
+            auto [c1, c2] = uint16_t_to_char_pair(m_token_ids.at(id));
+            output += c1;
+            output += c2;
         }
     }
 
-    return std::move(*output);
+    return output;
 }
 
-std::string&& BytePairEncoding_NS::text_file_to_string(const std::string& path) {
+std::string BytePairEncoding_NS::text_file_to_string(const std::string& path) {
 
     // Method taken from: https://stackoverflow.com/a/116177
     std::ifstream ifs(path);
-    std::string* ret_val = new std::string(std::istreambuf_iterator<char>{ifs}, {});
+    std::string ret_val = std::string(std::istreambuf_iterator<char>{ifs}, {});
 
-    return std::move(*ret_val);
+    return ret_val;
 }
 
-std::vector<uint8_t>&& BytePairEncoding_NS::string_to_uint8_t_vector(const std::string& s) {
+std::vector<uint8_t> BytePairEncoding_NS::string_to_uint8_t_vector(const std::string& s) {
 
-    std::vector<uint8_t>* ret_val = new std::vector<uint8_t>(s.begin(), s.end());
+    std::vector<uint8_t> ret_val = std::vector<uint8_t>(s.begin(), s.end());
 
-    return std::move(*ret_val);
+    return ret_val;
 }
 
-std::vector<uint8_t>&& BytePairEncoding_NS::string_vector_to_uint8_t_vector(const std::vector<std::string>& v) {
+std::vector<uint8_t> BytePairEncoding_NS::string_vector_to_uint8_t_vector(const std::vector<std::string>& v) {
 
     // Allocate a new vector to store the bytes in
-    std::vector<uint8_t>* ret_val = new std::vector<uint8_t>();
+    std::vector<uint8_t> ret_val;
 
     // Calculate the total size of the vector that we need
     size_t target_size = 0;
@@ -247,39 +277,39 @@ std::vector<uint8_t>&& BytePairEncoding_NS::string_vector_to_uint8_t_vector(cons
     }
 
     // Resize the vector to avoid tons of smaller allocations later
-    ret_val->reserve(target_size);
+    ret_val.reserve(target_size);
 
     // Loop over the strings and covert each of the individual characters to their uint8_t representations
     for (const std::string& s : v) {
         for (char c : s) {
-            ret_val->push_back(static_cast<uint8_t>(c));
+            ret_val.push_back(static_cast<uint8_t>(c));
         }
     }
 
-    return std::move(*ret_val);
+    return ret_val;
 }
 
-std::string&& BytePairEncoding_NS::token_vector_to_string(const std::vector<size_t>& v) {
+std::string BytePairEncoding_NS::token_vector_to_string(const std::vector<size_t>& v) {
 
-    std::string* output = new std::string();
-    output->reserve(v.size());
+    std::string output;
+    output.reserve(v.size());
 
     for (size_t i = 0; i < v.size() - 1; ++i) {
-        (*output) += std::format("{} ", v[i]);
+        output += std::format("{} ", v.at(i));
     }
-    (*output) += std::format("{}", v[v.size() - 1]);
+    output += std::format("{}", v.at(v.size() - 1));
 
-    return std::move(*output);
+    return output;
 }
 
 uint16_t BytePairEncoding_NS::chars_to_uint16_t(uint8_t c1, uint8_t c2) {
 
-    return ((static_cast<uint16_t>(c1) << 8) + static_cast<uint16_t>(c2));
+    return ((static_cast<uint16_t>(c1) << NUM_BITS_SHIFT) + static_cast<uint16_t>(c2));
 }
 
 std::pair<char, char> BytePairEncoding_NS::uint16_t_to_char_pair(const uint16_t& char_pair) {
 
-    return std::pair<char, char>(static_cast<char>(char_pair >> 8), static_cast<char>(char_pair & FIRST_CHAR_MASK));
+    return std::pair<char, char>(static_cast<char>(char_pair >> NUM_BITS_SHIFT), static_cast<char>(char_pair & FIRST_CHAR_MASK));
 }
 
 uint16_t BytePairEncoding_NS::search_top_byte_pair(const std::vector<uint8_t>& v) {
@@ -291,7 +321,7 @@ uint16_t BytePairEncoding_NS::search_top_byte_pair(const std::vector<uint8_t>& v
     for (size_t i = 0; i < v.size() - 1; ++i) {
 
         // Pack the bytes into a single uint16_t
-        uint16_t current_pair = chars_to_uint16_t(v[i], v[i + 1]);
+        uint16_t current_pair = chars_to_uint16_t(v.at(i), v.at(i + 1));
 
         // If we've already seen this pair, increment its count
         if (all_byte_pairs.count(current_pair) > 0) {
@@ -318,7 +348,7 @@ uint16_t BytePairEncoding_NS::search_top_byte_pair(const std::vector<uint8_t>& v
     return most_frequent;
 }
 
-BytePositionInfo&& BytePairEncoding_NS::get_top_byte_pair(const std::vector<uint8_t>& v) {
+BytePositionInfo BytePairEncoding_NS::get_top_byte_pair(const std::vector<uint8_t>& v) {
 
     // (TODO): handle the case where the vector is either empty or contains a single byte.
 
@@ -331,7 +361,7 @@ BytePositionInfo&& BytePairEncoding_NS::get_top_byte_pair(const std::vector<uint
     for (size_t i = 0; i < v.size() - 1; ++i) {
 
         // Pack the bytes into a single uint16_t
-        uint16_t current_pair = chars_to_uint16_t(v[i], v[i + 1]);
+        uint16_t current_pair = chars_to_uint16_t(v.at(i), v.at(i + 1));
 
         // If we've already seen this pair, increment its count
         if (all_byte_pairs.count(current_pair) > 0) {
@@ -358,7 +388,7 @@ BytePositionInfo&& BytePairEncoding_NS::get_top_byte_pair(const std::vector<uint
         }
     }
 
-    return byte_pair_positions[most_frequent].clone();
+    return BytePairEncoding_NS::BytePositionInfo(byte_pair_positions[most_frequent]);
 }
 
 void BytePairEncoding_NS::remove_pair_from_vector(std::vector<uint8_t>& v, const std::pair<size_t, size_t>& p) {
@@ -367,6 +397,6 @@ void BytePairEncoding_NS::remove_pair_from_vector(std::vector<uint8_t>& v, const
     auto [p1, p2] = p;
 
     // Use the vector erase function, starting with p2 since it is later than p1
-    v.erase(v.begin() + p2);
-    v.erase(v.begin() + p1);
+    v.erase(v.begin() + static_cast<int64_t>(p2));
+    v.erase(v.begin() + static_cast<int64_t>(p1));
 }

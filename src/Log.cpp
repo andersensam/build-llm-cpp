@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-06-30
+ * @version: 2026-07-14
  *
  * General Notes:
  *
@@ -16,10 +16,10 @@
  */
 
 #include "include/Log.hpp"
-using namespace Log;
+using Log::log_message;
+using Log::Log_Priority;
+using Log::get_log_priority;
 
-/* Define the log priorities we want to use */
-const char* LOG_PRIORITY_MAP[4] = {"INFO", "ERROR", "WARNING", "DEBUG"};
 
 void Log::log_message(Log_Priority priority, const char* caller, const std::string& message) {
 
@@ -29,18 +29,17 @@ void Log::log_message(Log_Priority priority, const char* caller, const std::stri
 void Log::log_message(Log_Priority priority, const char* caller, const char* message) {
 
     // Setup a buffer and get the current time
-    char buffer[100];
-    memset(buffer, '\0', 100);
+    std::array<char, Log::LOG_BUFFER_SIZE> buffer = {0};
     time_t t = time(NULL);
 
     // Format a time string, storing in the buffer
-    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localtime(&t));
+    strftime(buffer.data(), sizeof(buffer), "%Y-%m-%d %H:%M:%S", localtime(&t));
 
     if (priority == Log_Priority::ERROR) {
-        std::cerr << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[static_cast<uint8_t>(priority)], caller) << message << "\n";
+        std::cerr << std::format("{}: [{}] - <{}>: ", buffer, get_log_priority(priority), caller) << message << "\n";
     }
     else {
-        std::cout << std::format("{}: [{}] - <{}>: ", buffer, LOG_PRIORITY_MAP[static_cast<uint8_t>(priority)], caller) << message << "\n";
+        std::cout << std::format("{}: [{}] - <{}>: ", buffer, get_log_priority(priority), caller) << message << "\n";
     }
 }
 
@@ -52,4 +51,21 @@ void Log::log_message(Log_Priority priority, const std::string& caller, const ch
 void Log::log_message(Log_Priority priority, const std::string& caller, const std::string& message) {
 
     log_message(priority, caller.c_str(), message.c_str());
+}
+
+constexpr std::string_view Log::get_log_priority(Log_Priority priority) {
+    switch (priority) {
+        case Log_Priority::DEBUG: 
+            return "DEBUG";
+            break;
+        case Log_Priority::ERROR:
+            return "ERROR";
+            break;
+        case Log_Priority::INFO:
+            return "INFO";
+            break;
+        default:
+            return "WARN";
+            break;
+    }
 }

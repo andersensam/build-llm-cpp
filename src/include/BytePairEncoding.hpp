@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Lange Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-06-30
+ * @version: 2026-07-14
  *
  * General Notes:
  *
@@ -35,6 +35,8 @@ namespace BytePairEncoding_NS {
 
 // Have the mask used to extract the first char from a uint16_t stored for use
 inline constexpr unsigned FIRST_CHAR_MASK = (1 << 8) - 1;
+inline constexpr unsigned MAX_FIRST_CHAR_VAL = 255;
+inline constexpr unsigned NUM_BITS_SHIFT = 8;
 
 /**
  * Object for storing information about a specific byte pair, including its contents
@@ -57,8 +59,7 @@ private:
 public:
     /* Public functions */
     /**
-     * Default constructor for BytePositionInfo, only used when making clones / deep copies of 
-     * an existing BytePositionInfo instance
+     * Default constructor for BytePositionInfo
      * @returns Returns a new instance of BytePositionInfo
      */
     BytePositionInfo();
@@ -70,6 +71,35 @@ public:
      * @param position std::pair<size_t, size_t> containing the occurrence
      */
     BytePositionInfo(uint16_t byte_pair, std::pair<size_t, size_t> position);
+
+    /**
+     * Copy constructor for BytePositionInfo, creating a deep copy
+     * @param target Const reference to the BytePositionInfo instance we want to copy
+     */
+    BytePositionInfo(const BytePositionInfo& target);
+
+    /**
+     * Copy assignment operator for BytePositionInfo
+     * @param target Const reference for the BytePositionInfo instance we want to copy
+     */
+    BytePositionInfo& operator=(const BytePositionInfo& target);
+
+    /**
+     * Move constructor for BytePositionInfo
+     * @param target Reference to the BytePositionInfo instance we want to move
+     */
+    BytePositionInfo(BytePositionInfo&& target) noexcept;
+
+    /**
+     * Move assignment operator for BytePositionInfo
+     * @param target Reference to the BytePositionInfo instance we want to move
+     */
+    BytePositionInfo& operator=(BytePositionInfo&& target) noexcept;
+
+    /**
+     * Default destructor for BytePositionInfo
+     */
+    ~BytePositionInfo();
 
     /**
      * Get the byte pair in question
@@ -94,12 +124,6 @@ public:
      * @param location std::pair<size_t, size_t> with the occurrence
      */
     void add_position(std::pair<size_t, size_t> location);
-
-    /**
-     * Create a deep copy of a BytePositionInfo instance
-     * @returns Returns a new instance of BytePositionInfo, containing the data of the caller
-     */
-    BytePositionInfo&& clone() const;
 };
 
 /**
@@ -158,7 +182,7 @@ public:
      * @param path Path to a text file to read in and create vocabulary from
      * @returns Returns a new instance of the BPE tokenizer with vocabulary
      */
-    BytePairEncodingTokenizer(const std::string& path);
+    explicit BytePairEncodingTokenizer(const std::string& path);
 
     /**
      * Get the vocab size from the tokenizer
@@ -184,14 +208,14 @@ public:
      * @param s A string to tokenize
      * @returns Returns std::vector<size_t> of token ids
      */
-    std::vector<size_t>&& tokenize(const std::string& s) const;
+    std::vector<size_t> tokenize(const std::string& s) const;
 
     /**
      * Detokenize an input, returning a vector of char containing the decoded text
      * @param v A vector of token ids to detokenize
      * @returns Returns a string containing the detokenized output
      */
-    std::string&& detokenize_to_string(const std::vector<size_t>& v) const;
+    std::string detokenize_to_string(const std::vector<size_t>& v) const;
 };
 
 /**
@@ -199,28 +223,28 @@ public:
  * @param path Path to the text file
  * @returns Returns a string
  */
-std::string&& text_file_to_string(const std::string& path);
+std::string text_file_to_string(const std::string& path);
 
 /**
  * Convert a text string into a vector of uint8_t
  * @param s String to convert
  * @returns Returns std::vector<uint8_t>
  */
-std::vector<uint8_t>&& string_to_uint8_t_vector(const std::string& s);
+std::vector<uint8_t> string_to_uint8_t_vector(const std::string& s);
 
 /** 
  * Convert a vector of strings into a vector of uint8_t
  * @param v Vector of strings to convert
  * @returns Returns std::vector<uint8_t>
  */
-std::vector<uint8_t>&& string_vector_to_uint8_t_vector(const std::vector<std::string>& v);
+std::vector<uint8_t> string_vector_to_uint8_t_vector(const std::vector<std::string>& v);
 
 /**
  * Convert a vector of token ids to a space-separated string of them
  * @param v Vector containing the token ids
  * @returns Returns a string of space-separated token ids
  */
-std::string&& token_vector_to_string(const std::vector<size_t>& v);
+std::string token_vector_to_string(const std::vector<size_t>& v);
 
 /**
  * Pack two uint8_t (char) into a single uint16_t
@@ -250,7 +274,7 @@ uint16_t search_top_byte_pair(const std::vector<uint8_t>& v);
  * @param v Vector of uint8_t to analyze
  * @returns Returns a BytePositionInfo instance containing the byte pair and its occurrences
  */
-BytePositionInfo&& get_top_byte_pair(const std::vector<uint8_t>& v);
+BytePositionInfo get_top_byte_pair(const std::vector<uint8_t>& v);
 
 /**
  * Remove a pair of indices from a vector
@@ -259,6 +283,6 @@ BytePositionInfo&& get_top_byte_pair(const std::vector<uint8_t>& v);
  */
 void remove_pair_from_vector(std::vector<uint8_t>& v, const std::pair<size_t, size_t>& p);
 
-};
+}; // namespace BytePairEncoding_NS
 
 #endif

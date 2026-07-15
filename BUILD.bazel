@@ -19,25 +19,6 @@ cc_library(
 )
 
 cc_library(
-    name = "tokenizer",
-    srcs = glob(
-        [
-            "src/Tokenizer.cpp"
-        ]
-    ),
-    hdrs = glob(
-        [
-            "src/include/Tokenizer.hpp"
-        ]
-    ),
-    strip_include_prefix = "src",
-    includes = [],
-    deps = [
-        ":llmlog",
-    ]
-)
-
-cc_library(
     name = "bpe",
     srcs = glob(
         [
@@ -53,7 +34,6 @@ cc_library(
     includes = [],
     deps = [
         ":llmlog",
-        ":tokenizer",
     ]
 )
 
@@ -67,7 +47,6 @@ cc_binary(
     includes = [],
     deps = [
         ":llmlog",
-        ":tokenizer",
         ":bpe",
     ]
 )
