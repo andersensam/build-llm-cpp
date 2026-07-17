@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Lange Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-16
+ * @version: 2026-07-14
  *
  * General Notes:
  *
@@ -19,37 +19,25 @@
 #define BYTEPAIRENCODING_HPP
 
 /* Standard dependencies */
-#include <algorithm>
-#include <bit>
-#include <cstddef>
 #include <fstream>
-#include <functional>
 #include <iostream>
-#include <iterator>
-#include <limits>
-#include <numeric>
-#include <span>
-#include <string>
+#include <map>
 #include <unordered_map>
+#include <string>
 #include <vector>
+#include <iterator>
+#include <cstddef>
+#include <functional>
 
 /* Local dependencies */
 #include "Log.hpp"
 
 namespace BytePairEncoding_NS {
 
-// Have the mask used to extract the first char from a uint32_t stored for use
-inline constexpr unsigned MAX_FIRST_BYTE_VAL = (1 << 8) - 1;
-inline constexpr unsigned MAX_SECOND_BYTE_VAL = (1 << 16) - 1;
-inline constexpr unsigned MAX_THIRD_BYTE_VAL = (1 << 24) - 1;
-// Bits to shift to access specific characters pac
-inline constexpr unsigned SECOND_BYTE_SHIFT = 8;
-inline constexpr unsigned THIRD_BYTE_SHIFT = 16;
-inline constexpr unsigned FOURTH_BYTE_SHIFT = 24;
-// Mask to extract a byte after bit shift
-inline constexpr unsigned BYTE_MASK = (1 << 8) - 1;
-// The maximum possible vocabulary size
-inline constexpr unsigned MAX_VOCAB_SIZE = 65535;
+// Have the mask used to extract the first char from a uint16_t stored for use
+inline constexpr unsigned FIRST_CHAR_MASK = (1 << 8) - 1;
+inline constexpr unsigned MAX_FIRST_CHAR_VAL = 255;
+inline constexpr unsigned NUM_BITS_SHIFT = 8;
 
 /**
  * Object for storing information about a specific byte pair, including its contents
@@ -59,9 +47,9 @@ class BytePositionInfo {
 private:
     /* Private data elements */
     /**
-     * The target byte sequence
+     * The target byte pair
      */
-    uint32_t m_byte_sequence = 0;
+    uint16_t m_byte_pair = 0;
 
     /**
      * A vector containing the positions of the target byte pair throughout a string
@@ -78,14 +66,12 @@ public:
     BytePositionInfo();
 
     /**
-     * Constructor for BytePositionInfo, accepting the actual byte sequence we want
-     * packed inside of ByteSequence and the
+     * Initializer for BytePositionInfo, accepting the actual byte pair we want and a
      * std::pair<size_t, size_t> for its occurrence within a vector
      * @param byte_pair The byte pair to store info about
-     * @param pos_0 Position of the first byte in the byte pair
-     * @param pos_1 Position of the second byte in the byte pair
+     * @param position std::pair<size_t, size_t> containing the occurrence
      */
-    BytePositionInfo(uint32_t byte_sequence, size_t pos_0, size_t pos_1);
+    BytePositionInfo(uint16_t byte_pair, std::pair<size_t, size_t> position);
 
     /**
      * Copy constructor for BytePositionInfo, creating a deep copy
@@ -117,11 +103,10 @@ public:
     ~BytePositionInfo();
 
     /**
-     * Get the sequence of bytes
-     * @returns Returns a const reference to the underlying std::vector containing
-     * the byte sequence
+     * Get the byte pair in question
+     * @returns Returns a uint16_t containing the byte pair itself
      */
-    uint32_t get_byte_sequence() const;
+    uint16_t get_byte_pair() const;
 
     /**
      * Get the list of occurrences of the byte pair
@@ -137,10 +122,9 @@ public:
 
     /**
      * Add a position pair to the list of occurrences
-     * @param pos_0 Position of the first byte in the byte pair
-     * @param pos_1 Position of the second byte in the byte pair
+     * @param location std::pair<size_t, size_t> with the occurrence
      */
-    void add_position(size_t pos_0, size_t pos_1);
+    void add_position(std::pair<size_t, size_t> location);
 };
 
 /**
@@ -153,12 +137,12 @@ private:
      * The vocabulary known by the BPE tokenizer, represented by the byte pair uint16_t token
      * and a corresponding size_t token id.
      */
-    std::unordered_map<uint32_t, size_t> m_vocab = std::unordered_map<uint32_t, size_t>();
-   
+    std::map<uint16_t, size_t> m_vocab = std::map<uint16_t, size_t>();
+    
     /**
      * The lookup table, using the size_t token id to represent the uint16_t byte pair
      */
-    std::vector<uint32_t> m_token_ids = std::vector<uint32_t>();
+    std::vector<uint16_t> m_token_ids = std::vector<uint16_t>();
 
     /**
      * The size of the vocabulary
@@ -170,7 +154,7 @@ private:
      * @param t Token to check for
      * @returns Returns true if it is known, false otherwise
      */
-    bool known(uint32_t t) const;
+    bool known(uint16_t t) const;
 
     /**
      * Check to see if a token id is known
@@ -184,7 +168,7 @@ private:
      * @param t Token to add
      * @returns Returns the token id for the new token
      */
-    size_t add_token(uint32_t t);
+    size_t add_token(uint16_t t);
 
 public:
     /* Public functions */
@@ -211,7 +195,7 @@ public:
      * Get the list of tokens by token id
      * @returns Returns a const vector of tokens, with the index representing the token id
      */
-    const std::vector<uint32_t>& get_vocab() const;
+    const std::vector<uint16_t>& get_vocab() const;
 
     /**
      * Add new vocabulary to the BPE tokenizer
@@ -243,18 +227,18 @@ public:
 std::string text_file_to_string(const std::string& path);
 
 /**
- * Convert a text string into a vector of bytes
+ * Convert a text string into a vector of uint8_t
  * @param s String to convert
- * @returns Returns std::vector<std::byte>
+ * @returns Returns std::vector<uint8_t>
  */
-std::vector<std::byte> string_to_byte_vector(const std::string& s);
+std::vector<uint8_t> string_to_uint8_t_vector(const std::string& s);
 
-/**
- * Convert a vector of bytes into a string
- * @param v Const reference to std::vector<std::byte> to convert
- * @returns Returns a string representing the bytes
+/** 
+ * Convert a vector of strings into a vector of uint8_t
+ * @param v Vector of strings to convert
+ * @returns Returns std::vector<uint8_t>
  */
-std::string byte_vector_to_string(const std::vector<std::byte>& v);
+std::vector<uint8_t> string_vector_to_uint8_t_vector(const std::vector<std::string>& v);
 
 /**
  * Convert a vector of token ids to a space-separated string of them
@@ -264,41 +248,41 @@ std::string byte_vector_to_string(const std::vector<std::byte>& v);
 std::string token_vector_to_string(const std::vector<size_t>& v);
 
 /**
- * Get the number of bytes packed into a uint32_t
- * @param bs Byte sequence packed into uint32_t
- * @returns Returns the number of bytes packed
+ * Pack two uint8_t (char) into a single uint16_t
+ * @param c1 The first character
+ * @param c2 The second character
+ * @returns Returns a single uint16_t with both chars inside
  */
-size_t get_num_packed_bytes(uint32_t bs);
+uint16_t chars_to_uint16_t(uint8_t c1, uint8_t c2);
+
+/** 
+ * Unpack two chars from a single uint16_t 
+ * @param char_pair uint16_t containing two uint8_t (char)
+ * @returns Returns std::pair<char, char>
+ */
+std::pair<char, char> uint16_t_to_char_pair(const uint16_t& char_pair);
 
 /**
- * Pack a sequence of bytes into a ByteSequence
- * @param sp Span of std::vector<std::byte> containing the bytes to pack
- * @returns Returns the packed uint32_t
+ * Scan through a vector of uint8_t and find the byte pair with the highest frequency
+ * @param v Vector of uint8_t to analyze
+ * @returns Returns a uint16_t containing the two characters making up the byte pair
  */
-uint32_t pack_bytes(const std::span<const std::byte>& sp);
+uint16_t search_top_byte_pair(const std::vector<uint8_t>& v);
 
 /**
- * Pack a sequence of uint32_t further into a ByteSequence
- * @param sp Span of std::vector<uint32_t> containing the bytes / ByteSequences to pack
- * the span should not have more than 2 elements, to prevent complex checking
- * for exceeding the 4 byte limit packed into uint32_t
- * @returns Returns a packed uint32_t containing the bytes / ByteSequences
+ * Scan through a vector of uint8_t, finding the byte pair with the highest frequency
+ * and a list of indicies within the vector for where they occur
+ * @param v Vector of uint8_t to analyze
+ * @returns Returns a BytePositionInfo instance containing the byte pair and its occurrences
  */
-uint32_t pack_bytes(const std::span<const uint32_t>& sp);
+BytePositionInfo get_top_byte_pair(const std::vector<uint8_t>& v);
 
 /**
- * Unpack a uint32_t into a std::vector<std::byte> instance
- * @param bs Byte sequence to unpack
- * @returns Returns std::vector<std::byte> containing the individual bytes in sequence
+ * Remove a pair of indices from a vector
+ * @param v Vector to remove the indicies from
+ * @param p Pair of indices to remove from the vector
  */
-std::vector<std::byte> unpack_bytes(uint32_t bs);
-
-/**
- * Create merge rules and generate tokens to be consumed by BytePairEncoding
- * @param v Const reference to std::vector<std::byte> representing the input string
- * @return Returns a vector of tokens, sorted by the number of occurrences
- */
-std::vector<uint32_t> create_tokens(const std::vector<std::byte>& v);
+void remove_pair_from_vector(std::vector<uint8_t>& v, const std::pair<size_t, size_t>& p);
 
 }; // namespace BytePairEncoding_NS
 

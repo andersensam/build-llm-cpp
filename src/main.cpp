@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-14
+ * @version: 2026-07-16
  *
  * General Notes:
  *
@@ -31,33 +31,22 @@ int main() {
 
     try {
 
-        BytePairEncoding_NS::BytePairEncodingTokenizer BPE = BytePairEncoding_NS::BytePairEncodingTokenizer("./data/the-verdict.txt");
-        const auto& tkid = BPE.get_vocab();
+        std::cout << "Initializing tokenizer...\n";
+        BytePairEncoding_NS::BytePairEncodingTokenizer BPET("./data/the-verdict.txt");
 
-        for (size_t i = BytePairEncoding_NS::MAX_FIRST_CHAR_VAL + 1; i < tkid.size(); ++i) {
-            auto [c1, c2] = BytePairEncoding_NS::uint16_t_to_char_pair(tkid.at(i));
-            std::cout << std::format("Token id [{}]: {}{}\n", i, c1, c2);
+        std::cout << "Tokenizing...\n";
+        std::string test_string = "The gentle breeze whispered through the tall, emerald trees while the warm sun illuminated the quiet meadow. Rabbits darted playfully between colorful wildflowers, their tiny ears twitching at every sudden noise. High above, a solitary eagle soared effortlessly against the vast, cloudless blue sky, searching for its next meal. Down below, a crystal-clear stream bubbled joyfully as it carved a winding path through smooth, ancient stones. Nature thrived in perfect harmony, untouched by the chaotic rush of the modern world. Every leaf and petal danced in a silent celebration, welcoming the serene beauty that each passing moment so freely offered.";
+        std::vector<size_t> tokenized = BPET.tokenize(test_string);
+        std::cout << "Token ids: ";
+        for (const auto& tkid : tokenized) {
+            std::cout << tkid << " ";
         }
-
-        const auto& tkzd = BPE.tokenize("hug pug pun bun hugs pug pug pug pug hugs hug pug. Pugs are hugs and that's why they b*rk too!");
-        std::string tkstr = BytePairEncoding_NS::token_vector_to_string(tkzd);
-
-        std::cout << "Tokenized ids: " << tkstr << "\n";
-
-        std::string dk = BPE.detokenize_to_string(tkzd);
-
-        std::cout << "Detokenized contents: " << dk << "\n";
-
-        size_t num_bp = 0;
-        for (size_t token : tkzd) {
-            if (token > BytePairEncoding_NS::MAX_FIRST_CHAR_VAL) {
-                num_bp++;
-            }
-        }
-
-        std::cout << std::format("Stats: number of tokens covered by BPE: {}/{}: {}%\n", num_bp, tkzd.size(), 
-            (static_cast<float>(num_bp) / static_cast<float>(tkzd.size())) * 100.f);
+        std::cout << "\n";
+        std::cout << std::format("Detokenized string: {}\n", BPET.detokenize_to_string(tokenized));
+        std::cout << std::format("Compressed {} bytes into {} tokens\n", test_string.size(), tokenized.size());
+        
     } catch (const std::exception& e) {
+
         std::cout << "Exception: " << e.what() << "\n";
         return -1;
     }
