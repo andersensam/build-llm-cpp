@@ -6,7 +6,7 @@
  *    \:.\ \  \ \\. \`-\  \ \\:\/.:| |\:\____/\\ \ `\ \ \ /____\:\\:\____/\\. \`-\  \ \ /____\:\\:.\ \  \ \\. \  \  \ \
  *     \__\/\__\/ \__\/ \__\/ \____/_/ \_____\/ \_\/ \_\/ \_____\/ \_____\/ \__\/ \__\/ \_____\/ \__\/\__\/ \__\/ \__\/    
  *                                                                                                               
- * Project: Lange Language Model in C++
+ * Project: Large Language Model in C++
  * @author : Samuel Andersen
  * @version: 2026-07-16
  *
@@ -389,7 +389,7 @@ std::vector<std::byte> BytePairEncoding_NS::unpack_bytes(uint32_t bs) {
             ret_val.at(3) = static_cast<std::byte>((bs >> FOURTH_BYTE_SHIFT) & BYTE_MASK);
             break;
         default:
-            return ret_val;
+            break;
     }
 
     return ret_val;
