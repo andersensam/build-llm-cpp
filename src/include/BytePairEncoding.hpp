@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-16
+ * @version: 2026-07-18
  *
  * General Notes:
  *
@@ -56,8 +56,8 @@ inline constexpr unsigned MAX_VOCAB_SIZE = 65535;
  * and list of positions of its occurrence within a specific string / vector
  */
 class BytePositionInfo {
-private:
     /* Private data elements */
+private:
     /**
      * The target byte sequence
      */
@@ -69,8 +69,8 @@ private:
      */
     std::vector<std::pair<size_t, size_t>> m_positions = std::vector<std::pair<size_t, size_t>>();
 
+/* Public functions */
 public:
-    /* Public functions */
     /**
      * Default constructor for BytePositionInfo
      * @returns Returns a new instance of BytePositionInfo
@@ -147,8 +147,8 @@ public:
  * Tokenizer for Byte Pair Encoding (BPE)
  */
 class BytePairEncodingTokenizer {
+/* Private data elements */
 private:
-    /* Private data elements */
     /**
      * The vocabulary known by the BPE tokenizer, represented by the byte pair uint16_t token
      * and a corresponding size_t token id.
@@ -186,8 +186,8 @@ private:
      */
     size_t add_token(uint32_t t);
 
+/* Public functions */
 public:
-    /* Public functions */
     /**
      * Default constructor for the BPE tokenizer
      * @returns Returns a new instance of the BPE tokenizer
