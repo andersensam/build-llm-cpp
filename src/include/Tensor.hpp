@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-19
+ * @version: 2026-07-20
  *
  * General Notes:
  *
@@ -20,6 +20,7 @@
 
 /* Standard dependencies */
 #include <algorithm>
+#include <climits>
 #include <cstring>
 #include <expected>
 #include <format>
@@ -31,6 +32,7 @@
 #include <span>
 #include <string>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 /* Local dependencies */
@@ -93,7 +95,6 @@ private:
                                                     c.begin()[i], m_dims.at(i), m_dims.at(i) - 1));
             }
             target_offset += c.begin()[i] * m_stride.at(i);
-            //std::cout << "Current offset: " << target_offset << "\n";
         }
         return target_offset;
     }
@@ -131,6 +132,19 @@ protected:
      */
     [[nodiscard]] T* data() {
         return m_data.get();
+    }
+
+    /**
+     * Update stides and dims to reflect a transpose operation on a Matrix instance
+     */
+    bool transpose_tensor() {
+        // Do a sanity check to ensure Tensor rank == 2
+        if (c_rank != 2) {
+            return false;
+        }
+        std::swap(m_stride.at(0), m_stride.at(1));
+        std::swap(m_dims.at(0), m_dims.at(1));
+        return true;
     }
 /* Public functions */
 public:
@@ -175,7 +189,6 @@ public:
         m_data = std::make_unique<T[]>(c_elements);
         // Copy the entire m_data block
         std::memcpy(m_data.get(), target.m_data.get(), sizeof(T) * c_elements);
-        std::cerr << "Making copy\n";
     }
 
     /**
@@ -198,7 +211,6 @@ public:
         // existing pointer to go out of scope and be cleaned up automatically
         m_data = std::make_unique<T[]>(c_elements);
         std::memcpy(m_data.get(), target.m_data.get(), sizeof(T) * c_elements);
-        std::cerr << "Making copy assignment\n";
 
         return *this;
     }
@@ -210,7 +222,6 @@ public:
     Tensor(Tensor<T>&& target) noexcept : m_data(std::move(target.m_data)), c_elements(target.c_elements), c_rank(target.c_rank), 
                                           m_stride(std::move(target.m_stride)), m_dims(std::move(target.m_dims)) {
         // Left blank since using the move constructors for std::vector and std::unique_ptr handle the setup
-        std::cerr << "Moving\n";
     }
 
     /**
@@ -232,7 +243,6 @@ public:
         m_dims = std::move(target.m_dims);
         // Move the memory block
         m_data = std::move(target.m_data);
-        std::cerr << "Moving via assignment\n";
 
         return *this;
     }
@@ -250,11 +260,10 @@ public:
         // Create variables for using __builtin_add_overflow and avoid calling get() multiple times
         T lhs = 0, rhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
-            //m_data.get()[i] += target.m_data.get()[i];
             lhs = m_data.get()[i];
             rhs = target.m_data.get()[i];
             if (__builtin_add_overflow(lhs, rhs, &result)) {
-                throw std::overflow_error(std::format("Tensor.+=: adding {} and {} will result in overflow.\n", lhs, rhs));
+                throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, rhs));
             }
             else {
                 m_data.get()[i] = result;
@@ -264,7 +273,7 @@ public:
     }
 
     /**
-     * Addition assignment operator, adding a scalar value to every value in the Tensor
+     * Scalar addition assignment operator, adding a scalar value to every value in the Tensor
      * @param s Scalar to add to each value in the Tensor
      * @returns Reterns a reference to this Tensor
      */
@@ -274,12 +283,13 @@ public:
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
             if (__builtin_add_overflow(lhs, s, &result)) {
-                throw std::overflow_error(std::format("Tensor.+=: adding {} and {} will result in overflow.\n", lhs, s));
+                throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, s));
             }
             else {
                 m_data.get()[i] = result;
             }
         }
+        return *this;
     }
 
     /**
@@ -299,6 +309,18 @@ public:
     }
 
     /**
+     * Scalar addition operator for adding scalar values, storing the result in a new Tensor
+     * @param lhs Const ref to the Tensor<T>
+     * @param rhs Const ref to the scalar value we want to use
+     * @returns Returns a new Tensor<T> containing the result of the addition
+     */
+    friend Tensor<T> operator+(const Tensor<T>& lhs, const T& rhs) {
+        Tensor<T> result = Tensor<T>(lhs);
+        result += rhs;
+        return result;
+    }
+
+    /**
      * Subtraction assignment operator, subtracting values from target to this Tensor
      * @param target Tensor to subtract with
      * @returns Returns a reference to this Tensor
@@ -308,8 +330,36 @@ public:
         if (!_compatible(target)) {
             throw std::invalid_argument("Tensor.-=: Incompatible Tensor shapes provided to -=.\n");
         }
+        T lhs = 0, rhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
-            m_data.get()[i] -= target.m_data.get()[i];
+            lhs = m_data.get()[i];
+            rhs = target.m_data.get()[i];
+            if (__builtin_sub_overflow(lhs, rhs, &result)) {
+                throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, rhs));
+            }
+            else {
+                m_data.get()[i] = result;
+            }
+        }
+        return *this;
+    }
+
+    /**
+     * Scalar subtraction assignment operator, subtracting a scalar value to every value in the Tensor
+     * @param s Scalar to subtract to each value in the Tensor
+     * @returns Reterns a reference to this Tensor
+     */
+    Tensor<T>& operator-=(const T& s) {
+        // Create variables for using __builtin_sub_overflow and avoid calling get() multiple times
+        T lhs = 0, result = 0;
+        for (size_t i = 0; i < c_elements; ++i) {
+            lhs = m_data.get()[i];
+            if (__builtin_sub_overflow(lhs, s, &result)) {
+                throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, s));
+            }
+            else {
+                m_data.get()[i] = result;
+            }
         }
         return *this;
     }
@@ -331,6 +381,18 @@ public:
     }
 
     /**
+     * Scalar subtraction operator for subtracting scalar values, storing the result in a new Tensor
+     * @param lhs Const ref to the Tensor<T>
+     * @param rhs Const ref to the scalar value we want to use
+     * @returns Returns a new Tensor<T> containing the result of the subtraction
+     */
+    friend Tensor<T> operator-(const Tensor<T>& lhs, const T& rhs) {
+        Tensor<T> result = Tensor<T>(lhs);
+        result -= rhs;
+        return result;
+    }
+
+    /**
      * Multiplication assignment operator, multiplying values from target with this Tensor
      * @param target Tensor to multiply with
      * @returns Returns a reference to this Tensor
@@ -340,8 +402,36 @@ public:
         if (!_compatible(target)) {
             throw std::invalid_argument("Tensor.*=: Incompatible Tensor shapes provided to *=.\n");
         }
+        T lhs = 0, rhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
-            m_data.get()[i] *= target.m_data.get()[i];
+            lhs = m_data.get()[i];
+            rhs = target.m_data.get()[i];
+            if (__builtin_mul_overflow(lhs, rhs, &result)) {
+                throw std::overflow_error(std::format("Tensor.*=: Multiplying {} and {} results in overflow / underflow.\n", lhs, rhs));
+            }
+            else {
+                m_data.get()[i] = result;
+            }
+        }
+        return *this;
+    }
+
+    /**
+     * Scalar multiplication assignment operator, multipling a scalar value with every value in the Tensor
+     * @param s Scalar to multiply with each value in the Tensor
+     * @returns Reterns a reference to this Tensor
+     */
+    Tensor<T>& operator*=(const T& s) {
+        // Create variables for using __builtin_mul_overflow and avoid calling get() multiple times
+        T lhs = 0, result = 0;
+        for (size_t i = 0; i < c_elements; ++i) {
+            lhs = m_data.get()[i];
+            if (__builtin_mul_overflow(lhs, s, &result)) {
+                throw std::overflow_error(std::format("Tensor.*=: Multiplying {} and {} results in overflow / underflow.\n", lhs, s));
+            }
+            else {
+                m_data.get()[i] = result;
+            }
         }
         return *this;
     }
@@ -363,6 +453,18 @@ public:
     }
 
     /**
+     * Scalar multiplication operator for multiplying scalar values, storing the result in a new Tensor
+     * @param lhs Const ref to the Tensor<T>
+     * @param rhs Const ref to the scalar value we want to use
+     * @returns Returns a new Tensor<T> containing the result of the multiplication
+     */
+    friend Tensor<T> operator*(const Tensor<T>& lhs, const T& rhs) {
+        Tensor<T> result = Tensor<T>(lhs);
+        result *= rhs;
+        return result;
+    }
+
+    /**
      * Division assignment operator, dividing values from target with this Tensor
      * @param target Tensor to divide with
      * @returns Returns a reference to this Tensor
@@ -372,8 +474,46 @@ public:
         if (!_compatible(target)) {
             throw std::invalid_argument("Tensor./=: Incompatible Tensor shapes provided to /=.\n");
         }
+        // Do a special check to avoid corner case of dividing INT_MIN / -1
+        if constexpr (std::is_same_v<T, int>) {
+            T lhs = 0, rhs = 0;
+            for (size_t i = 0; i < c_elements; ++i) {
+                lhs = m_data.get()[i];
+                rhs = target.m_data.get()[i];
+                if (lhs == INT_MIN && rhs == -1) {
+                    throw std::overflow_error(std::format("Tensor./=: Dividing {} by {} results in overflow / underflow.\n", lhs, rhs));
+                }
+                else if (rhs == 0) {
+                    throw std::invalid_argument("Tensor./=: Dividing by 0 is not supported\n");
+                }
+                m_data.get()[i] /= rhs;
+            }
+        }
+        else {
+            for (size_t i = 0; i < c_elements; ++i) {
+                T rhs = target.m_data.get()[i];
+                // Ensure we aren't dividing by zero
+                if (rhs == 0) {
+                    throw std::invalid_argument("Tensor./=: Dividing by 0 is not supported\n");
+                }
+                m_data.get()[i] /= rhs;
+            }
+        }
+        return *this;
+    }
+
+    /**
+     * Scalar division assignment operator, dividing every value in the Tensor by the scalar
+     * @param s Scalar to divide each value in the Tensor by
+     * @returns Reterns a reference to this Tensor
+     */
+    Tensor<T>& operator/=(const T& s) {
+        // Only check that s != 0
+        if (s == 0) {
+            throw std::invalid_argument("Tensor./=: Dividing by 0 is not supported\n");
+        }
         for (size_t i = 0; i < c_elements; ++i) {
-            m_data.get()[i] /= target.m_data.get()[i];
+            m_data.get()[i] /= s;
         }
         return *this;
     }
@@ -389,6 +529,18 @@ public:
         if (!lhs._compatible(rhs)) {
             throw std::invalid_argument("Tensor./: Incompatible Tensor shapes provided to /.\n");
         }
+        Tensor<T> result = Tensor<T>(lhs);
+        result /= rhs;
+        return result;
+    }
+
+    /**
+     * Scalar division operator for dividing by scalar values, storing the result in a new Tensor
+     * @param lhs Const ref to the Tensor<T>
+     * @param rhs Const ref to the scalar value we want to use
+     * @returns Returns a new Tensor<T> containing the result of the division
+     */
+    friend Tensor<T> operator/(const Tensor<T>& lhs, const T& rhs) {
         Tensor<T> result = Tensor<T>(lhs);
         result /= rhs;
         return result;
@@ -452,7 +604,6 @@ public:
         // Calculate the offset we want, or get the error back
         auto target_offset = _get_offset(target);
         if (target_offset) {
-            //std::cout << "Final offset.. attempting to get value @ " << target_offset.value() << "\n";
             return m_data.get()[target_offset.value()];
         }
         throw std::out_of_range(std::format("Tensor.at: Out of range: {}", target_offset.error()));
@@ -476,7 +627,6 @@ public:
         // Calculate the offset we want, or get the error back
         auto target_offset = _get_offset(target);
         if (target_offset) {
-            //std::cout << "Final offset.. attempting to get value @ " << target_offset.value() << "\n";
             return m_data.get()[target_offset.value()];
         }
         throw std::out_of_range(std::format("Tensor.at: Out of range: {}", target_offset.error()));
@@ -524,12 +674,12 @@ private:
     /**
      * A read-write std::mdspan for accessing the underlying Matrix data
      */
-    std::mdspan<T, std::dextents<size_t, 2>> m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>();
+    std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride> m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>();
 
     /**
      * A read-only std::mdspan for accessing the underlying Matrix data
      */
-    std::mdspan<const T, std::dextents<size_t, 2>> m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>();
+    std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride> m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>();
 
     /**
      * Validate the coordinates provided
@@ -586,9 +736,12 @@ public:
         if (dims.size() != 2) {
             throw std::invalid_argument(std::format("Matrix.Matrix: Matrix requires 2 dims, but got {}.\n", dims.size()));
         }
-        // Setup the std::mdspan objects to access the underlying data in Tensor
-        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims.begin()[0], dims.begin()[1]};
-        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims.begin()[0], dims.begin()[1]};
+        // Setup the strides and shapes
+        std::dextents<size_t, 2> shape{dims.begin()[0], dims.begin()[1]};
+        std::array<size_t, 2> strides{shape.extent(1), 1};
+        // Setup the spans
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
     }
 
     /**
@@ -601,9 +754,12 @@ public:
             throw std::invalid_argument(std::format("Matrix.Matrix: Matrix requires rank 2, but got a Tensor of rank {}.\n", t.rank()));
         }
         const std::vector<size_t>& dims = t.dims();
+        // Setup the strides and shapes
+        std::dextents<size_t, 2> shape{dims.at(0), dims.at(1)};
+        std::array<size_t, 2> strides{shape.extent(1), 1};
         // Setup the std::mdspan objects to reference the Tensor's m_data
-        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{t.data(), dims.at(0), dims.at(1)};
-        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{t.data(), dims.at(0), dims.at(1)};
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{t.data(), std::layout_stride::mapping{shape, strides}};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{t.data(), std::layout_stride::mapping{shape, strides}};
     }
 
     /**
@@ -613,9 +769,12 @@ public:
     Matrix(const Matrix<T>& target) : Tensor<T>(target) {
         // Grab the dimensions after using the Tensor copy constructor
         const std::vector<size_t>& dims = target.dims();
-        // Setup the std::mdspan objects to reference the Tensor's m_data
-        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims.at(0), dims.at(1)};
-        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims.at(0), dims.at(1)};
+        // Setup the strides and shapes
+        std::dextents<size_t, 2> shape{dims.at(0), dims.at(1)};
+        std::array<size_t, 2> strides{shape.extent(1), 1};
+        // Setup the spans
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
     }
 
     /**
@@ -632,9 +791,12 @@ public:
         Tensor<T>::operator=(target);
         // Grab the dimensions after using the Tensor copy assignment
         const std::vector<size_t>& dims = target.dims();
-        // Setup the std::mdspan objects to reference the Tensor's m_data
-        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims.at(0), dims.at(1)};
-        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims.at(0), dims.at(1)};
+        // Setup the strides and shapes
+        std::dextents<size_t, 2> shape{dims.at(0), dims.at(1)};
+        std::array<size_t, 2> strides{shape.extent(1), 1};
+        // Setup the spans
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
 
         return *this;
     }
@@ -647,12 +809,15 @@ public:
         // While we can initialize the spans via initializers, the readability is extremely poor
         // Grab the dimensions after using the Tensor move assignment
         const std::vector<size_t>& dims = this->dims();
-        // Setup the std::mdspan objects to reference the Tensor's m_data
         // We need to disable linting for the two lines since move assignment operator is noexcept
         // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
-        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims[0], dims[1]};
-        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims[0], dims[1]};
+        // Setup the strides and shapes
+        std::dextents<size_t, 2> shape{dims[0], dims[1]};
         // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+        std::array<size_t, 2> strides{shape.extent(1), 1};
+        // Setup the spans
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
     }
 
     /**
@@ -669,12 +834,15 @@ public:
         Tensor<T>::operator=(target);
         // Grab the dimensions after using the Tensor move assignment
         const std::vector<size_t>& dims = target.dims();
-        // Setup the std::mdspan objects to reference the Tensor's m_data
         // We need to disable linting for the two lines since move assignment operator is noexcept
         // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
-        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims[0], dims[1]};
-        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims[0], dims[1]};
+        // Setup the strides and shapes
+        std::dextents<size_t, 2> shape{dims[0], dims[1]};
         // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+        std::array<size_t, 2> strides{shape.extent(1), 1};
+        // Setup the spans
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
 
         return *this;
     }
@@ -778,6 +946,27 @@ public:
             }
         }
         return result;
+    }
+
+    /**
+     * Transpose this Matrix
+     * Inspired by: https://towardsdev.com/using-std-layout-stride-with-std-mdspan-cpp23-d025aa0c9ac9
+     * @returns Returns a reference to this Matrix with the transpose op completed
+     */
+    Matrix<T>& transpose() {
+        // Store the current strides to reference later
+        size_t cols = m_rw_span.extent(1);
+        size_t rows = m_rw_span.extent(0);
+        // Setup the strides and shapes
+        std::dextents<size_t, 2> shape{cols, rows};
+        std::array<size_t, 2> strides{1, shape.extent(1)};
+        // Setup the spans
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        // Update the underlying Tensor with the swapped dims / strides
+        this->transpose_tensor();
+
+        return *this;
     }
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)

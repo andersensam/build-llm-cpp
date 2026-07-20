@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-19
+ * @version: 2026-07-20
  *
  * General Notes:
  *
@@ -57,11 +57,24 @@ int main() {
         Tensor_NS::Matrix<int> c({2, 2});
         c.fill(5);
 
-        auto bc = b.matmul(c);
+        auto qz = b.matmul(c);
+
+        Tensor_NS::Matrix<int> bc({3,3});
+        bc.set({1,2,3,4,5,6,7,8,9});
 
         const auto& dims = bc.dims();
         for (size_t i = 0; i < dims.at(0); ++i) {
             for (size_t j = 0; j < dims.at(1); ++j) {
+                std::cout << bc.at({i, j}) << "\t";
+            }
+            std::cout << "\n";
+        }
+
+        bc.transpose();
+
+        const auto& dims2 = bc.dims();
+        for (size_t i = 0; i < dims2.at(0); ++i) {
+            for (size_t j = 0; j < dims2.at(1); ++j) {
                 std::cout << bc.at({i, j}) << "\t";
             }
             std::cout << "\n";
