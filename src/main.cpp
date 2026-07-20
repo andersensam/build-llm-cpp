@@ -28,6 +28,7 @@
 #include "include/BytePairEncoding.hpp"
 #include "include/Tensor.hpp"
 
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
 int main() {
 
     try {
@@ -47,26 +48,25 @@ int main() {
         std::cout << std::format("\nDetokenized string: {}\n", BPET.detokenize_to_string(tokenized));
         std::cout << std::format("\nCompressed {} bytes into {} tokens\n", test_string.size(), tokenized.size());*/
 
-        Tensor_NS::Tensor<int> it({3, 3, 3});
-        it.at({0,1,2}) = 33;
-        std::cout << sizeof(it) << "\n";
-        std::cout << std::format("Value at [0, 0, 0]: {}\n", it.at({0,0,0}));
+        Tensor_NS::Tensor<int> a({3, 3, 3});
+        a.set({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27});
 
-        auto Q = it;
-        Q.at({1,1,1}) = 12;
-        Q.at({0,1,2}) = 99;
-        std::cout << std::format("Ref in Q: [1,1,1]: {}\n", Q.at({1,1,1}));
+        Tensor_NS::Matrix<int> b({2, 2});
+        b.set({1, 3, 5, 7});
 
-        auto Z = it + Q;
-        std::cout << std::format("Val for it + Q [0,1,2]: {}\n", Z.at({0,1,2}));
-        std::cout << std::format("Val for it [0,1,2]: {}\n", it.at({0,1,2}));
-        std::cout << std::format("Val for Q [0,1,2]: {}\n", Q.at({0,1,2}));
+        Tensor_NS::Matrix<int> c({2, 2});
+        c.fill(5);
 
-        Z -= Q;
-        std::cout << std::format("Val for it + Q [0,1,2]: {}\n", Z.at({0,1,2}));
+        auto bc = b.matmul(c);
 
-        auto M = Z * Z;
-        std::cout << std::format("Val for Z * Z [0,1,2]: {}\n", M.at({0,1,2}));
+        const auto& dims = bc.dims();
+        for (size_t i = 0; i < dims.at(0); ++i) {
+            for (size_t j = 0; j < dims.at(1); ++j) {
+                std::cout << bc.at({i, j}) << "\t";
+            }
+            std::cout << "\n";
+        }
+
         
     } catch (const std::exception& e) {
 
@@ -76,3 +76,4 @@ int main() {
 
     return 0;
 }
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers)

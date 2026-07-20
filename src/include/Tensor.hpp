@@ -25,7 +25,9 @@
 #include <format>
 #include <functional>
 #include <initializer_list>
+#include <mdspan>
 #include <memory>
+#include <numeric>
 #include <span>
 #include <string>
 #include <stdexcept>
@@ -74,7 +76,7 @@ private:
      */
     std::vector<size_t> m_dims = std::vector<size_t>();
 
-/* Private methods */
+/* Private functions */
     /**
      * Calculate the offset from a set of input cooridnates
      * @param c Coordinates to calculate the offset from
@@ -121,13 +123,21 @@ private:
 
         return true;
     }
-
-/* Public methods */
+/* Protected functions */
+protected:
+    /**
+     * Get the raw pointer to m_data for use by derived classes (like Matrix)
+     * @returns Returns a pointer to m_data
+     */
+    [[nodiscard]] T* data() {
+        return m_data.get();
+    }
+/* Public functions */
 public:
     /**
      * Default constructor for Tensor, taking in a reference to a vector containing the desired dimensions
      * for the resulting Tensor
-     * @param dims Const reference to std::vector<size_t> containing the desired dimensions
+     * @param dims Const reference to std::initializer_list<size_t> containing the desired dimensions
      */
     Tensor(const std::initializer_list<size_t>& dims) : c_rank(dims.size()), m_stride(dims.size()), m_dims(dims) {
 
@@ -237,10 +247,39 @@ public:
         if (!_compatible(target)) {
             throw std::invalid_argument("Tensor.+=: Incompatible Tensor shapes provided to +=.\n");
         }
+        // Create variables for using __builtin_add_overflow and avoid calling get() multiple times
+        T lhs = 0, rhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
-            m_data.get()[i] += target.m_data.get()[i];
+            //m_data.get()[i] += target.m_data.get()[i];
+            lhs = m_data.get()[i];
+            rhs = target.m_data.get()[i];
+            if (__builtin_add_overflow(lhs, rhs, &result)) {
+                throw std::overflow_error(std::format("Tensor.+=: adding {} and {} will result in overflow.\n", lhs, rhs));
+            }
+            else {
+                m_data.get()[i] = result;
+            }
         }
         return *this;
+    }
+
+    /**
+     * Addition assignment operator, adding a scalar value to every value in the Tensor
+     * @param s Scalar to add to each value in the Tensor
+     * @returns Reterns a reference to this Tensor
+     */
+    Tensor<T>& operator+=(const T& s) {
+        // Create variables for using __builtin_add_overflow and avoid calling get() multiple times
+        T lhs = 0, result = 0;
+        for (size_t i = 0; i < c_elements; ++i) {
+            lhs = m_data.get()[i];
+            if (__builtin_add_overflow(lhs, s, &result)) {
+                throw std::overflow_error(std::format("Tensor.+=: adding {} and {} will result in overflow.\n", lhs, s));
+            }
+            else {
+                m_data.get()[i] = result;
+            }
+        }
     }
 
     /**
@@ -358,7 +397,7 @@ public:
     /**
      * Default destructor for Tensor
      */
-    ~Tensor() {
+    virtual ~Tensor() {
         // Do nothing since all of our data elements are either trivial types or will be cleaned up
         // automatically when they go out of scope
     }
@@ -375,7 +414,7 @@ public:
      * Get the rank of a Tensor
      * @returns Returns size_t of the Tensor's rank
      */
-    size_t rank() const {
+    virtual size_t rank() const {
         return c_rank;
     }
 
@@ -400,7 +439,7 @@ public:
      * @param target The coordinate we want to fetch from the Tensor
      * @returns Returns a reference to the value that can be updated
      */
-    T& at(const std::initializer_list<size_t>& target) {
+    virtual T& at(const std::initializer_list<size_t>& target) {
 
         // Handle the case where we have a rank-0 tensor
         if (c_rank == 0) {
@@ -424,13 +463,27 @@ public:
      * @param target The coordinate we want to fetch from the tensor
      * @returns Returns the value at the coordinate
      */
-    const T& at(const std::initializer_list<size_t>& target) const {
-        // We use the same logic as the mutable case, just casting to a const reference
-        return at(target);
+    virtual const T& at(const std::initializer_list<size_t>& target) const {
+        
+        // Handle the case where we have a rank-0 tensor
+        if (c_rank == 0) {
+            return m_data.get()[0];
+        }
+        // Validate we have the correct number of elements in our coordinates
+        if (target.size() != c_rank) {
+            throw std::invalid_argument(std::format("Tensor.at: Invalid number of coordinates provided to at, expected {} but got {}.\n", c_rank, target.size()));
+        }
+        // Calculate the offset we want, or get the error back
+        auto target_offset = _get_offset(target);
+        if (target_offset) {
+            //std::cout << "Final offset.. attempting to get value @ " << target_offset.value() << "\n";
+            return m_data.get()[target_offset.value()];
+        }
+        throw std::out_of_range(std::format("Tensor.at: Out of range: {}", target_offset.error()));
     }
 
     /**
-     * Fill a Tensor with a valid
+     * Fill a Tensor with a value
      * @param v Value to fill the Tensor with
      */
     void fill(const T& v) {
@@ -440,6 +493,292 @@ public:
         }
     }
 
+    /**
+     * Set the contents of a Tensor to a list of values
+     * @param v Values to set inside the Tensor
+     */
+    void set(const std::initializer_list<T>& v) {
+        // Ensure v has enough values to satisfy the number of elements in the Tensor
+        if (v.size() != c_elements) {
+            std::invalid_argument(std::format("Tensor.set: Invalid number of value provided to set. Wanted {} but got {}\n.", c_elements, v.size()));
+        }
+        // Assuming we have enough values, read them into memory sequentially
+        for (size_t i = 0; i < v.size(); ++i) {
+            m_data.get()[i] = v.begin()[i];
+        }
+    }
+
+// NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+};
+
+/**
+ * Template for a special case of Tensor with c_rank = 2, aka a Matrix. We use a derived Matrix
+ * class to add Matrix-specific operations like matmul and optimize where possible
+ */
+template <typename T>
+requires std::is_arithmetic_v<T>
+class Matrix : public Tensor<T> {
+// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+/* Private data elements */
+private:
+    /**
+     * A read-write std::mdspan for accessing the underlying Matrix data
+     */
+    std::mdspan<T, std::dextents<size_t, 2>> m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>();
+
+    /**
+     * A read-only std::mdspan for accessing the underlying Matrix data
+     */
+    std::mdspan<const T, std::dextents<size_t, 2>> m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>();
+
+    /**
+     * Validate the coordinates provided
+     * @param c Coordinates to validate
+     * @returns Returns true if coordinates are valid, false otherwise
+     */
+    [[nodiscard]] bool _valid(const std::initializer_list<size_t>& c) const {
+
+        if (c.begin()[0] >= m_ro_span.extent(0) || c.begin()[1] >= m_ro_span.extent(1)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Validates if a Matrix is an eligible target for matmul
+     * @param target Other Matrix to check matmul compatibility with
+     * @returns True if compatible, false otherwise
+     */
+    [[nodiscard]] bool _matrix_can_matmul(const Matrix<T>& target) const {
+
+        if (m_ro_span.extent(1) != target.m_ro_span.extent(0)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Validates if a Tensor is an eligible target for matmul
+     * @param target Tensor to check compatibility with
+     * @returns True if compatible, false otherwise
+     */
+    [[nodiscard]] bool _tensor_can_matmul(const Tensor<T>& target) const {
+
+        if (target.rank() != 2) {
+            return false;
+        }
+        // Get the dimensions of the Tensor
+        const std::vector<size_t>& tensor_dims = target.dims();
+        if (m_ro_span.extent(1) != tensor_dims.at(0)) {
+            return false;
+        }
+        return true;
+    }
+
+/* Public functions */
+public:
+    /**
+     * Default constructor for Matrix, accepting the dimensions
+     * @param dims Const reference to std::initializer_list<size_t> containing the two Matrix dims
+     */
+    Matrix(const std::initializer_list<size_t>& dims) : Tensor<T>(dims) {
+        // Validate that we are getting exactly 2 dims
+        if (dims.size() != 2) {
+            throw std::invalid_argument(std::format("Matrix.Matrix: Matrix requires 2 dims, but got {}.\n", dims.size()));
+        }
+        // Setup the std::mdspan objects to access the underlying data in Tensor
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims.begin()[0], dims.begin()[1]};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims.begin()[0], dims.begin()[1]};
+    }
+
+    /**
+     * Constuctor for Matrix that converts an eligible Tensor into a Matrix
+     * @param t Tensor to convert
+     */
+    explicit Matrix(Tensor<T>& t) {
+        // Validate that the Tensor has rank 2
+        if (t.rank() != 2) {
+            throw std::invalid_argument(std::format("Matrix.Matrix: Matrix requires rank 2, but got a Tensor of rank {}.\n", t.rank()));
+        }
+        const std::vector<size_t>& dims = t.dims();
+        // Setup the std::mdspan objects to reference the Tensor's m_data
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{t.data(), dims.at(0), dims.at(1)};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{t.data(), dims.at(0), dims.at(1)};
+    }
+
+    /**
+     * Copy constructor for Matrix, creating a deep copy of it and the underlying Tensor
+     * @param target Matrix instance to copy
+     */
+    Matrix(const Matrix<T>& target) : Tensor<T>(target) {
+        // Grab the dimensions after using the Tensor copy constructor
+        const std::vector<size_t>& dims = target.dims();
+        // Setup the std::mdspan objects to reference the Tensor's m_data
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims.at(0), dims.at(1)};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims.at(0), dims.at(1)};
+    }
+
+    /**
+     * Copy assignment operator, creating a deep copy of the Matrix, overwriting this one
+     * @param target Matrix to copy from
+     * @returns Returns a reference to the overwritted Matrix
+     */
+    Matrix<T>& operator=(const Matrix<T>& target) {
+        // Ensure we aren't trying to copy ourself
+        if (this == &target) {
+            return *this;
+        }
+        // Use the Tensor copy assignment operator to setup the new instance
+        Tensor<T>::operator=(target);
+        // Grab the dimensions after using the Tensor copy assignment
+        const std::vector<size_t>& dims = target.dims();
+        // Setup the std::mdspan objects to reference the Tensor's m_data
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims.at(0), dims.at(1)};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims.at(0), dims.at(1)};
+
+        return *this;
+    }
+
+    /**
+     * Move constructor for Matrix, moving the data from one Matrix instance to this one
+     * @param target Matrix to grab the data from
+     */
+    Matrix(Matrix<T>&& target) noexcept : Tensor<T>(std::move(target)) {
+        // While we can initialize the spans via initializers, the readability is extremely poor
+        // Grab the dimensions after using the Tensor move assignment
+        const std::vector<size_t>& dims = this->dims();
+        // Setup the std::mdspan objects to reference the Tensor's m_data
+        // We need to disable linting for the two lines since move assignment operator is noexcept
+        // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims[0], dims[1]};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims[0], dims[1]};
+        // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+    }
+
+    /**
+     * Move assignment operator, taking the data from the target Matrix and overwriting this one
+     * @param target Matrix to move the data from
+     * @returns Returns a reference to this Matrix with the updated data
+     */
+    Matrix<T>& operator=(Matrix<T>&& target) noexcept {
+        // Ensure we aren't performing this op on ourself
+        if (this == &target) {
+            return *this;
+        }
+        // Use Tensor's move assignment operator to get started
+        Tensor<T>::operator=(target);
+        // Grab the dimensions after using the Tensor move assignment
+        const std::vector<size_t>& dims = target.dims();
+        // Setup the std::mdspan objects to reference the Tensor's m_data
+        // We need to disable linting for the two lines since move assignment operator is noexcept
+        // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+        m_rw_span = std::mdspan<T, std::dextents<size_t, 2>>{this->data(), dims[0], dims[1]};
+        m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>>{this->data(), dims[0], dims[1]};
+        // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+
+        return *this;
+    }
+
+    /**
+     * Destructor for Matrix
+     */
+    ~Matrix() override {
+        // Do nothing since Matrix doesn't have any heap allocated data -- it all lives in Tensor
+    }
+
+    /**
+     * Any Matrix must have rank == 2, so use constexpr
+     * @returns Returns Matrix rank, 2 by definition
+     */
+    constexpr size_t rank() const override {
+        return 2;
+    }
+
+    /**
+     * Get or set a value at a specific coordinate inside the Matrix
+     * @param target The coordinate we want to fetch from the Matrix
+     * @returns Returns a reference to the value that can be updated
+     */
+    T& at(const std::initializer_list<size_t>& target) override {
+
+        if (target.size() != 2) {
+            throw std::invalid_argument(std::format("Matrix.at: Require 2 coordinates for at, got {}.\n", target.size()));
+        }
+        if (!_valid(target)) {
+            throw std::out_of_range(std::format("Matrix.at: Invalid coordinates provided [{}, {}], max indices are [{}, {}].\n",
+                                                target.begin()[0], target.begin()[1], m_rw_span.extent(0), m_rw_span.extent(1)));
+        }
+        // Return the value by accessing it via the read-write mdspan
+        return m_rw_span[target.begin()[0], target.begin()[1]];
+    }
+
+    /**
+     * Get a value at a specific coordinate inside the Matrix
+     * @param target The coordinate we want to fetch from the Matrix
+     * @returns Returns the value at the coordinate
+     */
+    const T& at(const std::initializer_list<size_t>& target) const override {
+        // We use the same logic as the mutable case, just using the read-only span
+        if (target.size() != 2) {
+            throw std::invalid_argument(std::format("Matrix.at: Require 2 coordinates for at, got {}.\n", target.size()));
+        }
+        if (!_valid(target)) {
+            throw std::out_of_range(std::format("Matrix.at: Invalid coordinates provided [{}, {}], max indices are [{}, {}].\n",
+                                                target.begin()[0], target.begin()[1], m_ro_span.extent(0), m_ro_span.extent(1)));
+        }
+        // Return the value by accessing it via the read-only mdspan
+        return m_ro_span[target.begin()[0], target.begin()[1]];
+    }
+
+    /** 
+     * Perform a matmul on a Matrix instance, storing the results in a new Matrix
+     * @param rhs Const reference to a Matrix
+     * @returns Returns a new Matrix instance containing the matmul result 
+     */
+    Matrix<T> matmul(const Matrix<T>& rhs) const {
+        if (!_matrix_can_matmul(rhs)) {
+            throw std::invalid_argument(std::format("Matrix.matmul: Incompatible Matrix provided to matmul, cannot matmul [{} x {}] with [{} x {}]\n",
+                                                    m_ro_span.extent(0), m_ro_span.extent(1), rhs.m_ro_span.extent(0), rhs.m_ro_span.extent(1)));
+        }
+        // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
+        Matrix<T> result({m_ro_span.extent(1), rhs.m_ro_span.extent(0)});
+        // Use a naive loop to perform matmul
+        for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
+            for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+                for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                    // Benefit of using spans to access the underlying data
+                    result.m_rw_span[i, j] += m_ro_span[i, k] * rhs.m_ro_span[k, j];
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Perform a matmul on a Tensor without casting it to a Matrix, storing the result in a new Matrix
+     * @param rhs Const reference to a Tensor
+     * @returns Returns a new Matrix instance containing the matmul result
+     */
+    Matrix<T> matmul(const Tensor<T>& rhs) const {
+        // Grab the Tensor's dimensions for reference later
+        const std::vector<size_t>& tensor_dims = rhs.dims();
+        if (!_tensor_can_matmul(rhs)) {
+            throw std::invalid_argument(std::format("Matrix.matmul: Incompatible Tensor provided to matmul, cannot matmul [{} x {}] with [{} x {}]\n",
+                                                    m_ro_span.extent(0), m_ro_span.extent(1), tensor_dims.at(0), tensor_dims.at(1)));
+        }
+        // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
+        Matrix<T> result({m_ro_span.extent(1), tensor_dims.at(0)});
+        // Use a naive loop to perform matmul
+        for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
+            for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+                for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                    // Benefit of using spans to access the underlying data
+                    result.m_rw_span[i, j] += m_ro_span[i, k] * rhs.at({k, j});
+                }
+            }
+        }
+        return result;
+    }
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };
