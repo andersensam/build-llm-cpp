@@ -124,6 +124,142 @@ private:
 
         return true;
     }
+
+    /**
+     * Determine if a numeric type can overflow and should be checked by the compiler's built
+     * in checking function
+     */
+    [[nodiscard]] constexpr bool _can_overflow() const {
+        // Use std::is_same_v to validate
+        if constexpr (
+            std::is_same_v<T, char> ||
+            std::is_same_v<T, signed char> ||
+            std::is_same_v<T, int> ||
+            std::is_same_v<T, int8_t> ||
+            std::is_same_v<T, int16_t> ||
+            std::is_same_v<T, int32_t> ||
+            std::is_same_v<T, int64_t> ||
+            std::is_same_v<T, unsigned char> ||
+            std::is_same_v<T, unsigned int> ||
+            std::is_same_v<T, size_t> ||
+            std::is_same_v<T, uint8_t> ||
+            std::is_same_v<T, uint16_t> ||
+            std::is_same_v<T, uint32_t> ||
+            std::is_same_v<T, uint64_t>
+        ) { return true; }
+        return false;
+    }
+
+    /**
+     * Compiler-independent check for addition overflow / underflow
+     * @param a First value
+     * @param b Second value
+     * @param result Pointer to store the result in
+     * @returns Returns true if the operation would cause overflow / underflow
+     */
+    [[nodiscard]] bool _add_overflow(T a, T b, T* result) const {
+        // We always check to see if the type is eligible for overflow before calling
+        // this function, so no need to check again
+        if constexpr (std::numeric_limits<T>::is_signed) {
+            if (((b > 0) && (a > (std::numeric_limits<T>::max() - b))) || 
+                ((b < 0) && (a < (std::numeric_limits<T>::min() - b)))) {
+                return true;
+            }
+        }
+        else {
+            if (a > (std::numeric_limits<T>::max() - b)) {
+                return true;
+            }
+        }
+        *result = a + b;
+        return false;
+    }
+
+    /**
+     * Compiler-independent check for subtraction overflow / underflow
+     * @param a First value
+     * @param b Second value
+     * @param result Pointer to store the result in
+     * @returns Returns true if the operation would cause overflow / underflow
+     */
+    [[nodiscard]] bool _sub_overflow(T a, T b, T* result) const {
+        // We always check to see if the type is eligible for overflow before calling
+        // this function, so no need to check again
+        if constexpr (std::numeric_limits<T>::is_signed) {
+            if (((b > 0) && (a < (std::numeric_limits<T>::min() + b))) || 
+                ((b < 0) && (a > (std::numeric_limits<T>::max() + b)))) {
+                return true;
+            }
+        }
+        else {
+            if (b > a) {
+                return true;
+            }
+        }
+        *result = a - b;
+        return false;
+    }
+
+    /**
+     * Compiler-independent check for multiplication overflow / underflow
+     * @param a First value
+     * @param b Second value
+     * @param result Pointer to store the result in
+     * @returns Returns true if the operation would cause overflow / underflow
+     */
+    [[nodiscard]] bool _mul_overflow(T a, T b, T* result) const {
+        // We always check to see if the type is eligible for overflow before calling
+        // this function, so no need to check again
+        if (a == 0 || b == 0) {
+            *result = 0;
+            return false;
+        }
+        // Get the min and max values for the type T
+        T min_val = std::numeric_limits<T>::min();
+        T max_val = std::numeric_limits<T>::max();
+        // Validate the multiplication
+        if (a > 0) {
+            if (b > 0) {
+                if (a > (max_val / b)) {
+                    return true;
+                }
+                else {
+                    *result = a * b;
+                    return false;
+                }
+            }
+            else {
+                if (b < (min_val / a)) {
+                    return true;
+                }
+                else {
+                    *result = a * b;
+                    return false;
+                }
+            }
+        }
+        else {
+            if (b > 0) {
+                if (a < (min_val / b)) {
+                    return true;
+                }
+                else {
+                    *result = a * b;
+                    return false;
+                }
+            }
+            else {
+                if (a < (max_val) / b) {
+                    return true;
+                }
+                else {
+                    *result = a * b;
+                    return false;
+                }
+            }
+        }
+    }
+
 /* Protected functions */
 protected:
     /**
@@ -243,6 +379,8 @@ public:
         m_dims = std::move(target.m_dims);
         // Move the memory block
         m_data = std::move(target.m_data);
+        // Set target.m_data to nullptr for good measure
+        target.m_data = nullptr;
 
         return *this;
     }
@@ -257,16 +395,21 @@ public:
         if (!_compatible(target)) {
             throw std::invalid_argument("Tensor.+=: Incompatible Tensor shapes provided to +=.\n");
         }
-        // Create variables for using __builtin_add_overflow and avoid calling get() multiple times
+        // Create variables for using _add_overflow and avoid calling get() multiple times
         T lhs = 0, rhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
             rhs = target.m_data.get()[i];
-            if (__builtin_add_overflow(lhs, rhs, &result)) {
-                throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, rhs));
+            if (_can_overflow()) {
+                if (_add_overflow(lhs, rhs, &result)) {
+                    throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, rhs));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
             }
             else {
-                m_data.get()[i] = result;
+                m_data.get()[i] += rhs;
             }
         }
         return *this;
@@ -278,15 +421,20 @@ public:
      * @returns Reterns a reference to this Tensor
      */
     Tensor<T>& operator+=(const T& s) {
-        // Create variables for using __builtin_add_overflow and avoid calling get() multiple times
+        // Create variables for using _add_overflow and avoid calling get() multiple times
         T lhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
-            if (__builtin_add_overflow(lhs, s, &result)) {
-                throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, s));
+            if (_can_overflow()) {
+                if (_add_overflow(lhs, s, &result)) {
+                    throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, s));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
             }
             else {
-                m_data.get()[i] = result;
+                m_data.get()[i] += s;
             }
         }
         return *this;
@@ -334,11 +482,16 @@ public:
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
             rhs = target.m_data.get()[i];
-            if (__builtin_sub_overflow(lhs, rhs, &result)) {
-                throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, rhs));
+            if (_can_overflow()) {
+                if (_sub_overflow(lhs, rhs, &result)) {
+                    throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, rhs));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
             }
             else {
-                m_data.get()[i] = result;
+                m_data.get()[i] -= rhs;
             }
         }
         return *this;
@@ -350,15 +503,20 @@ public:
      * @returns Reterns a reference to this Tensor
      */
     Tensor<T>& operator-=(const T& s) {
-        // Create variables for using __builtin_sub_overflow and avoid calling get() multiple times
+        // Create variables for using _sub_overflow and avoid calling get() multiple times
         T lhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
-            if (__builtin_sub_overflow(lhs, s, &result)) {
-                throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, s));
+            if (_can_overflow()) {
+                if (_sub_overflow(lhs, s, &result)) {
+                    throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, s));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
             }
             else {
-                m_data.get()[i] = result;
+                m_data.get()[i] -= s;
             }
         }
         return *this;
@@ -406,11 +564,16 @@ public:
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
             rhs = target.m_data.get()[i];
-            if (__builtin_mul_overflow(lhs, rhs, &result)) {
-                throw std::overflow_error(std::format("Tensor.*=: Multiplying {} and {} results in overflow / underflow.\n", lhs, rhs));
+            if (_can_overflow()) {
+                if (_mul_overflow(lhs, rhs, &result)) {
+                    throw std::overflow_error(std::format("Tensor.*=: Multiplying {} and {} results in overflow / underflow.\n", lhs, rhs));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
             }
             else {
-                m_data.get()[i] = result;
+                m_data.get()[i] *= rhs;
             }
         }
         return *this;
@@ -422,15 +585,20 @@ public:
      * @returns Reterns a reference to this Tensor
      */
     Tensor<T>& operator*=(const T& s) {
-        // Create variables for using __builtin_mul_overflow and avoid calling get() multiple times
+        // Create variables for using _mul_overflow and avoid calling get() multiple times
         T lhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
-            if (__builtin_mul_overflow(lhs, s, &result)) {
-                throw std::overflow_error(std::format("Tensor.*=: Multiplying {} and {} results in overflow / underflow.\n", lhs, s));
+            if (_can_overflow()) {
+                if (_mul_overflow(lhs, s, &result)) {
+                    throw std::overflow_error(std::format("Tensor.*=: Multiplying {} and {} results in overflow / underflow.\n", lhs, s));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
             }
             else {
-                m_data.get()[i] = result;
+                m_data.get()[i] *= s;
             }
         }
         return *this;
@@ -658,6 +826,37 @@ public:
         }
     }
 
+    /**
+     * Apply a function to all elements in a Tensor
+     * @param f Function to apply
+     */
+    void apply(T (*f)(T)) {
+        // Apply the function pointed to by f to all elements
+        try {
+            for (size_t i = 0; i < c_elements; ++i) {
+                m_data.get()[i] = (*f)(m_data.get()[i]);
+            }
+        } catch (const std::exception& e) {
+            throw std::invalid_argument(std::format("Tensor.apply: Exception when applying function to Tensor. Error: {}", e.what()));
+        }
+    }
+
+    /**
+     * Apply a function to all elements in a Tensor
+     * @param f Function to apply
+     * @param p Parameter to supply to function f
+     */
+    void apply(T (*f)(T, T), T param) {
+        // Apply the function pointed to by f to all elements
+        try {
+            for (size_t i = 0; i < c_elements; ++i) {
+                m_data.get()[i] = (*f)(m_data.get()[i], param);
+            }
+        } catch (const std::exception& e) {
+            throw std::invalid_argument(std::format("Tensor.apply: Exception when applying function to Tensor. Error: {}", e.what()));
+        }
+    }
+
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };
 
@@ -831,7 +1030,7 @@ public:
             return *this;
         }
         // Use Tensor's move assignment operator to get started
-        Tensor<T>::operator=(target);
+        Tensor<T>::operator=(std::move(target));
         // Grab the dimensions after using the Tensor move assignment
         const std::vector<size_t>& dims = target.dims();
         // We need to disable linting for the two lines since move assignment operator is noexcept
@@ -845,6 +1044,182 @@ public:
         m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
 
         return *this;
+    }
+
+    /**
+     * Addition assignment operator
+     * @param target Matrix to add
+     * @returns Returns a pointer to this Matrix
+     */
+    Matrix<T>& operator+=(const Matrix<T>& target) {
+        Tensor<T>::operator+=(target);
+        return *this;
+    }
+
+    /**
+     * Scalar addition assignment operator
+     * @param s Scalar to add
+     * @returns Returns a pointer to this Matrix
+     */
+    Matrix<T>& operator+=(const T& s) {
+        Tensor<T>::operator+=(s);
+        return *this;
+    }
+
+    /**
+     * Addition operator
+     * @param lhs Base Matrix
+     * @param rhs Matrix to add
+     * @returns Returns a new Matrix containing the result
+     */
+    friend Matrix<T> operator+(const Matrix<T>& lhs, const Matrix<T>& rhs) {
+        Matrix<T> result = lhs;
+        result += rhs;
+        return result;
+    }
+
+    /**
+     * Scalar addition operator
+     * @param lhs Base Matrix
+     * @param s Scalar value to add
+     * @returns Returns a new Matrix containing the result
+     */
+    friend Matrix<T> operator+(const Matrix<T>& lhs, const T& s) {
+        Matrix<T> result = lhs;
+        result += s;
+        return result;
+    }
+    
+    /**
+     * Subtraction assignment operator
+     * @param target Matrix to subtract
+     * @returns Returns a pointer to this Matrix
+     */
+    Matrix<T>& operator-=(const Matrix<T>& target) {
+        Tensor<T>::operator-=(target);
+        return *this;
+    }
+
+    /**
+     * Scalar subtraction assignment operator
+     * @param s Scalar to subtract
+     * @returns Returns a pointer to this Matrix
+     */
+    Matrix<T>& operator-=(const T& s) {
+        Tensor<T>::operator-=(s);
+        return *this;
+    }
+
+    /**
+     * Subtraction operator
+     * @param lhs Base Matrix
+     * @param rhs Matrix to subtract
+     * @returns Returns a pointer to a new Matrix containing the result
+     */
+    friend Matrix<T> operator-(const Matrix<T>& lhs, const Matrix<T>& rhs) {
+        Matrix<T> result = lhs;
+        result -= rhs;
+        return result;
+    }
+
+    /**
+     * Scalar subtraction operator
+     * @param lhs Base Matrix
+     * @param s Scalar value to add
+     * @returns Returns a new Matrix containing the result
+     */
+    friend Matrix<T> operator-(const Matrix<T>& lhs, const T& s) {
+        Matrix<T> result = lhs;
+        result -= s;
+        return result;
+    }
+
+    /**
+     * Multiplication assignment operator
+     * @param target Matrix to multiply by
+     * @returns Returns a pointer to this Matrix
+     */
+    Matrix<T>& operator*=(const Matrix<T>& target) {
+        Tensor<T>::operator*=(target);
+        return *this;
+    }
+
+    /**
+     * Scalar multiplication assignment operator
+     * @param s Scalar to multiply by
+     * @returns Returns a pointer to this Matrix
+     */
+    Matrix<T>& operator*=(const T& s) {
+        Tensor<T>::operator*=(s);
+        return *this;
+    }
+
+    /**
+     * Multiplication operator
+     * @param lhs Base Matrix
+     * @param rhs Matrix to multiply by
+     * @returns Returns a pointer to a new Matrix containing the result
+     */
+    friend Matrix<T> operator*(const Matrix<T>& lhs, const Matrix<T>& rhs) {
+        Matrix<T> result = lhs;
+        result *= rhs;
+        return result;
+    }
+
+    /**
+     * Scalar multiplication operator
+     * @param lhs Base Matrix
+     * @param s Scalar value to multiply by
+     * @returns Returns a new Matrix containing the result
+     */
+    friend Matrix<T> operator*(const Matrix<T>& lhs, const T& s) {
+        Matrix<T> result = lhs;
+        result *= s;
+        return result;
+    }
+
+    /**
+     * Division assignment operator
+     * @param target Matrix to divide by
+     * @returns Returns a pointer to this Matrix
+     */
+    Matrix<T>& operator/=(const Matrix<T>& target) {
+        Tensor<T>::operator/=(target);
+        return *this;
+    }
+
+    /**
+     * Scalar division assignment operator
+     * @param s Scalar to divide by
+     * @returns Returns a pointer to this Matrix
+     */
+    Matrix<T>& operator/=(const T& s) {
+        Tensor<T>::operator/=(s);
+        return *this;
+    }
+
+    /**
+     * Division operator
+     * @param lhs Base Matrix
+     * @param rhs Matrix to divide by
+     * @returns Returns a pointer to a new Matrix containing the result
+     */
+    friend Matrix<T> operator/(const Matrix<T>& lhs, const Matrix<T>& rhs) {
+        Matrix<T> result = lhs;
+        result /= rhs;
+        return result;
+    }
+
+    /**
+     * Scalar division operator
+     * @param lhs Base Matrix
+     * @param s Scalar value to divide by
+     * @returns Returns a new Matrix containing the result
+     */
+    friend Matrix<T> operator/(const Matrix<T>& lhs, const T& s) {
+        Matrix<T> result = lhs;
+        result /= s;
+        return result;
     }
 
     /**

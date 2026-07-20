@@ -80,6 +80,19 @@ int main() {
             std::cout << "\n";
         }
 
+        Tensor_NS::Matrix<float> fm({3, 3});
+        fm.fill(3.51);
+        fm.apply(std::pow, 2.f);
+        const auto& dims3 = fm.dims();
+        for (size_t i = 0; i < dims3.at(0); ++i) {
+            for (size_t j = 0; j < dims3.at(1); ++j) {
+                std::cout << fm.at({i, j}) << "\t";
+            }
+            std::cout << "\n";
+        }
+
+        Tensor_NS::Matrix<float> qm = fm * 2.f;
+
         
     } catch (const std::exception& e) {
 
