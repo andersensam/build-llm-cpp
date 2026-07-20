@@ -47,18 +47,26 @@ int main() {
         std::cout << std::format("\nDetokenized string: {}\n", BPET.detokenize_to_string(tokenized));
         std::cout << std::format("\nCompressed {} bytes into {} tokens\n", test_string.size(), tokenized.size());*/
 
-        Tensor_NS::Tensor<float> f({2,2});
-        std::cout << sizeof(f) << "\n";
-
-        std::cout << std::format("Value at [0,0]: {}\n", f.at({0,0}));
-        f.at({0, 1}) = 2;
-        std::cout << std::format("Value at [0,1]: {}\n", f.at({0,1}));
-
         Tensor_NS::Tensor<int> it({3, 3, 3});
+        it.at({0,1,2}) = 33;
         std::cout << sizeof(it) << "\n";
         std::cout << std::format("Value at [0, 0, 0]: {}\n", it.at({0,0,0}));
-        it.at({0, 1, 2}) = 55;
-        std::cout << std::format("Value at [0, 1, 3]: {}\n", it.at({0,1,3}));
+
+        auto Q = it;
+        Q.at({1,1,1}) = 12;
+        Q.at({0,1,2}) = 99;
+        std::cout << std::format("Ref in Q: [1,1,1]: {}\n", Q.at({1,1,1}));
+
+        auto Z = it + Q;
+        std::cout << std::format("Val for it + Q [0,1,2]: {}\n", Z.at({0,1,2}));
+        std::cout << std::format("Val for it [0,1,2]: {}\n", it.at({0,1,2}));
+        std::cout << std::format("Val for Q [0,1,2]: {}\n", Q.at({0,1,2}));
+
+        Z -= Q;
+        std::cout << std::format("Val for it + Q [0,1,2]: {}\n", Z.at({0,1,2}));
+
+        auto M = Z * Z;
+        std::cout << std::format("Val for Z * Z [0,1,2]: {}\n", M.at({0,1,2}));
         
     } catch (const std::exception& e) {
 
