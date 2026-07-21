@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-14
+ * @version: 2026-07-20
  *
  * General Notes:
  *
@@ -19,11 +19,12 @@
 #define LOG_HPP
 
 /* Standard dependencies */
-#include <iostream>
+#include <array>
 #include <cstring>
 #include <ctime>
+#include <iostream>
+#include <string>
 #include <string_view>
-#include <array>
 
 namespace Log {
 

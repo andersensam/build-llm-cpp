@@ -92,7 +92,8 @@ int main() {
         }
 
         Tensor_NS::Matrix<float> qm = fm * 2.f;
-
+        auto fm_slice = fm.slice_const(1);
+        Tensor_NS::Tensor<float> fm_slice_t(fm_slice);
         
     } catch (const std::exception& e) {
 

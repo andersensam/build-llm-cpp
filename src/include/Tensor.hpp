@@ -20,6 +20,7 @@
 
 /* Standard dependencies */
 #include <algorithm>
+#include <array>
 #include <climits>
 #include <cstring>
 #include <expected>
@@ -40,6 +41,14 @@
 
 namespace Tensor_NS {
 
+// Control verbose copy / move constructor logging, useful for debugging. Does not apply to default constructors
+inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = true;
+inline constexpr bool MATRIX_ENABLE_CONSTRUCTOR_LOGGING = true;
+
+// Use Logging functions
+using Log::Log_Priority;
+using Log::log_message;
+
 /**
  * Template for a generic Tensor, where T can be any numeric type, like a variety of int,
  * double, float, etc.
@@ -52,7 +61,7 @@ class Tensor {
 private:
     /**
      * Smart pointer representing the memory block allocated to the Tensor. We use a smart pointer here
-     * to aid in lifecycle management of Matrix
+     * to aid in lifecycle management
      */
     std::unique_ptr<T[]> m_data = nullptr;
 
@@ -290,7 +299,6 @@ public:
      * @param dims Const reference to std::initializer_list<size_t> containing the desired dimensions
      */
     Tensor(const std::initializer_list<size_t>& dims) : c_rank(dims.size()), m_stride(dims.size()), m_dims(dims) {
-
         // Handle the case where we have a rank-0 tensor (scalar value). Allocate space for the singular
         // element and then return immediately
         if (c_rank == 0) {
@@ -305,7 +313,7 @@ public:
             }
             c_elements *= ds;
         }
-        // Allocate the block of memory for the tensor
+        // Allocate the block of memory for the Tensor
         m_data = std::make_unique<T[]>(c_elements);
         std::memset(m_data.get(), 0, sizeof(T) * c_elements);
         // Calculate the stides needed to get between dims
@@ -316,15 +324,35 @@ public:
     }
 
     /**
+     * Constuct a Tensor from std::mdspan, creating copy of its data and inheriting its traits
+     * @param span Const reference to std::mdspan
+     */
+    explicit Tensor(const std::mdspan<const T, std::dextents<size_t, 1>, std::layout_stride>& span) : c_elements(span.extent(0)), c_rank(1), m_stride({1}), m_dims({1}) {
+        // Store the dim information from the span
+        m_dims = std::vector<size_t>{span.extent(0)};
+        // Allocate the block of memory for the Tensor
+        m_data = std::make_unique<T[]>(c_elements);
+        std::memset(m_data.get(), 0, sizeof(T) * c_elements);
+        // Copy the values out of the span into the Tensor
+        for (size_t i = 0; i < c_elements; ++i) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+            m_data.get()[i] = span[i];
+        }
+    }
+
+    /**
      * Copy constructor for Tensor, creating a deep copy
      * @param target Tensor to make a copy of
      */
     Tensor(const Tensor<T>& target) : c_elements(target.c_elements), c_rank(target.c_rank), m_stride(target.m_stride), m_dims(target.m_dims) {
-
         // Create a new unique_ptr memory block
         m_data = std::make_unique<T[]>(c_elements);
         // Copy the entire m_data block
         std::memcpy(m_data.get(), target.m_data.get(), sizeof(T) * c_elements);
+        // Debug logging
+        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy constructor called");
+        }
     }
 
     /**
@@ -333,7 +361,6 @@ public:
      * @returns Returns a reference to this Tensor
      */
     Tensor<T>& operator=(const Tensor<T>& target) {
-
         // Ensure we aren't calling the assignment operator on ourself
         if (this == &target) {
             return *this;
@@ -347,6 +374,10 @@ public:
         // existing pointer to go out of scope and be cleaned up automatically
         m_data = std::make_unique<T[]>(c_elements);
         std::memcpy(m_data.get(), target.m_data.get(), sizeof(T) * c_elements);
+        // Debug logging
+        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy assignment called");
+        }
 
         return *this;
     }
@@ -358,6 +389,10 @@ public:
     Tensor(Tensor<T>&& target) noexcept : m_data(std::move(target.m_data)), c_elements(target.c_elements), c_rank(target.c_rank), 
                                           m_stride(std::move(target.m_stride)), m_dims(std::move(target.m_dims)) {
         // Left blank since using the move constructors for std::vector and std::unique_ptr handle the setup
+        // Debug logging
+        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move constructor called");
+        }
     }
 
     /**
@@ -366,7 +401,6 @@ public:
      * @returns Returns a reference to this Tensor
      */
     Tensor<T>& operator=(Tensor<T>&& target) noexcept {
-
         // Ensure we aren't calling the assignment operator on ourself
         if (this == &target) {
             return *this;
@@ -381,6 +415,10 @@ public:
         m_data = std::move(target.m_data);
         // Set target.m_data to nullptr for good measure
         target.m_data = nullptr;
+        // Debug logging
+        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move assignment operator called");
+        }
 
         return *this;
     }
@@ -760,7 +798,6 @@ public:
      * @returns Returns a reference to the value that can be updated
      */
     virtual T& at(const std::initializer_list<size_t>& target) {
-
         // Handle the case where we have a rank-0 tensor
         if (c_rank == 0) {
             return m_data.get()[0];
@@ -783,7 +820,6 @@ public:
      * @returns Returns the value at the coordinate
      */
     virtual const T& at(const std::initializer_list<size_t>& target) const {
-        
         // Handle the case where we have a rank-0 tensor
         if (c_rank == 0) {
             return m_data.get()[0];
@@ -856,6 +892,41 @@ public:
             throw std::invalid_argument(std::format("Tensor.apply: Exception when applying function to Tensor. Error: {}", e.what()));
         }
     }
+
+    /**
+     * Slice a Tensor, getting a std::mdspan representing the desired dim
+     * @param target_dim Dimension to create the std::mdspan for
+     * @returns Returns a read-write std::mdspan
+     */
+    std::mdspan<T, std::dextents<size_t, 1>, std::layout_stride> slice(size_t target_dim) {
+        // Ensure we have a valid dim
+        if (target_dim >= c_rank) {
+            throw std::invalid_argument(std::format("Tensor.slice: Invalid dim {} provided to slice. Max dim: {}\n", target_dim, c_rank - 1));
+        }
+        // Setup the strides and shapes
+        std::dextents<size_t, 1> shape{m_dims.at(target_dim)};
+        std::array<size_t, 1> strides{m_stride.at(target_dim)};
+        // Setup the span
+        return std::mdspan<T, std::dextents<size_t, 1>, std::layout_stride>{m_data.get(), std::layout_stride::mapping{shape, strides}};
+    }
+
+    /**
+     * Slice a Tensor, getting a read-only std::mdspan representing the desired dim
+     * @param target_dim Dimension to create the std::mdspan for
+     * @returns Returns a read-only std::mdspan
+     */
+    std::mdspan<const T, std::dextents<size_t, 1>, std::layout_stride> slice_const(size_t target_dim) const {
+        // Ensure we have a valid dim
+        if (target_dim >= c_rank) {
+            throw std::invalid_argument(std::format("Tensor.slice: Invalid dim {} provided to slice. Max dim: {}\n", target_dim, c_rank - 1));
+        }
+        // Setup the strides and shapes
+        std::dextents<size_t, 1> shape{m_dims.at(target_dim)};
+        std::array<size_t, 1> strides{m_stride.at(target_dim)};
+        // Setup the span
+        return std::mdspan<const T, std::dextents<size_t, 1>, std::layout_stride>{m_data.get(), std::layout_stride::mapping{shape, strides}};
+    }
+
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };
@@ -974,6 +1045,10 @@ public:
         // Setup the spans
         m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
         m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        // Debug logging
+        if (MATRIX_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Matrix.Matrix", "Copy constructor called");
+        }
     }
 
     /**
@@ -996,6 +1071,10 @@ public:
         // Setup the spans
         m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
         m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        // Debug logging
+        if (MATRIX_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Matrix.Matrix", "Copy assignment operator called");
+        }
 
         return *this;
     }
@@ -1017,6 +1096,10 @@ public:
         // Setup the spans
         m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
         m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        // Debug logging
+        if (MATRIX_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Matrix.Matrix", "Move constructor called");
+        }
     }
 
     /**
@@ -1042,6 +1125,10 @@ public:
         // Setup the spans
         m_rw_span = std::mdspan<T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
         m_ro_span = std::mdspan<const T, std::dextents<size_t, 2>, std::layout_stride>{this->data(), std::layout_stride::mapping{shape, strides}};
+        // Debug logging
+        if (MATRIX_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Matrix.Matrix", "Move assignment operator called");
+        }
 
         return *this;
     }
