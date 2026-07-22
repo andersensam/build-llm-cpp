@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-20
+ * @version: 2026-07-21
  *
  * General Notes:
  *
@@ -30,6 +30,7 @@
 #include <mdspan>
 #include <memory>
 #include <numeric>
+#include <random>
 #include <span>
 #include <string>
 #include <stdexcept>
@@ -87,6 +88,13 @@ private:
      */
     std::vector<size_t> m_dims = std::vector<size_t>();
 
+    /**
+     * Determine if a numeric type can overflow and should be checked by the compiler's built
+     * in checking function
+     */
+    static constexpr bool _can_overflow = std::is_same_v<T, char> || std::is_same_v<T, signed char> || std::is_same_v<T, int> || std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> || std::is_same_v<T, int32_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, unsigned char> || std::is_same_v<T, unsigned int> || std::is_same_v<T, size_t> || std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>;
+
+
 /* Private functions */
     /**
      * Calculate the offset from a set of input cooridnates
@@ -132,31 +140,6 @@ private:
         }
 
         return true;
-    }
-
-    /**
-     * Determine if a numeric type can overflow and should be checked by the compiler's built
-     * in checking function
-     */
-    [[nodiscard]] constexpr bool _can_overflow() const {
-        // Use std::is_same_v to validate
-        if constexpr (
-            std::is_same_v<T, char> ||
-            std::is_same_v<T, signed char> ||
-            std::is_same_v<T, int> ||
-            std::is_same_v<T, int8_t> ||
-            std::is_same_v<T, int16_t> ||
-            std::is_same_v<T, int32_t> ||
-            std::is_same_v<T, int64_t> ||
-            std::is_same_v<T, unsigned char> ||
-            std::is_same_v<T, unsigned int> ||
-            std::is_same_v<T, size_t> ||
-            std::is_same_v<T, uint8_t> ||
-            std::is_same_v<T, uint16_t> ||
-            std::is_same_v<T, uint32_t> ||
-            std::is_same_v<T, uint64_t>
-        ) { return true; }
-        return false;
     }
 
     /**
@@ -438,7 +421,7 @@ public:
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
             rhs = target.m_data.get()[i];
-            if (_can_overflow()) {
+            if constexpr (_can_overflow) {
                 if (_add_overflow(lhs, rhs, &result)) {
                     throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, rhs));
                 }
@@ -463,7 +446,7 @@ public:
         T lhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
-            if (_can_overflow()) {
+            if constexpr (_can_overflow) {
                 if (_add_overflow(lhs, s, &result)) {
                     throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, s));
                 }
@@ -520,7 +503,7 @@ public:
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
             rhs = target.m_data.get()[i];
-            if (_can_overflow()) {
+            if constexpr (_can_overflow) {
                 if (_sub_overflow(lhs, rhs, &result)) {
                     throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, rhs));
                 }
@@ -545,7 +528,7 @@ public:
         T lhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
-            if (_can_overflow()) {
+            if constexpr (_can_overflow) {
                 if (_sub_overflow(lhs, s, &result)) {
                     throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, s));
                 }
@@ -602,7 +585,7 @@ public:
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
             rhs = target.m_data.get()[i];
-            if (_can_overflow()) {
+            if constexpr (_can_overflow) {
                 if (_mul_overflow(lhs, rhs, &result)) {
                     throw std::overflow_error(std::format("Tensor.*=: Multiplying {} and {} results in overflow / underflow.\n", lhs, rhs));
                 }
@@ -627,7 +610,7 @@ public:
         T lhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
             lhs = m_data.get()[i];
-            if (_can_overflow()) {
+            if constexpr (_can_overflow) {
                 if (_mul_overflow(lhs, s, &result)) {
                     throw std::overflow_error(std::format("Tensor.*=: Multiplying {} and {} results in overflow / underflow.\n", lhs, s));
                 }
@@ -925,6 +908,35 @@ public:
         std::array<size_t, 1> strides{m_stride.at(target_dim)};
         // Setup the span
         return std::mdspan<const T, std::dextents<size_t, 1>, std::layout_stride>{m_data.get(), std::layout_stride::mapping{shape, strides}};
+    }
+
+    /**
+     * Fill a Tensor with random values, taken from a specified range
+     * @param range_min Inclusive minimum
+     * @param range_max Inclusive maximum
+     */
+    void random(T range_min, T range_max) {
+        // Prepare to generate random values
+        std::random_device rd;
+        std::mt19937 gen(rd());
+
+        // std::uniform_real_distribution only applies to float-like types, but we can use the _can_overflow
+        // to check for int-like types and use std::uniform_int_distribution instead
+        if constexpr (std::integral<T>) {
+            std::uniform_int_distribution<T> distrib(range_min, range_max);
+            for (size_t i = 0; i < c_elements; ++i) {
+                m_data.get()[i] = distrib(gen);
+            }
+        }
+        else if constexpr (std::floating_point<T>) {
+            std::uniform_real_distribution<T> distrib(range_min, range_max);
+            for (size_t i = 0; i < c_elements; ++i) {
+                m_data.get()[i] = distrib(gen);
+            }
+        }
+        else {
+            throw std::domain_error("Tensor.random: Invalid type for use with random");
+        }
     }
 
 
@@ -1322,6 +1334,22 @@ public:
      */
     constexpr size_t rank() const override {
         return 2;
+    }
+
+    /**
+     * Get the number of rows in a Matrix
+     * @returns Returns row count
+     */
+    size_t rows() const {
+        return m_ro_span.extent(0);
+    }
+
+    /**
+     * Get the number of columns in a Matrix
+     * @returns Return the column count
+     */
+    size_t cols() const {
+        return m_ro_span.extent(1);
     }
 
     /**

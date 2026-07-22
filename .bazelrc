@@ -14,3 +14,11 @@ build:debug --linkopt=-fsanitize=address,undefined
 build:clang-tidy --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect
 build:clang-tidy --output_groups=report
 build:clang-tidy --cxxopt=-isystem/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/
+
+# Building on Fedora 43 with custom LLVM22
+build:fedora --repo_env=CC=/mnt/kvm-nvme-0/llvm22/bin/clang
+build:fedora --repo_env=CXX=/mnt/kvm-nvme-0/llvm22/bin/clang++
+build:fedora --repo_env=BAZEL_COMPILER=/mnt/kvm-nvme-0/llvm22/bin/clang
+build:fedora --repo_env=BAZEL_CXXOPTS=-stdlib=libc++
+build:fedora --repo_env=BAZEL_LINKOPTS=-stdlib=libc++ 
+build:fedora --cxxopt=-isystemlibc++/

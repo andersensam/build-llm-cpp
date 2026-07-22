@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-16
+ * @version: 2026-07-21
  *
  * General Notes:
  *
@@ -147,12 +147,12 @@ size_t BytePairEncodingTokenizer::add_token(uint32_t t) {
     return m_vocab_size - 1;
 }
 
-size_t BytePairEncodingTokenizer::get_vocab_size() const {
+size_t BytePairEncodingTokenizer::vocab_size() const {
 
     return m_vocab_size;
 }
 
-const std::vector<uint32_t>& BytePairEncodingTokenizer::get_vocab() const {
+const std::vector<uint32_t>& BytePairEncodingTokenizer::token_ids() const {
 
     return m_token_ids;
 }

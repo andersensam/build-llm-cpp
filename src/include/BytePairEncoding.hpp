@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-18
+ * @version: 2026-07-21
  *
  * General Notes:
  *
@@ -205,13 +205,13 @@ public:
      * Get the vocab size from the tokenizer
      * @returns Returns the size of the vocabulary
      */
-    size_t get_vocab_size() const;
+    size_t vocab_size() const;
 
     /**
      * Get the list of tokens by token id
      * @returns Returns a const vector of tokens, with the index representing the token id
      */
-    const std::vector<uint32_t>& get_vocab() const;
+    const std::vector<uint32_t>& token_ids() const;
 
     /**
      * Add new vocabulary to the BPE tokenizer
