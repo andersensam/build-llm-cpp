@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-21
+ * @version: 2026-07-28
  *
  * General Notes:
  *
@@ -35,6 +35,7 @@
 
 /* Local dependencies */
 #include "Log.hpp"
+#include "Tokenizer.hpp"
 
 namespace BytePairEncoding_NS {
 
@@ -146,17 +147,17 @@ public:
 /**
  * Tokenizer for Byte Pair Encoding (BPE)
  */
-class BytePairEncodingTokenizer {
+class BytePairEncodingTokenizer : public Tokenizer_NS::Tokenizer {
 /* Private data elements */
 private:
     /**
-     * The vocabulary known by the BPE tokenizer, represented by the byte pair uint16_t token
+     * The vocabulary known by the BPE tokenizer, represented by the byte pair uint32_t token
      * and a corresponding size_t token id.
      */
     std::unordered_map<uint32_t, size_t> m_vocab = std::unordered_map<uint32_t, size_t>();
    
     /**
-     * The lookup table, using the size_t token id to represent the uint16_t byte pair
+     * The lookup table, using the size_t token id to represent the uint32_t byte pair
      */
     std::vector<uint32_t> m_token_ids = std::vector<uint32_t>();
 
@@ -166,7 +167,7 @@ private:
     size_t m_vocab_size = 0;
 
     /**
-     * Check to see if a uint16_t token is known
+     * Check to see if a uint32_t token is known
      * @param t Token to check for
      * @returns Returns true if it is known, false otherwise
      */
@@ -205,13 +206,13 @@ public:
      * Get the vocab size from the tokenizer
      * @returns Returns the size of the vocabulary
      */
-    size_t vocab_size() const;
+    size_t vocab_size() const override;
 
     /**
      * Get the list of tokens by token id
      * @returns Returns a const vector of tokens, with the index representing the token id
      */
-    const std::vector<uint32_t>& token_ids() const;
+    const std::vector<uint32_t>& token_ids() const override;
 
     /**
      * Add new vocabulary to the BPE tokenizer
@@ -225,14 +226,14 @@ public:
      * @param s A string to tokenize
      * @returns Returns std::vector<size_t> of token ids
      */
-    std::vector<size_t> tokenize(const std::string& s) const;
+    std::vector<size_t> tokenize(const std::string& s) const override;
 
     /**
      * Detokenize an input, returning a vector of char containing the decoded text
      * @param v A vector of token ids to detokenize
      * @returns Returns a string containing the detokenized output
      */
-    std::string detokenize_to_string(const std::vector<size_t>& v) const;
+    std::string detokenize_to_string(const std::vector<size_t>& v) const override;
 };
 
 /**

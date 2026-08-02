@@ -2,6 +2,7 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
+# Logging library present across nearly all of the individual libraries packages
 cc_library(
     name = "llmlog",
     srcs = glob(
@@ -18,6 +19,35 @@ cc_library(
     includes = [],
 )
 
+# Tensor template library
+cc_library(
+    name = "tensor",
+    hdrs = glob(
+        [
+            "src/include/Tensor.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":llmlog",
+    ]
+)
+
+# Abstract base class for any Tokenizer implementation
+cc_library(
+    name = "tokenizer",
+    hdrs = glob(
+        [
+            "src/include/Tokenizer.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = []
+)
+
+# Byte Pair Encoding + BPE Tokenizer
 cc_library(
     name = "bpe",
     srcs = glob(
@@ -34,19 +64,29 @@ cc_library(
     includes = [],
     deps = [
         ":llmlog",
+        ":tokenizer"
     ]
 )
 
+# Data loader
 cc_library(
-    name = "tensor",
+    name = "dataloader",
+    srcs = glob(
+        [
+            "src/DataLoader.cpp"
+        ]
+    ),
     hdrs = glob(
         [
-            "src/include/Tensor.hpp"
+            "src/include/DataLoader.hpp"
         ]
     ),
     strip_include_prefix = "src",
+    includes = [],
     deps = [
         ":llmlog",
+        ":tensor",
+        ":tokenizer"
     ]
 )
 
@@ -61,6 +101,7 @@ cc_binary(
     deps = [
         ":llmlog",
         ":bpe",
-        ":tensor"
+        ":tensor",
+        ":dataloader"
     ]
 )
