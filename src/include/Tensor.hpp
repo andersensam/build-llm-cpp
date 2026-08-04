@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-01
+ * @version: 2026-08-03
  *
  * General Notes:
  *
@@ -63,6 +63,122 @@ enum class Orientation : uint8_t {
 };
 
 /**
+ * Compiler-independent check for addition overflow / underflow
+ * @param a First value
+ * @param b Second value
+ * @param result Pointer to store the result in
+ * @returns Returns true if the operation would cause overflow / underflow
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+[[nodiscard]] inline bool _add_overflow(T a, T b, T* result) {
+    // We always check to see if the type is eligible for overflow before calling
+    // this function, so no need to check again
+    if constexpr (std::numeric_limits<T>::is_signed) {
+        if (((b > 0) && (a > (std::numeric_limits<T>::max() - b))) || 
+            ((b < 0) && (a < (std::numeric_limits<T>::min() - b)))) {
+            return true;
+        }
+    }
+    else {
+        if (a > (std::numeric_limits<T>::max() - b)) {
+            return true;
+        }
+    }
+    *result = a + b;
+    return false;
+}
+
+/**
+ * Compiler-independent check for subtraction overflow / underflow
+ * @param a First value
+ * @param b Second value
+ * @param result Pointer to store the result in
+ * @returns Returns true if the operation would cause overflow / underflow
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+[[nodiscard]] inline bool _sub_overflow(T a, T b, T* result) {
+    // We always check to see if the type is eligible for overflow before calling
+    // this function, so no need to check again
+    if constexpr (std::numeric_limits<T>::is_signed) {
+        if (((b > 0) && (a < (std::numeric_limits<T>::min() + b))) || 
+            ((b < 0) && (a > (std::numeric_limits<T>::max() + b)))) {
+            return true;
+        }
+    }
+    else {
+        if (b > a) {
+            return true;
+        }
+    }
+    *result = a - b;
+    return false;
+}
+
+/**
+ * Compiler-independent check for multiplication overflow / underflow
+ * @param a First value
+ * @param b Second value
+ * @param result Pointer to store the result in
+ * @returns Returns true if the operation would cause overflow / underflow
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+[[nodiscard]] inline bool _mul_overflow(T a, T b, T* result) {
+    // We always check to see if the type is eligible for overflow before calling
+    // this function, so no need to check again
+    if (a == 0 || b == 0) {
+        *result = 0;
+        return false;
+    }
+    // Get the min and max values for the type T
+    T min_val = std::numeric_limits<T>::min();
+    T max_val = std::numeric_limits<T>::max();
+    // Validate the multiplication
+    if (a > 0) {
+        if (b > 0) {
+            if (a > (max_val / b)) {
+                return true;
+            }
+            else {
+                *result = a * b;
+                return false;
+            }
+        }
+        else {
+            if (b < (min_val / a)) {
+                return true;
+            }
+            else {
+                *result = a * b;
+                return false;
+            }
+        }
+    }
+    else {
+        if (b > 0) {
+            if (a < (min_val / b)) {
+                return true;
+            }
+            else {
+                *result = a * b;
+                return false;
+            }
+        }
+        else {
+            if (a < (max_val) / b) {
+                return true;
+            }
+            else {
+                *result = a * b;
+                return false;
+            }
+        }
+    }
+}
+
+/**
  * Template for a generic Tensor, where T can be any numeric type, like a variety of int,
  * double, float, etc.
  */
@@ -105,7 +221,6 @@ private:
      * in checking function
      */
     static constexpr bool _can_overflow = std::is_same_v<T, char> || std::is_same_v<T, signed char> || std::is_same_v<T, int> || std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> || std::is_same_v<T, int32_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, unsigned char> || std::is_same_v<T, unsigned int> || std::is_same_v<T, size_t> || std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>;
-
 
 /* Private functions */
     /**
@@ -172,116 +287,6 @@ private:
         }
 
         return true;
-    }
-
-    /**
-     * Compiler-independent check for addition overflow / underflow
-     * @param a First value
-     * @param b Second value
-     * @param result Pointer to store the result in
-     * @returns Returns true if the operation would cause overflow / underflow
-     */
-    [[nodiscard]] bool _add_overflow(T a, T b, T* result) const {
-        // We always check to see if the type is eligible for overflow before calling
-        // this function, so no need to check again
-        if constexpr (std::numeric_limits<T>::is_signed) {
-            if (((b > 0) && (a > (std::numeric_limits<T>::max() - b))) || 
-                ((b < 0) && (a < (std::numeric_limits<T>::min() - b)))) {
-                return true;
-            }
-        }
-        else {
-            if (a > (std::numeric_limits<T>::max() - b)) {
-                return true;
-            }
-        }
-        *result = a + b;
-        return false;
-    }
-
-    /**
-     * Compiler-independent check for subtraction overflow / underflow
-     * @param a First value
-     * @param b Second value
-     * @param result Pointer to store the result in
-     * @returns Returns true if the operation would cause overflow / underflow
-     */
-    [[nodiscard]] bool _sub_overflow(T a, T b, T* result) const {
-        // We always check to see if the type is eligible for overflow before calling
-        // this function, so no need to check again
-        if constexpr (std::numeric_limits<T>::is_signed) {
-            if (((b > 0) && (a < (std::numeric_limits<T>::min() + b))) || 
-                ((b < 0) && (a > (std::numeric_limits<T>::max() + b)))) {
-                return true;
-            }
-        }
-        else {
-            if (b > a) {
-                return true;
-            }
-        }
-        *result = a - b;
-        return false;
-    }
-
-    /**
-     * Compiler-independent check for multiplication overflow / underflow
-     * @param a First value
-     * @param b Second value
-     * @param result Pointer to store the result in
-     * @returns Returns true if the operation would cause overflow / underflow
-     */
-    [[nodiscard]] bool _mul_overflow(T a, T b, T* result) const {
-        // We always check to see if the type is eligible for overflow before calling
-        // this function, so no need to check again
-        if (a == 0 || b == 0) {
-            *result = 0;
-            return false;
-        }
-        // Get the min and max values for the type T
-        T min_val = std::numeric_limits<T>::min();
-        T max_val = std::numeric_limits<T>::max();
-        // Validate the multiplication
-        if (a > 0) {
-            if (b > 0) {
-                if (a > (max_val / b)) {
-                    return true;
-                }
-                else {
-                    *result = a * b;
-                    return false;
-                }
-            }
-            else {
-                if (b < (min_val / a)) {
-                    return true;
-                }
-                else {
-                    *result = a * b;
-                    return false;
-                }
-            }
-        }
-        else {
-            if (b > 0) {
-                if (a < (min_val / b)) {
-                    return true;
-                }
-                else {
-                    *result = a * b;
-                    return false;
-                }
-            }
-            else {
-                if (a < (max_val) / b) {
-                    return true;
-                }
-                else {
-                    *result = a * b;
-                    return false;
-                }
-            }
-        }
     }
 
 /* Protected functions */
@@ -1044,6 +1049,70 @@ public:
         return result;
     }
 
+    /**
+     * Expose whether a type can overflow, preventing extra checks if not necessary
+     */
+    constexpr bool can_overflow() const {
+        return _can_overflow;
+    }
+
+    /**
+     * Calculate the dot product of two Tensors
+     * @param lhs Tensor to calculate dot product with
+     * @returns Returns the dot product, of type T
+     */
+    T dot(const Tensor<T>& lhs) const {
+        // Ensure that both of our Tensors have rank == 1, otherwise dot cannot execute
+        if (c_rank != 1 || lhs.c_rank != 1) {
+            throw std::invalid_argument("Tensor.dot: Tensors must be rank == 1 for dot\n");
+        }
+        if (c_elements != lhs.c_elements) {
+            throw std::invalid_argument("Tensor.dot: Tensors must have the same number of elements for dot\n");
+        }
+        // Check if we need to worry about overflow
+        if constexpr (_can_overflow) {
+            // Multiply each element and add to the sum
+            T result = 0, mul_result = 0;
+            for (size_t i = 0; i < c_elements; ++i) {
+                if (_mul_overflow(m_data.get()[i], lhs.m_data.get()[i], &mul_result)) {
+                    throw std::overflow_error("Tensor.dot: Multiplication in dot will cause overflow / underflow\n");
+                }
+                if (_add_overflow(result, mul_result, &result)) {
+                    throw std::overflow_error("Tensor.dot: Addition of multiplication result will cause overflow / underflow\n");
+                }
+            }
+            return result;
+        }
+        // If we won't need to worry about overflow, perform the op directly
+        T result = 0;
+        for (size_t i = 0; i < c_elements; ++i) {
+            result += m_data.get()[i] * lhs.m_data.get()[i];
+        }
+        return result;
+    }
+
+    /**
+     * Calculate the sum of a Tensor
+     * @returns Returns the sum
+     */
+    T sum() const {
+        // Check to see if we need to worry about overflow / underflow
+        if constexpr (_can_overflow) {
+            T result = 0;
+            for (size_t i = 0; i < c_elements; ++i) {
+                if (_add_overflow(result, m_data.get()[i], &result)) {
+                    throw std::overflow_error("Tensor.sum: Addition will cause overflow / underflow.\n");
+                }
+            }
+            return result;
+        }
+        T result = 0;
+        for (size_t i = 0; i < c_elements; ++i) {
+            result += m_data.get()[i];
+        }
+        return result;
+    }
+
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };
@@ -1500,17 +1569,39 @@ public:
      */
     Matrix<T> matmul(const Matrix<T>& rhs) const {
         if (!_matrix_can_matmul(rhs)) {
-            throw std::invalid_argument(std::format("Matrix.matmul: Incompatible Matrix provided to matmul, cannot matmul [{} x {}] with [{} x {}]\n",
+            throw std::invalid_argument(std::format("Matrix.matmul: Incompatible Matrix provided to matmul, cannot matmul [{}, {}] with [{}, {}]\n",
                                                     m_ro_span.extent(0), m_ro_span.extent(1), rhs.m_ro_span.extent(0), rhs.m_ro_span.extent(1)));
         }
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
         Matrix<T> result({m_ro_span.extent(1), rhs.m_ro_span.extent(0)});
-        // Use a naive loop to perform matmul
-        for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
-            for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
-                for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
-                    // Benefit of using spans to access the underlying data
-                    result.m_rw_span[i, j] += m_ro_span[i, k] * rhs.m_ro_span[k, j];
+        // Check if we have to be concerned about overflow / underflow
+        if constexpr (this->can_overflow()) {
+            // Create buffers for overflow / underflow checking
+            T mul_result = 0, add_result = 0;
+            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
+                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+                    // Get a pointer to the result's [i, j]
+                    size_t* result_i_j = &(result.m_rw_span[i, j]);
+                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                        // First multiply [i, k] * [k, j]
+                        if (_mul_overflow(m_ro_span[i, k], rhs.m_ro_span[k, j], &mul_result)) {
+                            throw std::overflow_error("Matrix.matmul: Multiplication results in overflow / underflow.\n");
+                        }
+                        if (_add_overflow(*result_i_j, mul_result, result_i_j)) {
+                            throw std::overflow_error("Matrix.matmul: Addition results in overflow / underflow.\n");
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            // Use a naive loop to perform matmul
+            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
+                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                        // Benefit of using spans to access the underlying data
+                        result.m_rw_span[i, j] += m_ro_span[i, k] * rhs.m_ro_span[k, j];
+                    }
                 }
             }
         }
@@ -1531,12 +1622,34 @@ public:
         }
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
         Matrix<T> result({m_ro_span.extent(1), tensor_dims.at(0)});
-        // Use a naive loop to perform matmul
-        for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
-            for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
-                for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
-                    // Benefit of using spans to access the underlying data
-                    result.m_rw_span[i, j] += m_ro_span[i, k] * rhs.at({k, j});
+        // Check if we have to be concerned about overflow / underflow
+        if constexpr (this->can_overflow()) {
+            // Create buffers for overflow / underflow checking
+            T mul_result = 0, add_result = 0;
+            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
+                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+                    // Get a pointer to the result's [i, j]
+                    size_t* result_i_j = &(result.m_rw_span[i, j]);
+                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                        // First multiply [i, k] * [k, j]
+                        if (_mul_overflow(m_ro_span[i, k], rhs.at({k, j}), &mul_result)) {
+                            throw std::overflow_error("Matrix.matmul: Multiplication results in overflow / underflow.\n");
+                        }
+                        if (_add_overflow(*result_i_j, rhs.at({k, j}), result_i_j)) {
+                            throw std::overflow_error("Matrix.matmul: Addition results in overflow / underflow.\n");
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            // Use a naive loop to perform matmul
+            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
+                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                        // Benefit of using spans to access the underlying data
+                        result.m_rw_span[i, j] += m_ro_span[i, k] * rhs.at({k, j});
+                    }
                 }
             }
         }
@@ -1730,7 +1843,9 @@ private:
             // If we are getting a Matrix from a high-rank Tensor, ensure we map both
             m_other_axes.at(c_slice_dims.at(1)) = m_dim1_map.at(c.begin()[1]);
         }
-        else {
+        // Ensure c has two coordinates, otherwise pass m_other_axes with only
+        // one mapped coordinate back
+        else if (c.size() > 1) {
             // If m_dim1_map is empty, pass through the second axis directly
             m_other_axes.at(c_slice_dims.at(1)) = c.begin()[1];
         }
@@ -2053,6 +2168,43 @@ public:
             for (size_t j = 0; j < c_cols; ++j) {
                 result.at({i, j}) = this->at({i, j});
             }
+        }
+        return result;
+    }
+
+    /**
+     * Calculate the dot product of two TensorSlices
+     * @param lhs TensorSlice to calculate dot product with
+     * @returns Returns the sum of the slices
+     */
+    T dot(TensorSlice<T>& lhs) {
+        // Ensure each TensorSlice has rank == 1
+        if (rank() != 1 || lhs.rank() != 1) {
+            throw std::invalid_argument("TensorSlice.dot: TensorSlices must have rank == 1 for dot.\n");
+        }
+        // Ensure each TensorSlice has the same number of elements
+        if (elements() != lhs.elements()) {
+            throw std::invalid_argument("TensorSlice.dot: TensorSlices must have the same number of elements\n");
+        }
+        // Check to see if we need to be concerned about overflow / underflow
+        if constexpr (c_ref.get().can_overflow()) {
+            // Use the overflow / underflow detection for safety
+            T result = 0, mul_result = 0;
+            // Iterate over the elements and multiply them element-wise, then sum
+            for (size_t i = 0; i < elements(); ++i) {
+                if (_mul_overflow(this->at({i}), lhs.at({i}), &mul_result)) {
+                    throw std::overflow_error("TensorSlice.dot: Multiplication in dot will cause overflow / underflow\n");
+                }
+                if (_add_overflow(result, mul_result, &result)) {
+                    throw std::overflow_error("TensorSlice.dot: Addition of multiplication result will cause overflow / underflow\n");
+                }
+            }
+            return result;
+        }
+        // Otherwise, perform the op directly
+        T result = 0;
+        for (size_t i = 0; i < elements(); ++i) {
+            result += this->at({i}) * lhs.at({i});
         }
         return result;
     }

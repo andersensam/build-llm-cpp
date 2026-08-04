@@ -43,9 +43,9 @@ int main() {
     try {
         
         log_message(Log_Priority::INFO, "main", "Initializing tokenizer");
-        //BytePairEncoding_NS::BytePairEncodingTokenizer BPET("./data/the-verdict.txt");
-        auto tokenizer_ptr = std::make_shared<BytePairEncoding_NS::BytePairEncodingTokenizer>("./data/the-verdict.txt");
+        auto tokenizer_ptr = std::make_shared<BytePairEncoding_NS::BytePairEncodingTokenizer>("./models/BPE.model");
         BytePairEncoding_NS::BytePairEncodingTokenizer& BPET = *tokenizer_ptr;
+        //BPET.update_vocabulary_from_file("./data/the-verdict.txt");
         log_message(Log_Priority::INFO, "main", std::format("Tokenizer initialized with vocab size {}", BPET.vocab_size()));
 
         // Define the embedding dimension and vocab size

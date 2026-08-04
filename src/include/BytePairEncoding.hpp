@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-28
+ * @version: 2026-08-03
  *
  * General Notes:
  *
@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstddef>
+#include <format>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -29,6 +30,7 @@
 #include <limits>
 #include <numeric>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -51,6 +53,13 @@ inline constexpr unsigned FOURTH_BYTE_SHIFT = 24;
 inline constexpr unsigned BYTE_MASK = (1 << 8) - 1;
 // The maximum possible vocabulary size
 inline constexpr unsigned MAX_VOCAB_SIZE = 65535;
+// Magic numbers for BPE model, not using constexpr since we need the memory addresses
+// of the numbers for file io
+inline const uint32_t BPE_START_MAGIC_NUMBER = 0x885173;
+inline const uint32_t BPE_NUM_VOCAB_MAGIC_NUMBER = 0x885174;
+inline const uint32_t BPE_TOKEN_START_MAGIC_NUMBER = 0x885175;
+inline const uint32_t BPE_TOKEN_END_MAGIC_NUMBER = 0x885176;
+inline const uint32_t BPE_END_MAGIC_NUMBER = 0x885179;
 
 /**
  * Object for storing information about a specific byte pair, including its contents
@@ -196,8 +205,8 @@ public:
     BytePairEncodingTokenizer();
 
     /**
-     * Construct an instance of the BPE tokenizer, basing its vocabulary on a text file
-     * @param path Path to a text file to read in and create vocabulary from
+     * Construct an instance of the BPE tokenizer, reading in an existing model from a path
+     * @param path Path to a model file
      * @returns Returns a new instance of the BPE tokenizer with vocabulary
      */
     explicit BytePairEncodingTokenizer(const std::string& path);
@@ -214,6 +223,13 @@ public:
      */
     const std::vector<uint32_t>& token_ids() const override;
 
+    /**
+     * Add new vocabulary to the BPE tokenizer
+     * @param path A path to a text file to create new vocabulary from
+     * @returns Returns true if additional vocabulary was created, false if all tokens already exist in the tokenizer
+     */
+    bool update_vocabulary_from_file(const std::string& path);
+    
     /**
      * Add new vocabulary to the BPE tokenizer
      * @param s A string to create new vocabulary from
@@ -234,6 +250,13 @@ public:
      * @returns Returns a string containing the detokenized output
      */
     std::string detokenize_to_string(const std::vector<size_t>& v) const override;
+
+    /**
+     * Export BytePairEncoding to a model file
+     * @param path Path to save the BPE model to
+     * @returns True if successful, false otherwise
+     */
+    bool export_to_file(const std::string& path) const;
 };
 
 /**
