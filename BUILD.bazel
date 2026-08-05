@@ -34,6 +34,27 @@ cc_library(
     ]
 )
 
+# TensorSlice template library
+cc_library(
+    name = "tensorslice",
+    srcs = glob(
+        [
+            "src/TensorSlice.cpp"
+        ]
+    ),
+    hdrs = glob(
+        [
+            "src/include/TensorSlice.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":llmlog",
+        ":tensor",
+    ]
+)
+
 # Abstract base class for any Tokenizer implementation
 cc_library(
     name = "tokenizer",
@@ -102,6 +123,7 @@ cc_binary(
         ":llmlog",
         ":bpe",
         ":tensor",
+        ":tensorslice",
         ":dataloader"
     ]
 )
