@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-05
+ * @version: 2026-08-06
  *
  * General Notes:
  *
@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <climits>
+#include <cmath>
 #include <cstring>
 #include <cxxabi.h>
 #include <expected>
@@ -303,6 +304,7 @@ protected:
         std::swap(m_dims.at(0), m_dims.at(1));
         return true;
     }
+
 /* Public functions */
 public:
     /**
@@ -1044,7 +1046,7 @@ public:
     /**
      * Expose whether a type can overflow, preventing extra checks if not necessary
      */
-    constexpr bool can_overflow() const {
+    [[nodiscard]] constexpr bool can_overflow() const {
         return _can_overflow;
     }
 
@@ -1585,13 +1587,13 @@ public:
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
         Matrix<T> result({m_ro_span.extent(1), rhs.m_ro_span.extent(0)});
         // Check if we have to be concerned about overflow / underflow
-        if constexpr (this->can_overflow()) {
-            // Create buffers for overflow / underflow checking
-            T mul_result = 0, add_result = 0;
+        if (this->can_overflow()) {
+            // Create buffer for overflow / underflow checking
+            T mul_result = 0;
             for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
                 for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
                     // Get a pointer to the result's [i, j]
-                    size_t* result_i_j = &(result.m_rw_span[i, j]);
+                    T* result_i_j = &(result.m_rw_span[i, j]);
                     for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
                         // First multiply [i, k] * [k, j]
                         if (_mul_overflow(m_ro_span[i, k], rhs.m_ro_span[k, j], &mul_result)) {
@@ -1627,19 +1629,19 @@ public:
         // Grab the Tensor's dimensions for reference later
         const std::vector<size_t>& tensor_dims = rhs.dims();
         if (!_tensor_can_matmul(rhs)) {
-            throw std::invalid_argument(std::format("Matrix.matmul: Incompatible Tensor provided to matmul, cannot matmul [{} x {}] with [{} x {}]\n",
+            throw std::invalid_argument(std::format("Matrix.matmul: Incompatible Tensor provided to matmul, cannot matmul [{}, {}] with [{}, {}]\n",
                                                     m_ro_span.extent(0), m_ro_span.extent(1), tensor_dims.at(0), tensor_dims.at(1)));
         }
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
         Matrix<T> result({m_ro_span.extent(1), tensor_dims.at(0)});
         // Check if we have to be concerned about overflow / underflow
-        if constexpr (this->can_overflow()) {
-            // Create buffers for overflow / underflow checking
-            T mul_result = 0, add_result = 0;
+        if (this->can_overflow()) {
+            // Create buffer for overflow / underflow checking
+            T mul_result = 0;
             for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
                 for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
                     // Get a pointer to the result's [i, j]
-                    size_t* result_i_j = &(result.m_rw_span[i, j]);
+                    T* result_i_j = &(result.m_rw_span[i, j]);
                     for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
                         // First multiply [i, k] * [k, j]
                         if (_mul_overflow(m_ro_span[i, k], rhs.at({k, j}), &mul_result)) {
@@ -1659,6 +1661,68 @@ public:
                     for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
                         // Benefit of using spans to access the underlying data
                         result.m_rw_span[i, j] += m_ro_span[i, k] * rhs.at({k, j});
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /** 
+     * Perform a matmul on a Matrix instance with itself
+     * @param transpose Whether to transpose self when performing the matmul, resulting in
+     * self @ self.transpose()
+     * @returns Returns a new Matrix instance containing the matmul result 
+     */
+    Matrix<T> matmul_self(bool transpose) const {
+        if (!transpose) {
+            if (m_ro_span.extent(0) != m_ro_span.extent(1)) {
+                throw std::invalid_argument("Matrix.matmul_self: Cannot perform matmul_self on a Matrix that is not square\n");
+            }
+        }
+        // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
+        Matrix<T> result({m_ro_span.extent(0), m_ro_span.extent(0)});
+        // Check if we have to be concerned about overflow / underflow
+        if (this->can_overflow()) {
+            // Create buffer for overflow / underflow checking
+            T mul_result = 0;
+            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
+                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+                    // Get a pointer to the result's [i, j]
+                    T lhs_val = 0, rhs_val = 0;
+                    T* result_i_j = &(result.m_rw_span[i, j]);
+                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                        // First multiply [i, k] * [k, j]
+                        lhs_val = m_ro_span[i, k];
+                        if (transpose) {
+                            rhs_val = m_ro_span[j, k];
+                        }
+                        else {
+                            rhs_val = lhs_val;
+                        }
+                        if (_mul_overflow(lhs_val, rhs_val, &mul_result)) {
+                            throw std::overflow_error("Matrix.matmul: Multiplication results in overflow / underflow.\n");
+                        }
+                        if (_add_overflow(*result_i_j, mul_result, result_i_j)) {
+                            throw std::overflow_error("Matrix.matmul: Addition results in overflow / underflow.\n");
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            T lhs_val = 0, rhs_val = 0;
+            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
+                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                        lhs_val = m_ro_span[i, k];
+                        if (transpose) {
+                            rhs_val = m_ro_span[j, k];
+                        }
+                        else {
+                            rhs_val = lhs_val;
+                        }
+                        result.m_rw_span[i, j] = lhs_val * rhs_val;
                     }
                 }
             }
@@ -1751,13 +1815,91 @@ public:
         return result;
     }
 
+    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
     /**
-     * Lookup rows / columns from a Matrix, returning their contents in a new Matrix instance
-     * that spans the dimensions in question
-     * @param targets A 1-D Tensor containing the rows / columns to extract
-     * @param orientation Row or col
-     * @returns Returns a new Matrix instance with 
+     * Get the sum of a Matrix's rows or columns
+     * @param dim Dimension to sum across
+     * @param idx Index on the specified dimension to sum
+     * @returns Returns the sum
      */
+    T sum(size_t dim, size_t idx) const {
+        if (dim > 1) {
+            throw std::invalid_argument("Matrix.sum: Invalid dim specified for sum.\n");
+        }
+        T result = 0;
+        // Sum across a row
+        if (dim == 0) {
+            if (idx >= rows()) {
+                throw std::invalid_argument("Matrix.sum: Invalid index provided to sum.\n");
+            }
+            if (this->can_overflow()) {
+                for (size_t i = 0; i < cols(); ++i) {
+                    if (_add_overflow(result, at({idx, i}), &result)) {
+                        throw std::overflow_error("Matrix.sum: Addition will cause overflow / underflow.");
+                    }
+                }
+            }
+            else {
+                for (size_t i = 0; i < cols(); ++i) {
+                    result += at({idx, i});
+                }
+            }
+        }
+        else {
+            if (idx >= cols()) {
+                throw std::invalid_argument("Matrix.sum: Invalid index provided to sum.\n");
+            }
+            if (this->can_overflow()) {
+                for (size_t i = 0; i < rows(); ++i) {
+                    if (_add_overflow(result, at({i, idx}), &result)) {
+                        throw std::overflow_error("Matrix.sum: Addition will cause overflow / underflow.");
+                    }
+                }
+            }
+            else {
+                for (size_t i = 0; i < rows(); ++i) {
+                    result += at({i, idx});
+                }
+            }
+        }
+        return result;
+    }
+    // NOLINTEND(bugprone-easily-swappable-parameters)
+
+    /**
+     * Apply softmax to a Matrix across a specified dim
+     * @param dim Dimension to apply softmax across
+     * @returns Returns a reference to this Matrix
+     */
+    Matrix<T>& softmax(size_t dim) {
+        if constexpr (!std::is_floating_point_v<T>) {
+            throw std::invalid_argument("Matrix.softmax: Cannot apply softmax to non-floating point Matrix.\n");
+        }
+        if (dim > 1) {
+            throw std::invalid_argument("Matrix.softmax: Invalid dim specified for softmax.\n");
+        }
+        // Apply the exp function across all elements in the Matrix
+        this->apply(std::exp);
+        // Sum the values across the specified dim
+        if (dim == 0) {
+            for (size_t i = 0; i < rows(); ++i) {
+                T row_sum = sum(dim, i);
+                for (size_t j = 0; j < cols(); ++j) {
+                    at({i, j}) /= row_sum;
+                }
+            }
+        }
+        else {
+            for (size_t i = 0; i < cols(); ++i) {
+                T col_sum = sum(dim, i);
+                for (size_t j = 0; j < rows(); ++j) {
+                    at({j, i}) /= col_sum;
+                }
+            }
+        }
+        return *this;
+    }
+
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };

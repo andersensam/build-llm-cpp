@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-05
+ * @version: 2026-08-06
  *
  * General Notes:
  *
@@ -193,6 +193,10 @@ const std::vector<size_t>& MatrixSliceConfig::get_idxs() const {
 
 bool MatrixSliceConfig::has_orientation() const {
     return false;
+}
+
+SliceOrientation MatrixSliceConfig::get_orientation() const {
+    throw std::runtime_error("MatrixSliceConfig.get_orientation: MatrixSliceConfig does not have an orientation.\n");
 }
 
 bool MatrixSliceConfig::has_other_dims() const {
