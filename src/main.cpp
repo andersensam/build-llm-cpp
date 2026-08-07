@@ -103,7 +103,33 @@ int main() {
 
         // Create the context Matrix
         Matrix<float> context = attn_scores.matmul(query_result);
-        log_message(Log_Priority::INFO, "main", std::format("Context Matrix: {}", context.to_string()));
+        log_message(Log_Priority::INFO, "main", std::format("Context Matrix: {}", context.info()));
+
+        // Create the QKV matrices
+        Matrix<float> W_q({emb_dim, emb_dim});
+        Matrix<float> W_k({emb_dim, emb_dim});
+        Matrix<float> W_v({emb_dim, emb_dim});
+        // Fill the matrices with random weights
+        W_q.random(-2.f, 2.f);
+        W_k.random(-2.f, 2.f);
+        W_v.random(-2.f, 2.f);
+
+        // Calculate all keys and values
+        Matrix<float> queries = query_result.matmul(W_q);
+        Matrix<float> keys = query_result.matmul(W_k);
+        Matrix<float> values = query_result.matmul(W_v);
+        log_message(Log_Priority::INFO, "main", std::format("Query Matrix: {}. Key Matrix: {}. Value Matrix: {}.", queries.info(), keys.info(), values.info()));
+
+        // Transpose keys for using the matmul
+        Matrix<float> keys_t = keys.transpose();
+        Matrix<float> attn_scores_full = queries.matmul(keys_t);
+        // Scale the attention scores by the squareroot of the embedding dimension
+        attn_scores_full /= std::sqrtf(static_cast<float>(emb_dim));
+        // Apply softmax on the attention scores
+        attn_scores_full.softmax(0);
+        // Calculate the context vector
+        Matrix<float> context_full = attn_scores_full.matmul(values);
+        log_message(Log_Priority::INFO, "main", std::format("Context Matrix: {}", context_full.info()));
 
     } catch (const std::exception& e) {
 

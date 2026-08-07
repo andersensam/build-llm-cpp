@@ -1585,16 +1585,16 @@ public:
                                                     m_ro_span.extent(0), m_ro_span.extent(1), rhs.m_ro_span.extent(0), rhs.m_ro_span.extent(1)));
         }
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
-        Matrix<T> result({m_ro_span.extent(1), rhs.m_ro_span.extent(0)});
+        Matrix<T> result({rows(), rhs.cols()});
         // Check if we have to be concerned about overflow / underflow
         if (this->can_overflow()) {
             // Create buffer for overflow / underflow checking
             T mul_result = 0;
-            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
-                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
                     // Get a pointer to the result's [i, j]
                     T* result_i_j = &(result.m_rw_span[i, j]);
-                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                    for (size_t k = 0; k < cols(); ++k) {
                         // First multiply [i, k] * [k, j]
                         if (_mul_overflow(m_ro_span[i, k], rhs.m_ro_span[k, j], &mul_result)) {
                             throw std::overflow_error("Matrix.matmul: Multiplication results in overflow / underflow.\n");
@@ -1608,9 +1608,9 @@ public:
         }
         else {
             // Use a naive loop to perform matmul
-            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
-                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
-                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    for (size_t k = 0; k < cols(); ++k) {
                         // Benefit of using spans to access the underlying data
                         result.m_rw_span[i, j] += m_ro_span[i, k] * rhs.m_ro_span[k, j];
                     }
@@ -1630,19 +1630,19 @@ public:
         const std::vector<size_t>& tensor_dims = rhs.dims();
         if (!_tensor_can_matmul(rhs)) {
             throw std::invalid_argument(std::format("Matrix.matmul: Incompatible Tensor provided to matmul, cannot matmul [{}, {}] with [{}, {}]\n",
-                                                    m_ro_span.extent(0), m_ro_span.extent(1), tensor_dims.at(0), tensor_dims.at(1)));
+                                                    rows(), cols(), tensor_dims.at(0), tensor_dims.at(1)));
         }
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
-        Matrix<T> result({m_ro_span.extent(1), tensor_dims.at(0)});
+        Matrix<T> result({rows(), tensor_dims.at(1)});
         // Check if we have to be concerned about overflow / underflow
         if (this->can_overflow()) {
             // Create buffer for overflow / underflow checking
             T mul_result = 0;
-            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
-                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
                     // Get a pointer to the result's [i, j]
                     T* result_i_j = &(result.m_rw_span[i, j]);
-                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                    for (size_t k = 0; k < cols(); ++k) {
                         // First multiply [i, k] * [k, j]
                         if (_mul_overflow(m_ro_span[i, k], rhs.at({k, j}), &mul_result)) {
                             throw std::overflow_error("Matrix.matmul: Multiplication results in overflow / underflow.\n");
@@ -1656,9 +1656,9 @@ public:
         }
         else {
             // Use a naive loop to perform matmul
-            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
-                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
-                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    for (size_t k = 0; k < cols(); ++k) {
                         // Benefit of using spans to access the underlying data
                         result.m_rw_span[i, j] += m_ro_span[i, k] * rhs.at({k, j});
                     }
@@ -1681,17 +1681,17 @@ public:
             }
         }
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
-        Matrix<T> result({m_ro_span.extent(0), m_ro_span.extent(0)});
+        Matrix<T> result({rows(), rows()});
         // Check if we have to be concerned about overflow / underflow
         if (this->can_overflow()) {
             // Create buffer for overflow / underflow checking
             T mul_result = 0;
-            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
-                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
                     // Get a pointer to the result's [i, j]
                     T lhs_val = 0, rhs_val = 0;
                     T* result_i_j = &(result.m_rw_span[i, j]);
-                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+                    for (size_t k = 0; k < cols(); ++k) {
                         // First multiply [i, k] * [k, j]
                         lhs_val = m_ro_span[i, k];
                         if (transpose) {
@@ -1712,9 +1712,9 @@ public:
         }
         else {
             T lhs_val = 0, rhs_val = 0;
-            for (size_t i = 0; i < result.m_rw_span.extent(0); ++i) {
-                for (size_t j = 0; j < result.m_rw_span.extent(1); ++j) {
-                    for (size_t k = 0; k < m_ro_span.extent(1); ++k) {
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    for (size_t k = 0; k < rows(); ++k) {
                         lhs_val = m_ro_span[i, k];
                         if (transpose) {
                             rhs_val = m_ro_span[j, k];
