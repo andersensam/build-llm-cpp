@@ -43,7 +43,7 @@ int main() {
     using TensorSlice_NS::TensorSlice;
     using TensorSlice_NS::VectorSliceConfig;
     using TensorSlice_NS::MatrixSliceConfig;
-    using TensorSlice_NS::SliceOrientation;
+    using TensorSlice_NS::VectorSliceOrientation;
     using TensorSlice_NS::IndexType;
 
     using DataLoader_NS::DataLoader;
@@ -76,7 +76,7 @@ int main() {
         // Define our query, which is the 2nd input token
         size_t query_token = input_batch.at({0, 1}); // First batch, second token
         // Lookup the embedding for the query_token
-        VectorSliceConfig query_vsc(0, query_token, 1, {}, SliceOrientation::ROW, {});
+        VectorSliceConfig query_vsc(0, query_token, 1, {}, VectorSliceOrientation::ROW, {});
         TensorSlice<float> query_emb(emb, query_vsc);
         log_message(Log_Priority::INFO, "main", std::format("Querying for token id {}. Slice info: {}", query_token, query_emb.info()));
 

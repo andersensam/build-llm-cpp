@@ -20,13 +20,13 @@
 using TensorSlice_NS::SliceConfig;
 using TensorSlice_NS::VectorSliceConfig;
 using TensorSlice_NS::MatrixSliceConfig;
-using TensorSlice_NS::SliceOrientation;
+using TensorSlice_NS::VectorSliceOrientation;
 using TensorSlice_NS::IndexType;
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 
 VectorSliceConfig::VectorSliceConfig(size_t idx_dim, size_t idx, size_t dim1, const std::initializer_list<size_t>& dim1_filter,
-                                     SliceOrientation orientation, const std::initializer_list<std::pair<size_t,size_t>>& other_dims) : c_dim0(idx_dim),
+                                     VectorSliceOrientation orientation, const std::initializer_list<std::pair<size_t,size_t>>& other_dims) : c_dim0(idx_dim),
                                      c_dim1(dim1), c_orientation(orientation) {
     // Store the index
     c_idx.push_back(idx);
@@ -83,7 +83,7 @@ bool VectorSliceConfig::has_orientation() const {
     return true;
 }
 
-SliceOrientation VectorSliceConfig::get_orientation() const {
+VectorSliceOrientation VectorSliceConfig::get_orientation() const {
     return c_orientation;
 }
 
@@ -195,7 +195,7 @@ bool MatrixSliceConfig::has_orientation() const {
     return false;
 }
 
-SliceOrientation MatrixSliceConfig::get_orientation() const {
+VectorSliceOrientation MatrixSliceConfig::get_orientation() const {
     throw std::runtime_error("MatrixSliceConfig.get_orientation: MatrixSliceConfig does not have an orientation.\n");
 }
 

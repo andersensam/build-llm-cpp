@@ -48,7 +48,7 @@ using Tensor_NS::_mul_overflow;
 /**
  * Enum for whether a 1-D Tensor (vector) should be represented as a row or column
  */
-enum class SliceOrientation : uint8_t {
+enum class VectorSliceOrientation : uint8_t {
     ROW,
     COLUMN
 };
@@ -109,7 +109,7 @@ public:
      * Get the orientation, if present
      * @returns Return the SliceOrentation enum, either ROW or COLUMN
      */
-    virtual SliceOrientation get_orientation() const = 0;
+    virtual VectorSliceOrientation get_orientation() const = 0;
 
     /**
      * Checks whether or not we need to have other_dims defined
@@ -170,7 +170,7 @@ private:
      * The orientation of the Slice, defaulting to a single row with the
      * number of columns coming from the source
      */
-    SliceOrientation c_orientation = SliceOrientation::ROW;
+    VectorSliceOrientation c_orientation = VectorSliceOrientation::ROW;
 
     /**
      * Optional other axes, used when building a 1-D Slice from a high rank Tensor
@@ -195,7 +195,7 @@ public:
      * @param other_dims Other dims coordinates, needed for high-rank Tensors
      */
     VectorSliceConfig(size_t idx_dim, size_t idx, size_t dim1, const std::initializer_list<size_t>& dim1_filter,
-                      SliceOrientation orientation, const std::initializer_list<std::pair<size_t,size_t>>& other_dims);
+                      VectorSliceOrientation orientation, const std::initializer_list<std::pair<size_t,size_t>>& other_dims);
 
     /**
      * Get the first dimension for the Slice
@@ -231,7 +231,7 @@ public:
      * Get the orientation, if present
      * @returns Return the SliceOrentation enum, either ROW or COLUMN
      */
-    SliceOrientation get_orientation() const override;
+    VectorSliceOrientation get_orientation() const override;
 
     /**
      * Checks whether or not we need to have other_dims defined
@@ -344,7 +344,7 @@ public:
     /**
      * Will throw an exception if called on MatrixSliceConfig
      */
-    SliceOrientation get_orientation() const override;
+    VectorSliceOrientation get_orientation() const override;
 
     /**
      * Checks whether or not we need to have other_dims defined
@@ -515,7 +515,7 @@ public:
                 dim1_size = tensor_dims.at(config.get_dim1());
             }
             // Check the orientation and store it
-            if (config.get_orientation() == SliceOrientation::ROW) {
+            if (config.get_orientation() == VectorSliceOrientation::ROW) {
                 // Since this is a 1-D Slice, one of the dims will always be == 1
                 c_slice_dims = {1, dim1_size};
             }
