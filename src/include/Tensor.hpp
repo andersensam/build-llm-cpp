@@ -1165,6 +1165,14 @@ public:
      * @returns Returns a reference to this Tensor
      */
     Tensor<T>& apply_dropout(float dropout) {
+        // Ensure dropout is in the range of > 0, < 1.0
+        if (dropout < 0 || dropout >= 1.0f) {
+            throw std::invalid_argument("Tensor.apply_dropout: Dropout factor cannot be negative or >= 1.\n");
+        }
+        // If dropout == 0, return without making any changes
+        if (dropout == 0) {
+            return *this;
+        }
         // Calculate the number of elements that should be zeroed out
         size_t target_elements = static_cast<size_t>(static_cast<float>(c_elements) * dropout);
         // Calculate the scale factor for the remaining elements
@@ -2067,7 +2075,7 @@ public:
                         throw std::invalid_argument("Matrix.squeezed_op: Divide by zero detected.\n");
                     }
                     for (size_t j = 0; j < other_dim_size; ++j) {
-                        at({i, j}) += vals.at({i});
+                        at({i, j}) /= vals.at({i});
                     }
                 }
                 break;
