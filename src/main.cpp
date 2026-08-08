@@ -39,6 +39,7 @@ int main() {
 
     using Tensor_NS::Tensor;
     using Tensor_NS::Matrix;
+    using Tensor_NS::CausalMaskType;
 
     using TensorSlice_NS::TensorSlice;
     using TensorSlice_NS::VectorSliceConfig;
@@ -123,10 +124,18 @@ int main() {
         // Transpose keys for using the matmul
         Matrix<float> keys_t = keys.transpose();
         Matrix<float> attn_scores_full = queries.matmul(keys_t);
+        // Apply masking
+        //attn_scores_full.ninf_tri(CausalMaskType::LOWER);
+        // Create a triangular Matrix for masking as using ninf appears to cause strange behavior
+        Matrix<float> lower_tri({attn_scores_full.rows(), attn_scores_full.cols()});
+        lower_tri.tri(CausalMaskType::LOWER);
+        attn_scores_full *= lower_tri;
         // Scale the attention scores by the squareroot of the embedding dimension
         attn_scores_full /= std::sqrtf(static_cast<float>(emb_dim));
         // Apply softmax on the attention scores
         attn_scores_full.softmax(0);
+        // Apply dropout
+        attn_scores_full.apply_dropout(0.1);
         // Calculate the context vector
         Matrix<float> context_full = attn_scores_full.matmul(values);
         log_message(Log_Priority::INFO, "main", std::format("Context Matrix: {}", context_full.info()));

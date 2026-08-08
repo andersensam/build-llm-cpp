@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-06
+ * @version: 2026-08-08
  *
  * General Notes:
  *
@@ -38,6 +38,7 @@
 #include <string>
 #include <stdexcept>
 #include <type_traits>
+#include <unordered_set>
 #include <vector>
 
 /* Local dependencies */
@@ -54,6 +55,25 @@ inline constexpr size_t TENSOR_MAX_DEMANGLED_NAME_LEN = 32;
 // Use Logging functions
 using Log::Log_Priority;
 using Log::log_message;
+
+/**
+ * Enum for controlling negative infinity masking for causal attention, only
+ * applicable to square Matrix instances
+ */
+enum class CausalMaskType : uint8_t {
+    UPPER,
+    LOWER
+};
+
+/**
+ * Enum for operations with squeezed Tensors, applied to a Matrix
+ */
+enum class SqueezedOpType : uint8_t {
+    ADD,
+    SUB,
+    MUL,
+    DIV
+};
 
 /**
  * Compiler-independent check for addition overflow / underflow
@@ -897,19 +917,22 @@ public:
     /**
      * Fill a Tensor with a value
      * @param v Value to fill the Tensor with
+     * @returns Returns a reference to this Tensor
      */
-    void fill(const T& v) {
+    Tensor<T>& fill(const T& v) {
         // Set all elements of the Tensor to v
         for (size_t i = 0; i < c_elements; ++i) {
             m_data.get()[i] = v;
         }
+        return *this;
     }
 
     /**
      * Set the contents of a Tensor to a list of values
      * @param v Values to set inside the Tensor
+     * @returns Returns a reference to this Tensor
      */
-    void set(const std::initializer_list<T>& v) {
+    Tensor<T>& set(const std::initializer_list<T>& v) {
         // Ensure v has enough values to satisfy the number of elements in the Tensor
         if (v.size() != c_elements) {
             std::invalid_argument(std::format("Tensor.set: Invalid number of value provided to set. Wanted {} but got {}\n.", c_elements, v.size()));
@@ -918,13 +941,15 @@ public:
         for (size_t i = 0; i < v.size(); ++i) {
             m_data.get()[i] = v.begin()[i];
         }
+        return *this;
     }
 
     /**
      * Apply a function to all elements in a Tensor
      * @param f Function to apply
+     * @returns Returns a reference to this Tensor
      */
-    void apply(T (*f)(T)) {
+    Tensor<T>& apply(T (*f)(T)) {
         // Apply the function pointed to by f to all elements
         try {
             for (size_t i = 0; i < c_elements; ++i) {
@@ -933,14 +958,16 @@ public:
         } catch (const std::exception& e) {
             throw std::invalid_argument(std::format("Tensor.apply: Exception when applying function to Tensor. Error: {}", e.what()));
         }
+        return *this;
     }
 
     /**
      * Apply a function to all elements in a Tensor
      * @param f Function to apply
      * @param p Parameter to supply to function f
+     * @returns Returns a reference to this Tensor
      */
-    void apply(T (*f)(T, T), T param) {
+    Tensor<T>& apply(T (*f)(T, T), T param) {
         // Apply the function pointed to by f to all elements
         try {
             for (size_t i = 0; i < c_elements; ++i) {
@@ -949,6 +976,7 @@ public:
         } catch (const std::exception& e) {
             throw std::invalid_argument(std::format("Tensor.apply: Exception when applying function to Tensor. Error: {}", e.what()));
         }
+        return *this;
     }
 
     /**
@@ -989,8 +1017,9 @@ public:
      * Fill a Tensor with random values, taken from a specified range
      * @param range_min Inclusive minimum
      * @param range_max Inclusive maximum
+     * @returns Returns a pointer to this Tensor
      */
-    void random(T range_min, T range_max) {
+    Tensor<T>& random(T range_min, T range_max) {
         // Prepare to generate random values
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -1012,6 +1041,7 @@ public:
         else {
             throw std::domain_error("Tensor.random: Invalid type for use with random");
         }
+        return *this;
     }
 
     /**
@@ -1111,8 +1141,9 @@ public:
      * Transpose a Tensor along two specified axes
      * @param axis0 First axis to swap
      * @param axis1 Second axis to swap
+     * @returns Returns a reference to this Tensor
      */
-    void transpose(size_t axis0, size_t axis1) {
+    Tensor<T>& transpose(size_t axis0, size_t axis1) {
         // Ensure we have valid axes
         if (axis0 >= m_dims.size() || axis1 >= m_dims.size()) {
             throw std::invalid_argument("Tensor.transpose: Invalid axes provided to transpose.\n");
@@ -1124,6 +1155,48 @@ public:
         // Perform the swap and update the strides
         std::swap(m_stride.at(axis0), m_stride.at(axis1));
         std::swap(m_dims.at(axis0), m_dims.at(axis1));
+        return *this;
+    }
+
+    /**
+     * Apply dropout to a Tensor
+     * @param dropout Float from 0 - 1.0 representing the percentage of items in the Tensor
+     * should be dropped (set to 0)
+     * @returns Returns a reference to this Tensor
+     */
+    Tensor<T>& apply_dropout(float dropout) {
+        // Calculate the number of elements that should be zeroed out
+        size_t target_elements = static_cast<size_t>(static_cast<float>(c_elements) * dropout);
+        // Calculate the scale factor for the remaining elements
+        T scale_factor = static_cast<T>(1.0f / dropout);
+        // Prepare to generate random values
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        // Set the range to be from 0 to c_elements - 1
+        std::uniform_int_distribution<size_t> distrib(0, c_elements - 1);
+        // Use an ordered set to force unique values to be stored
+        std::unordered_set<size_t> target_idxs;
+        target_idxs.reserve(target_elements);
+        // Generate enough unique indices to satisfy target_elements
+        while (target_idxs.size() < target_elements) {
+            target_idxs.insert(distrib(gen));
+        }
+        // Traverse the indices in the set and zero them out
+        for (const auto& idx : target_idxs) {
+            m_data.get()[idx] = 0;
+        }
+        // Apply the scaling factor to the rest of the Tensor
+        *this *= scale_factor;
+        return *this;
+    }
+
+    /**
+     * Find the maximum value in a Tensor
+     * @returns Returns the maximum value
+     */
+    T max() const {
+        // NOLINTNEXTLINE(bugprone-sizeof-expression)
+        return *(std::max_element(m_data.get(), m_data.get() + c_elements));
     }
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -1192,6 +1265,12 @@ private:
         }
         return true;
     }
+
+    /**
+     * Determine if a numeric type can overflow and should be checked by the compiler's built
+     * in checking function
+     */
+    static constexpr bool _can_overflow = std::is_same_v<T, char> || std::is_same_v<T, signed char> || std::is_same_v<T, int> || std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> || std::is_same_v<T, int32_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, unsigned char> || std::is_same_v<T, unsigned int> || std::is_same_v<T, size_t> || std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>;
 
 /* Public functions */
 public:
@@ -1587,7 +1666,7 @@ public:
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
         Matrix<T> result({rows(), rhs.cols()});
         // Check if we have to be concerned about overflow / underflow
-        if (this->can_overflow()) {
+        if constexpr (_can_overflow) {
             // Create buffer for overflow / underflow checking
             T mul_result = 0;
             for (size_t i = 0; i < result.rows(); ++i) {
@@ -1635,7 +1714,7 @@ public:
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
         Matrix<T> result({rows(), tensor_dims.at(1)});
         // Check if we have to be concerned about overflow / underflow
-        if (this->can_overflow()) {
+        if constexpr (_can_overflow) {
             // Create buffer for overflow / underflow checking
             T mul_result = 0;
             for (size_t i = 0; i < result.rows(); ++i) {
@@ -1683,7 +1762,7 @@ public:
         // Create a new Matrix and initialze its values to zero (done in the Tensor constructor)
         Matrix<T> result({rows(), rows()});
         // Check if we have to be concerned about overflow / underflow
-        if (this->can_overflow()) {
+        if constexpr (_can_overflow) {
             // Create buffer for overflow / underflow checking
             T mul_result = 0;
             for (size_t i = 0; i < result.rows(); ++i) {
@@ -1832,7 +1911,7 @@ public:
             if (idx >= rows()) {
                 throw std::invalid_argument("Matrix.sum: Invalid index provided to sum.\n");
             }
-            if (this->can_overflow()) {
+            if constexpr (_can_overflow) {
                 for (size_t i = 0; i < cols(); ++i) {
                     if (_add_overflow(result, at({idx, i}), &result)) {
                         throw std::overflow_error("Matrix.sum: Addition will cause overflow / underflow.");
@@ -1849,7 +1928,7 @@ public:
             if (idx >= cols()) {
                 throw std::invalid_argument("Matrix.sum: Invalid index provided to sum.\n");
             }
-            if (this->can_overflow()) {
+            if constexpr (_can_overflow) {
                 for (size_t i = 0; i < rows(); ++i) {
                     if (_add_overflow(result, at({i, idx}), &result)) {
                         throw std::overflow_error("Matrix.sum: Addition will cause overflow / underflow.");
@@ -1867,33 +1946,254 @@ public:
     // NOLINTEND(bugprone-easily-swappable-parameters)
 
     /**
+     * Get the maximum value found along a dim
+     * @param dim The dimension to search for the max across
+     * @param squeeze True to reduce to a 1-D Tensor with one entry per index on the specified dim,
+     * e.g. if finding a max across a [3, 3] Matrix, the squeezed Tensor will have dim [3, 1]
+     * @returns Returns a Tensor or Matrix with the max values per dim
+     */
+    Tensor<T> max(size_t dim, bool squeeze) const {
+        Tensor<T> result = (squeeze ? Tensor<T>({this->dims().at(dim)}) : Tensor<T>({rows(), cols()}));
+        // Store the max value
+        T dim_max = 0;
+        // Iterate across the rows if dim == 0
+        if (dim == 0) {
+            for (size_t i = 0; i < rows(); ++i) {
+                for (size_t j = 0; j < cols(); ++j) {
+                    const auto& test_val = m_ro_span[i, j];
+                    dim_max = dim_max < test_val ? test_val : dim_max;
+                }
+                if (squeeze) {
+                    result.at({i}) = dim_max;
+                }
+                else {
+                    for (size_t j = 0; j < cols(); ++j) {
+                        result.at({i, j}) = dim_max;
+                    }
+                }
+                dim_max = 0;
+            }
+        }
+        else {
+            for (size_t i = 0; i < cols(); ++i) {
+                for (size_t j = 0; j < rows(); ++j) {
+                    const auto& test_val = m_ro_span[j, i];
+                    dim_max = dim_max < test_val ? test_val : dim_max;
+                }
+                if (squeeze) {
+                    result.at({i}) = dim_max;
+                }
+                else {
+                    for (size_t j = 0; j < rows(); ++j) {
+                        result.at({j, i}) = dim_max;
+                    }
+                }
+                dim_max = 0;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Apply an operation across each index of a dim in a Matrix
+     * @param dim Dimension to apply the operation across
+     * @param vals Const ref to a Tensor containing one value per index of the dim
+     * @param op_type Operation to apply, either ADD, SUB, MUL, DIV
+     */
+    Matrix<T>& squeezed_op(size_t dim, const Tensor<T>& vals, SqueezedOpType op_type) {
+        // Check to see that we have a 1-D Tensor
+        if (vals.rank() != 1) {
+            throw std::invalid_argument("Matrix.squeezed_op: Vals Tensor cannot have rank > 1\n");
+        }
+        // Ensure that the dim is either 0 or 1
+        if (dim > 1) {
+            throw std::invalid_argument("Matrix.squeezed_op: Invalid dim specified for squeezed_op.\n");
+        }
+        // Ensure we have the same number of vals as indices on the specified dim
+        if (vals.elements() != this->dims().at(dim)) {
+            throw std::invalid_argument("Matrix.squeezed_op: Vals Tensor does not have the correct number of elements.\n");
+        }
+        size_t target_dim_size = this->dims().at(dim);
+        size_t other_dim_size = this->dims().at(dim == 0 ? 1: 0);
+        switch (op_type) {
+            case SqueezedOpType::ADD:
+                for (size_t i = 0; i < target_dim_size; ++i) {
+                    for (size_t j = 0; j < other_dim_size; ++j) {
+                        if constexpr (_can_overflow) {
+                            T& val = at({i, j});
+                            if (_add_overflow(val, vals.at({i}), &val)) {
+                                throw std::overflow_error("Matrix.squeezed_op: Addition causes overflow / underflow.\n");
+                            }
+                        }
+                        else {
+                            at({i, j}) += vals.at({i});
+                        }
+                    }
+                }
+                break;
+            case SqueezedOpType::SUB:
+                for (size_t i = 0; i < target_dim_size; ++i) {
+                    for (size_t j = 0; j < other_dim_size; ++j) {
+                        if constexpr (_can_overflow) {
+                            T& val = at({i, j});
+                            if (_sub_overflow(val, vals.at({i}), &val)) {
+                                throw std::overflow_error("Matrix.squeezed_op: Subtraction causes overflow / underflow.\n");
+                            }
+                        }
+                        else {
+                            at({i, j}) -= vals.at({i});
+                        }
+                    }
+                }
+                break;
+            case SqueezedOpType::MUL:
+                for (size_t i = 0; i < target_dim_size; ++i) {
+                    for (size_t j = 0; j < other_dim_size; ++j) {
+                        if constexpr (_can_overflow) {
+                            T& val = at({i, j});
+                            if (_mul_overflow(val, vals.at({i}), &val)) {
+                                throw std::overflow_error("Matrix.squeezed_op: Multiplication causes overflow / underflow.\n");
+                            }
+                        }
+                        else {
+                            at({i, j}) *= vals.at({i});
+                        }
+                    }
+                }
+                break;
+            case SqueezedOpType::DIV:
+                for (size_t i = 0; i < target_dim_size; ++i) {
+                    if (vals.at({i}) == 0) {
+                        throw std::invalid_argument("Matrix.squeezed_op: Divide by zero detected.\n");
+                    }
+                    for (size_t j = 0; j < other_dim_size; ++j) {
+                        at({i, j}) += vals.at({i});
+                    }
+                }
+                break;
+        }
+        return *this;
+    }
+    
+    /**
      * Apply softmax to a Matrix across a specified dim
      * @param dim Dimension to apply softmax across
      * @returns Returns a reference to this Matrix
      */
     Matrix<T>& softmax(size_t dim) {
+        // Ensure we are using a float point type
         if constexpr (!std::is_floating_point_v<T>) {
             throw std::invalid_argument("Matrix.softmax: Cannot apply softmax to non-floating point Matrix.\n");
         }
         if (dim > 1) {
             throw std::invalid_argument("Matrix.softmax: Invalid dim specified for softmax.\n");
         }
+        // Get the max value per specified dim and subtract it from the input to
+        // avoid overflow / underflow when using std::exp. Use the squeezed Tensor
+        // to avoid unnecessarily using more memory
+        Tensor<T> max_vals = this->max(dim, true);
+        // Use the squeezed_op function to subtract the max values from each index on the dimension
+        squeezed_op(dim, max_vals, SqueezedOpType::SUB);
         // Apply the exp function across all elements in the Matrix
         this->apply(std::exp);
+        // Have a fallback for row / col sums being 0, inf, or NAN
+        T fallback = static_cast<T>(1.0f / this->elements());
         // Sum the values across the specified dim
         if (dim == 0) {
             for (size_t i = 0; i < rows(); ++i) {
                 T row_sum = sum(dim, i);
-                for (size_t j = 0; j < cols(); ++j) {
-                    at({i, j}) /= row_sum;
+                if (row_sum == 0 || std::isinf(row_sum) || std::isnan(row_sum)) {
+                    log_message(Log_Priority::WARNING, "Matrix.softmax", std::format("row_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
+                    // Zero out the values if we will divide by zero, infinity, or NAN
+                    for (size_t j = 0; j < cols(); ++j) {
+                        at({i, j}) = fallback;
+                    }
+                }
+                else {
+                    for (size_t j = 0; j < cols(); ++j) {
+                        at({i, j}) /= row_sum;
+                    }
                 }
             }
         }
         else {
             for (size_t i = 0; i < cols(); ++i) {
                 T col_sum = sum(dim, i);
-                for (size_t j = 0; j < rows(); ++j) {
-                    at({j, i}) /= col_sum;
+                log_message(Log_Priority::WARNING, "Matrix.softmax", std::format("col_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
+                if (col_sum == 0 || std::isinf(col_sum) || std::isnan(col_sum)) {
+                    for (size_t j = 0; j < rows(); ++j) {
+                        at({j, i}) = fallback;
+                    }
+                }
+                else {
+                    for (size_t j = 0; j < rows(); ++j) {
+                        at({j, i}) /= col_sum;
+                    }
+                }
+            }
+        }
+        return *this;
+    }
+
+    /**
+     * Fills the Matrix with zeroes and creates a triangular Matrix
+     * @returns Returns a reference to this Matrix
+     */
+    Matrix<T>& tri(const CausalMaskType mask_type) {
+        // Ensure we are applying this to a square Matrix
+        if (rows() != cols()) {
+            throw std::invalid_argument("Matrix.tri: Cannot create triangular Matrix on a Matrix that is not square.\n");
+        }
+        // Iterate across the rows and columns, first setting all values to zero,
+        // then putting in ones for anywhere that col >= row
+        this->fill(0);
+        if (mask_type == CausalMaskType::UPPER) {
+            for (size_t i = 0; i < rows(); ++i) {
+                for (size_t j = i; j < cols(); ++j) {
+                    m_rw_span[i, j] = static_cast<T>(1);
+                }
+            }
+        }
+        else {
+            for (size_t i = 0; i < rows(); ++i) {
+                for (size_t j = 0; j <= i; ++j) {
+                    m_rw_span[i, j] = static_cast<T>(1);
+                }
+            }
+        }
+        return *this;
+    }
+
+    /**
+     * Replace the values above or below the diagonal with negative infinity.
+     * NOTE: When using with softmax, the presence of -inf seems to cause row sums to 
+     * equal zero, resulting in a divide by zero, and using the fallback. Use the tri
+     * method until this is fixed.
+     * @returns Returns a reference to this Matrix
+     */
+    Matrix<T>& ninf_tri(const CausalMaskType mask_type) {
+        // Ensure we are using a floating point type
+        if constexpr (!std::is_floating_point_v<T>) {
+            throw std::invalid_argument("Matrix.ninf_tri: Cannot use ninf_tri with a non-floating point Matrix.\n");
+        }
+        // Ensure we are applying this to a square Matrix
+        if (rows() != cols()) {
+            throw std::invalid_argument("Matrix.ninf_tri: Cannot apply triangular mask on a Matrix that is not square.\n");
+        }
+        // Get the negative infinity value for our type
+        T ninf = -std::numeric_limits<T>::infinity();
+        // Apply the mask
+        if (mask_type == CausalMaskType::UPPER) {
+            for (size_t i = 0; i < rows(); ++i) {
+                for (size_t j = i; j < cols(); ++j) {
+                    m_rw_span[i, j] = ninf;
+                }
+            }
+        }
+        else {
+            for (size_t i = 0; i < rows(); ++i) {
+                for (size_t j = 0; j <= i; ++j) {
+                    m_rw_span[i, j] = ninf;
                 }
             }
         }
