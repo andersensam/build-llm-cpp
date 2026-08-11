@@ -111,6 +111,28 @@ cc_library(
     ]
 )
 
+# Attention module
+cc_library(
+    name = "attention",
+    srcs = glob(
+        [
+            "src/Attention.cpp"
+        ]
+    ),
+    hdrs = glob(
+        [
+            "src/include/Attention.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":llmlog",
+        ":tensor",
+        ":tensorslice"
+    ]
+)
+
 cc_binary(
     name = "build-llm-cpp",
     srcs = glob(
@@ -120,10 +142,11 @@ cc_binary(
     ),
     includes = [],
     deps = [
-        ":llmlog",
+        ":attention",
         ":bpe",
+        ":dataloader",
+        ":llmlog",
         ":tensor",
         ":tensorslice",
-        ":dataloader"
     ]
 )

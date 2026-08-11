@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-08
+ * @version: 2026-08-11
  *
  * General Notes:
  *
@@ -51,6 +51,8 @@ inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = true;
 inline constexpr bool MATRIX_ENABLE_CONSTRUCTOR_LOGGING = true;
 // Store the maximum length for a type name from the demangler API
 inline constexpr size_t TENSOR_MAX_DEMANGLED_NAME_LEN = 32;
+// Control logging for softmax warnings (NAN, inf, divide by 0)
+inline constexpr bool MATRIX_ENABLE_SOFTMAX_WARNINGS = true;
 
 // Use Logging functions
 using Log::Log_Priority;
@@ -2111,7 +2113,9 @@ public:
             for (size_t i = 0; i < rows(); ++i) {
                 T row_sum = sum(dim, i);
                 if (row_sum == 0 || std::isinf(row_sum) || std::isnan(row_sum)) {
-                    log_message(Log_Priority::WARNING, "Matrix.softmax", std::format("row_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
+                    if constexpr (MATRIX_ENABLE_SOFTMAX_WARNINGS) {
+                        log_message(Log_Priority::WARNING, "Matrix.softmax", std::format("row_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
+                    }
                     // Zero out the values if we will divide by zero, infinity, or NAN
                     for (size_t j = 0; j < cols(); ++j) {
                         at({i, j}) = fallback;
@@ -2127,7 +2131,9 @@ public:
         else {
             for (size_t i = 0; i < cols(); ++i) {
                 T col_sum = sum(dim, i);
-                log_message(Log_Priority::WARNING, "Matrix.softmax", std::format("col_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
+                if constexpr (MATRIX_ENABLE_SOFTMAX_WARNINGS) {
+                    log_message(Log_Priority::WARNING, "Matrix.softmax", std::format("col_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
+                }
                 if (col_sum == 0 || std::isinf(col_sum) || std::isnan(col_sum)) {
                     for (size_t j = 0; j < rows(); ++j) {
                         at({j, i}) = fallback;
@@ -2145,6 +2151,7 @@ public:
 
     /**
      * Fills the Matrix with zeroes and creates a triangular Matrix
+     * @param mask_type UPPER or LOWER
      * @returns Returns a reference to this Matrix
      */
     Matrix<T>& tri(const CausalMaskType mask_type) {
@@ -2173,10 +2180,42 @@ public:
     }
 
     /**
+     * Apply masking to a Matrix along the diagonal, zeroing out values. This operation is
+     * the same as creating a mask Matrix with tri or ninf_tri and using * or *=
+     * We use the apply_mask op to save the allocation associated with creating a new Matrix
+     * @param mask_type UPPER or LOWER (if UPPER, everything below diagonal is 0 and vice-verse)
+     * @returns Returns a reference to this Matrix
+     */
+    Matrix<T>& apply_mask(const CausalMaskType mask_type) {
+        // Ensure we are applying this to a square Matrix
+        if (rows() != cols()) {
+            throw std::invalid_argument("Matrix.apply_mask: Cannot apply mask on a Matrix that is not square.\n");
+        }
+        // Iterate over rows and columns, zeroing out values below the diagonal
+        // This is the inverse op of tri and ninf_ti
+        if (mask_type == CausalMaskType::UPPER) {
+            for (size_t i = 0; i < rows(); ++i) {
+                for (size_t j = 0; j <= i; ++j) {
+                    m_rw_span[i, j] = 0;
+                }
+            }
+        }
+        else {
+            for (size_t i = 0; i < rows(); ++i) {
+                for (size_t j = i; j < cols(); ++j) {
+                    m_rw_span[i, j] = 0;
+                }
+            }
+        }
+        return *this;
+    }
+
+    /**
      * Replace the values above or below the diagonal with negative infinity.
      * NOTE: When using with softmax, the presence of -inf seems to cause row sums to 
      * equal zero, resulting in a divide by zero, and using the fallback. Use the tri
      * method until this is fixed.
+     * @param mask_type UPPER or LOWER
      * @returns Returns a reference to this Matrix
      */
     Matrix<T>& ninf_tri(const CausalMaskType mask_type) {

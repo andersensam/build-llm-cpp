@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-06
+ * @version: 2026-08-11
  *
  * General Notes:
  *
@@ -25,10 +25,11 @@
 #include <vector>
 
 /* Local dependencies */
-#include "include/Log.hpp"
+#include "include/Attention.hpp"
 #include "include/BytePairEncoding.hpp"
-#include "include/Tensor.hpp"
 #include "include/DataLoader.hpp"
+#include "include/Log.hpp"
+#include "include/Tensor.hpp"
 #include "include/TensorSlice.hpp"
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
@@ -48,6 +49,8 @@ int main() {
     using TensorSlice_NS::IndexType;
 
     using DataLoader_NS::DataLoader;
+
+    using Attention_NS::CausalAttention;
 
     try {
         
@@ -139,6 +142,10 @@ int main() {
         // Calculate the context vector
         Matrix<float> context_full = attn_scores_full.matmul(values);
         log_message(Log_Priority::INFO, "main", std::format("Context Matrix: {}", context_full.info()));
+
+        // Create a CausalAttention head
+        CausalAttention<float> head(emb_dim, emb_dim, 0.1);
+        Matrix<float> ca_result = head.forward(query_result);
 
     } catch (const std::exception& e) {
 
