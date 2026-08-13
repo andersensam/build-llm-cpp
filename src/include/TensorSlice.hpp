@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-06
+ * @version: 2026-08-13
  *
  * General Notes:
  *
@@ -427,13 +427,13 @@ class TensorSlice {
 /* Private data elements */
 private:
     /**
-     * Reference wrapper to the underlying Matrix / Tensor. Note that the reference is marked const
-     * so TensorSlice can never modify the contents of the underlying Tensor
+     * Shared pointer to a Tensor or Matrix, ensuring the underlying data source isn't 
+     * deleted while the TensorSlice is in scope
      */
-    std::reference_wrapper<const Tensor<T>> c_ref;
+    std::shared_ptr<const Tensor<T>> c_ptr;
 
     /**
-     * Rank of the underlying Tensor, stored to avoid calling c_ref.get().rank() repeatedly
+     * Rank of the underlying Tensor, stored to avoid calling c_ptr->rank() repeatedly
      */
     size_t c_tensor_rank = 0;
 
@@ -468,13 +468,13 @@ public:
      * @param tensor Const ref to a Tensor / Matrix
      * @param config SliceConfig object, either VectorSliceConfig or MatrixSliceConfig
      */
-    TensorSlice(const Tensor<T>& tensor, const SliceConfig& config) : c_ref(tensor), c_tensor_rank(tensor.rank()) {
+    TensorSlice(std::shared_ptr<const Tensor<T>> ptr, const SliceConfig& config) : c_ptr(std::move(ptr)), c_tensor_rank(c_ptr->rank()) {
         // Ensure we are dealing with a Tensor with at least rank == 2
         if (c_tensor_rank < 2) {
             throw std::invalid_argument("TensorSlice.TensorSlice: Tensor must have at least rank == 2.\n");
         }
         // Ensure that dim0 and dim1 are valid in the Tensor
-        const auto& tensor_dims = tensor.dims();
+        const auto& tensor_dims = c_ptr->dims();
         if (config.get_dim0() >= tensor_dims.size() || config.get_dim1() >= tensor_dims.size()) {
             throw std::invalid_argument("TensorSlice.TensorSlice: Invalid dim0 or dim1 provided.\n");
         }
@@ -608,7 +608,7 @@ public:
      */
     std::string info() const {
         // Prepare the info string
-        std::string result = std::format("TensorSlice: [{}, {}]. Underlying Tensor: {}", rows(), cols(), c_ref.get().info());
+        std::string result = std::format("TensorSlice: [{}, {}]. Underlying Tensor: {}", rows(), cols(), c_ptr->info());
         return result;
     }
 
@@ -622,8 +622,6 @@ public:
         if (c.size() == 0) {
             throw std::invalid_argument("TensorSlice.at: No coordinates received.\n");
         }
-        // Enable polymorphic behavior
-        const auto& target = c_ref.get();
         // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
         // Handle getting only one index
         if (c.size() == 1) {
@@ -641,17 +639,17 @@ public:
                     }
                     // See if dim0 maps to underlying Tensor dim0
                     if (dim0_rules.rewrite_to == 0) {
-                        return target.at({m_dim0_map.at(0), m_dim1_map.at(c.begin()[0])});
+                        return c_ptr->at({m_dim0_map.at(0), m_dim1_map.at(c.begin()[0])});
                     }
                     // Otherwise
-                    return target.at({m_dim1_map.at(c.begin()[0]), m_dim0_map.at(0)});
+                    return c_ptr->at({m_dim1_map.at(c.begin()[0]), m_dim0_map.at(0)});
                 }
                 else {
                     // If we don't filter dim1, pass through the coordinate directly
                     if (dim0_rules.rewrite_to == 0) {
-                        return target.at({m_dim0_map.at(0), c.begin()[0]});
+                        return c_ptr->at({m_dim0_map.at(0), c.begin()[0]});
                     }
-                    return target.at({c.begin()[0], m_dim0_map.at(0)});
+                    return c_ptr->at({c.begin()[0], m_dim0_map.at(0)});
                 }
             }
             // If dealing with a high-rank Tensor, reroute to the other at()
@@ -669,15 +667,15 @@ public:
                 // Check to see which dim is rewritten to 0
                 if (dim0_rules.rewrite_to == 0) {
                     if (!m_dim1_map.empty()) {
-                        return target.at({m_dim0_map.at(c.begin()[0]), m_dim1_map.at(c.begin()[1])});
+                        return c_ptr->at({m_dim0_map.at(c.begin()[0]), m_dim1_map.at(c.begin()[1])});
                     }
-                    return target.at({m_dim0_map.at(c.begin()[0]), c.begin()[1]});
+                    return c_ptr->at({m_dim0_map.at(c.begin()[0]), c.begin()[1]});
                 }
                 // Otherwise flip the mapping
                 if (!m_dim1_map.empty()) {
-                    return target.at({m_dim1_map.at(c.begin()[0]), m_dim0_map.at(c.begin()[1])});
+                    return c_ptr->at({m_dim1_map.at(c.begin()[0]), m_dim0_map.at(c.begin()[1])});
                 }
-                return target.at({c.begin()[0], m_dim0_map.at(c.begin()[1])});
+                return c_ptr->at({c.begin()[0], m_dim0_map.at(c.begin()[1])});
             }
             // If dealing with a high-rank Tensor, reroute to the other at()
             std::vector<size_t> translated(c_tensor_rank, 0);
@@ -704,8 +702,6 @@ public:
         if (c_tensor_rank == 2) {
             return this->at(c);
         }
-        // Enable polymorphic behavior
-        const auto& target = c_ref.get();
         // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
         // Handle getting only one index
         if (c.size() == 1) {
@@ -741,7 +737,7 @@ public:
                     v.at(i) = dim_rule.base;
                 }
             }
-            return target.at(v);
+            return c_ptr->at(v);
         }
         else if (c.size() == 2) {
             // Ensure we have a TensorSlice of rank == 2
@@ -773,7 +769,7 @@ public:
                     v.at(i) = dim_rule.base;
                 }
             }
-            return target.at(v);
+            return c_ptr->at(v);
         }
         // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
         throw std::invalid_argument("TensorSlice.at: Too many coordinates provided.\n");
@@ -884,7 +880,7 @@ public:
             lhs_v.resize(c_tensor_rank);
         }
         // Check to see if we need to be concerned about overflow / underflow
-        if (c_ref.get().can_overflow()) {
+        if (c_ptr->can_overflow()) {
             // Use the overflow / underflow detection for safety
             T result = 0, mul_result = 0;
             // Iterate over the elements and multiply them element-wise, then sum

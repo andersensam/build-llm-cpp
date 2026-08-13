@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-11
+ * @version: 2026-08-13
  *
  * General Notes:
  *
@@ -64,7 +64,9 @@ int main() {
         size_t emb_dim = 256;
 
         // Create the embedding Matrix
-        Matrix<float> emb({vocab_size, emb_dim});
+        //Matrix<float> emb({vocab_size, emb_dim});
+        std::shared_ptr<Matrix<float>> emb_ptr = std::make_shared<Matrix<float>>(std::initializer_list<size_t>{vocab_size, emb_dim});
+        Matrix<float>& emb = *(emb_ptr);
         // Fill the Matrix with random values
         emb.random(-2.f, 2.f);
 
@@ -81,7 +83,7 @@ int main() {
         size_t query_token = input_batch.at({0, 1}); // First batch, second token
         // Lookup the embedding for the query_token
         VectorSliceConfig query_vsc(0, query_token, 1, {}, VectorSliceOrientation::ROW, {});
-        TensorSlice<float> query_emb(emb, query_vsc);
+        TensorSlice<float> query_emb(emb_ptr, query_vsc);
         log_message(Log_Priority::INFO, "main", std::format("Querying for token id {}. Slice info: {}", query_token, query_emb.info()));
 
         // Instead of creating a single vector with one token's embeddings, get the embeddings of every token in the batch
@@ -93,7 +95,7 @@ int main() {
         }
         // Create the MatrixSliceConfig to get all tokens listed
         MatrixSliceConfig query_msc(0, IndexType::LIST, lookup_tokens, 1, {}, {});
-        TensorSlice<float> query_mat(emb, query_msc);
+        TensorSlice<float> query_mat(emb_ptr, query_msc);
         log_message(Log_Priority::INFO, "main", std::format("Lookup TensorSlice: {}", query_mat.info()));
 
         // Convert the TensorSlice to a Matrix
