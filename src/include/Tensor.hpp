@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-08
+ * @version: 2026-09-09
  *
  * General Notes:
  *
@@ -30,11 +30,9 @@
 #include <functional>
 #include <initializer_list>
 #include <map>
-#include <mdspan>
 #include <memory>
 #include <numeric>
 #include <random>
-#include <span>
 #include <string>
 #include <stdexcept>
 #include <type_traits>
@@ -208,11 +206,46 @@ class Tensor;
  * @param rhs_dim0 The first dim of the rhs for the matmul
  * @param rhs_dim1 The second dim of the rhs for the matmul
  * @param rhs_coordinates Base coordinates if we don't want to use 0
+ * @param destination Tensor reference to write the result to
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+inline Tensor<T>& matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
+                         Tensor<T>& destination);
+
+/**
+ * Perform a matmul across two Tensors, with their target dims specified
+ * @param lhs Lefthand Tensor to matmul
+ * @param lhs_dim0 The first dim of lhs for the matmul
+ * @param lhs_dim1 The second dim of lhs for the matmul
+ * @param lhs_coordinates Base coordinates if we don't want to use 0
+ * @param rhs Righthand Tensor to matmul
+ * @param rhs_dim0 The first dim of the rhs for the matmul
+ * @param rhs_dim1 The second dim of the rhs for the matmul
+ * @param rhs_coordinates Base coordinates if we don't want to use 0
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
 inline Tensor<T> matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates);
+
+
+/**
+ * Perform a matmul across two Tensors, with their target dims specified
+ * @param lhs Lefthand Tensor to matmul
+ * @param lhs_dim0 The first dim of lhs for the matmul
+ * @param lhs_dim1 The second dim of lhs for the matmul
+ * @param rhs Righthand Tensor to matmul
+ * @param rhs_dim0 The first dim of the rhs for the matmul
+ * @param rhs_dim1 The second dim of the rhs for the matmul
+ * @param destination Tensor reference to write the result to
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+inline Tensor<T>& matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
+                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1,
+                         Tensor<T>& destination);
 
 /**
  * Perform a matmul across two Tensors, with their target dims specified
@@ -227,6 +260,17 @@ template <typename T>
 requires std::is_arithmetic_v<T>
 inline Tensor<T> matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1);
+
+
+/**
+ * Perform a matmul across two Tensors, with their target dims specified
+ * @param lhs Lefthand Tensor to matmul
+ * @param rhs Righthand Tensor to matmul
+ * @param destination Tensor reference to write the result to
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+inline Tensor<T>& matmul(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& destination);
 
 /**
  * Perform a matmul across two Tensors, with their target dims specified
@@ -320,7 +364,6 @@ private:
      * @returns Returns a size_t representing the offset we want
      */
     [[nodiscard]] std::expected<size_t, std::string> _get_offset(const std::initializer_list<size_t>& c) const {
-
         // Do some pointer arithmetic to calculate the exact address to retrieve from m_data
         size_t target_offset = 0;
         // Ensure the coordinates are valid for our Tensor
@@ -340,7 +383,6 @@ private:
      * @returns Returns a size_t representing the offset we want
      */
     [[nodiscard]] std::expected<size_t, std::string> _get_offset(const std::vector<size_t>& c) const {
-
         // Do some pointer arithmetic to calculate the exact address to retrieve from m_data
         size_t target_offset = 0;
         // Ensure the coordinates are valid for our Tensor
@@ -360,7 +402,6 @@ private:
      * @returns Returns true if the dims are compatible, false otherwise
      */
     [[nodiscard]] bool _compatible(const Tensor<T>& target) const {
-
         // If Tensor rank isn't the same, we quickly know the Tensors aren't compatible
         if (c_rank != target.c_rank) {
             return false;
@@ -407,11 +448,11 @@ private:
                         target_dim0, target_dim1, target.c_rank));
         }
         // Ensure the dims are compatible
-        if (extent(dim1) != target.extent(target_dim0)) {
+        if (m_dims.at(dim1) != target.m_dims.at(target_dim0)) {
             return std::unexpected(
                 std::format(
                     "Incompatible Tensors for matmul. Dims [{}, {}] and [{}, {}] cannot matmul.",
-                        extent(dim0), extent(dim1), target.extent(target_dim0), target.extent(target_dim1)));
+                        m_dims.at(dim0), m_dims.at(dim1), target.m_dims.at(target_dim0), target.m_dims.at(target_dim1)));
         }
         return true;
     }
@@ -906,19 +947,6 @@ public:
      * @returns Returns true or false
      */
     constexpr bool can_overflow() const { return _can_overflow; }
-
-    /**
-     * Get the size of a dim in a Tensor
-     * @param dim Dimension to check
-     * @returns Returns the size (number of elements) 
-     */
-    size_t extent(size_t dim) const {
-        // Ensure we get a valid dim
-        if (dim >= c_rank) {
-            throw std::invalid_argument("Tensor.extent: Invalid dim provided.\n");
-        }
-        return m_dims.at(dim);
-    }
 
     /**
      * Get the stride of a Tensor
@@ -1830,6 +1858,48 @@ public:
  * @param rhs_dim0 The first dim of the rhs for the matmul
  * @param rhs_dim1 The second dim of the rhs for the matmul
  * @param rhs_coordinates Base coordinates if we don't want to use 0
+ * @param destination Tensor reference to write the result to
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+inline Tensor<T>& matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
+                         Tensor<T>& destination) {
+    // Use the checker function instead of writing the check manually several times
+    auto compat = lhs._can_matmul(lhs_dim0, lhs_dim1, rhs, rhs_dim0, rhs_dim1);
+    if (!compat.has_value()) {
+        throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
+    }
+    // Ensure lhs_coordinates and rhs_coordinates have the correct size
+    if (lhs_coordinates.size() != lhs.c_rank || rhs_coordinates.size() != rhs.c_rank) {
+        throw std::invalid_argument("Tensor::matmul: Invalid coordinate vector(s) provided.\n");
+    }
+    // Ensure the destination Tensor has the right dimensions
+    if (destination.rows() != lhs.m_dims.at(lhs_dim0) || destination.cols() != rhs.m_dims.at(rhs_dim1)) {
+        throw std::invalid_argument(
+            std::format(
+                "Tensor::matmul: Destination Tensor has shape [{}, {}] but should be [{}, {}].\n",
+                destination.rows(), destination.cols(), lhs.m_dims.at(lhs_dim0), rhs.m_dims.at(rhs_dim1)
+            )
+        );
+    }
+    // Zero out the content of the destination
+    destination.fill(0);
+    // Use the desired matmul impl to execute the operation
+    _naive_matmul_impl(lhs, lhs_dim0, lhs_dim1, lhs_coordinates, rhs, rhs_dim0, rhs_dim1, rhs_coordinates, destination);
+    return destination;
+}
+
+/**
+ * Perform a matmul across two Tensors, with their target dims specified
+ * @param lhs Lefthand Tensor to matmul
+ * @param lhs_dim0 The first dim of lhs for the matmul
+ * @param lhs_dim1 The second dim of lhs for the matmul
+ * @param lhs_coordinates Base coordinates if we don't want to use 0
+ * @param rhs Righthand Tensor to matmul
+ * @param rhs_dim0 The first dim of the rhs for the matmul
+ * @param rhs_dim1 The second dim of the rhs for the matmul
+ * @param rhs_coordinates Base coordinates if we don't want to use 0
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
@@ -1845,11 +1915,50 @@ inline Tensor<T> matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, 
         throw std::invalid_argument("Tensor::matmul: Invalid coordinate vector(s) provided.\n");
     }
     // Create a Tensor to store the result
-    Tensor<T> result({lhs.extent(lhs_dim0), rhs.extent(rhs_dim1)});
+    Tensor<T> result({lhs.m_dims.at(lhs_dim0), rhs.m_dims.at(rhs_dim1)});
     // Use the desired matmul impl to execute the operation
     _naive_matmul_impl(lhs, lhs_dim0, lhs_dim1, lhs_coordinates, rhs, rhs_dim0, rhs_dim1, rhs_coordinates, result);
     // Use RVO to return the result without copying
     return result;
+}
+
+/**
+ * Perform a matmul across two Tensors, with their target dims specified
+ * @param lhs Lefthand Tensor to matmul
+ * @param lhs_dim0 The first dim of lhs for the matmul
+ * @param lhs_dim1 The second dim of lhs for the matmul
+ * @param rhs Righthand Tensor to matmul
+ * @param rhs_dim0 The first dim of the rhs for the matmul
+ * @param rhs_dim1 The second dim of the rhs for the matmul
+ * @param destination Tensor reference to write the result to
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+inline Tensor<T>& matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
+                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1,
+                         Tensor<T>& destination) {
+    // Use the checker function instead of writing the check manually several times
+    auto compat = lhs._can_matmul(lhs_dim0, lhs_dim1, rhs, rhs_dim0, rhs_dim1);
+    if (!compat.has_value()) {
+        throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
+    }
+    // Create reusable std::vector to use with Tensor.at
+    std::vector<size_t> lhs_coordinates(lhs.c_rank, 0);
+    std::vector<size_t> rhs_coordinates(rhs.c_rank, 0);
+    // Ensure the destination Tensor has the right dimensions
+    if (destination.rows() != lhs.m_dims.at(lhs_dim0) || destination.cols() != rhs.m_dims.at(rhs_dim1)) {
+        throw std::invalid_argument(
+            std::format(
+                "Tensor::matmul: Destination Tensor has shape [{}, {}] but should be [{}, {}].\n",
+                destination.rows(), destination.cols(), lhs.m_dims.at(lhs_dim0), rhs.m_dims.at(rhs_dim1)
+            )
+        );
+    }
+    // Zero out the content of the destination
+    destination.fill(0);
+    // Use the desired matmul impl to execute the operation
+    _naive_matmul_impl(lhs, lhs_dim0, lhs_dim1, lhs_coordinates, rhs, rhs_dim0, rhs_dim1, rhs_coordinates, destination);
+    return destination;
 }
 
 /**
@@ -1874,11 +1983,47 @@ inline Tensor<T> matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
     std::vector<size_t> lhs_coordinates(lhs.c_rank, 0);
     std::vector<size_t> rhs_coordinates(rhs.c_rank, 0);
     // Create a Tensor to store the result
-    Tensor<T> result({lhs.extent(lhs_dim0), rhs.extent(rhs_dim1)});
+    Tensor<T> result({lhs.m_dims.at(lhs_dim0), rhs.m_dims.at(rhs_dim1)});
     // Use the desired matmul impl to execute the operation
     _naive_matmul_impl(lhs, lhs_dim0, lhs_dim1, lhs_coordinates, rhs, rhs_dim0, rhs_dim1, rhs_coordinates, result);
     // Use RVO to return the result without copying
     return result;
+}
+
+/**
+ * Perform a matmul across two Tensors, with their target dims specified
+ * @param lhs Lefthand Tensor to matmul
+ * @param rhs Righthand Tensor to matmul
+ * @param destination Tensor reference to write the result to
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+inline Tensor<T> matmul(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& destination) {
+    // Assume we want dims 0 and 1 from lhs and rhs and that their rank must == 2
+    if (lhs.c_rank != 2 || rhs.c_rank != 2) {
+        throw std::invalid_argument(
+            std::format(
+                "Tensor::matmul: Invalid Tensor rank for matmul(lhs, rhs). lhs.rank == {}. rhs.rank == {}.",
+                    lhs.c_rank, rhs.c_rank));
+    }
+    auto compat = lhs._can_matmul(0, 1, rhs, 0, 1);
+    if (!compat.has_value()) {
+        throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
+    }
+    // Ensure the destination Tensor has the right dimensions
+    if (destination.rows() != lhs.m_dims.at(0) || destination.cols() != rhs.m_dims.at(1)) {
+        throw std::invalid_argument(
+            std::format(
+                "Tensor::matmul: Destination Tensor has shape [{}, {}] but should be [{}, {}].\n",
+                destination.rows(), destination.cols(), lhs.m_dims.at(0), rhs.m_dims.at(1)
+            )
+        );
+    }
+    // Zero out the content of the destination
+    destination.fill(0);
+    // Use the desired matmul impl to execute the operation
+    _naive_matmul_impl(lhs, rhs, destination);
+    return destination;
 }
 
 /**
@@ -1901,7 +2046,7 @@ inline Tensor<T> matmul(const Tensor<T>& lhs, const Tensor<T>& rhs) {
         throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
     }
     // Create a Tensor to store the result
-    Tensor<T> result({lhs.extent(0), rhs.extent(1)});
+    Tensor<T> result({lhs.m_dims.at(0), rhs.m_dims.at(1)});
     // Use the desired matmul impl to execute the operation
     _naive_matmul_impl(lhs, rhs, result);
     // Use RVO to return the result without copying
@@ -1931,15 +2076,15 @@ inline void _naive_matmul_impl(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs
     if constexpr (destination._can_overflow) {
         // Create buffer for overflow / underflow checking
         T mul_result = 0;
-        for (size_t i = 0; i < destination.extent(0); ++i) {
+        for (size_t i = 0; i < destination.m_dims.at(0); ++i) {
             // Update the coordinate for i in lhs
             lhs_coordinates.at(lhs_dim0) = i;
-            for (size_t j = 0; j < destination.extent(1); ++j) {
+            for (size_t j = 0; j < destination.m_dims.at(1); ++j) {
                 // Update the coordinate for j in rhs
                 rhs_coordinates.at(rhs_dim1) = j;
                 // Get a pointer to the result's [i, j]
                 T* result_i_j = &(destination.at({i, j}));
-                for (size_t k = 0; k < lhs.extent(lhs_dim1); ++k) {
+                for (size_t k = 0; k < lhs.m_dims.at(lhs_dim1); ++k) {
                     // Update the coordinate for k in lhs and rhs
                     lhs_coordinates.at(lhs_dim1) = k;
                     rhs_coordinates.at(rhs_dim0) = k;
@@ -1956,13 +2101,13 @@ inline void _naive_matmul_impl(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs
     }
     else {
         // Use a naive loop to perform matmul
-        for (size_t i = 0; i < destination.extent(0); ++i) {
+        for (size_t i = 0; i < destination.m_dims.at(0); ++i) {
             // Update the coordinate for i in lhs
             lhs_coordinates.at(lhs_dim0) = i;
-            for (size_t j = 0; j < destination.extent(1); ++j) {
+            for (size_t j = 0; j < destination.m_dims.at(1); ++j) {
                 // Update the coordinate for j in rhs
                 rhs_coordinates.at(rhs_dim1) = j;
-                for (size_t k = 0; k < lhs.extent(lhs_dim1); ++k) {
+                for (size_t k = 0; k < lhs.m_dims.at(lhs_dim1); ++k) {
                     // Update the coordinate for k in lhs and rhs
                     lhs_coordinates.at(lhs_dim1) = k;
                     rhs_coordinates.at(rhs_dim0) = k;
@@ -1988,11 +2133,11 @@ inline void _naive_matmul_impl(const Tensor<T>& lhs, const Tensor<T>& rhs, Tenso
     if constexpr (destination._can_overflow) {
         // Create buffer for overflow / underflow checking
         T mul_result = 0;
-        for (size_t i = 0; i < destination.extent(0); ++i) {
-            for (size_t j = 0; j < destination.extent(1); ++j) {
+        for (size_t i = 0; i < destination.m_dims.at(0); ++i) {
+            for (size_t j = 0; j < destination.m_dims.at(1); ++j) {
                 // Get a pointer to the result's [i, j]
                 T* result_i_j = &(destination.at({i, j}));
-                for (size_t k = 0; k < lhs.extent(1); ++k) {
+                for (size_t k = 0; k < lhs.m_dims.at(1); ++k) {
                     // First multiply [i, k] * [k, j]
                     if (_mul_overflow(lhs.at({i, k}), rhs.at({k, j}), &mul_result)) {
                         throw std::overflow_error("Tensor::_naive_matmul_impl: Multiplication results in overflow / underflow.\n");
@@ -2006,9 +2151,9 @@ inline void _naive_matmul_impl(const Tensor<T>& lhs, const Tensor<T>& rhs, Tenso
     }
     else {
         // Use a naive loop to perform matmul
-        for (size_t i = 0; i < destination.extent(0); ++i) {
-            for (size_t j = 0; j < destination.extent(1); ++j) {
-                for (size_t k = 0; k < lhs.extent(1); ++k) {
+        for (size_t i = 0; i < destination.m_dims.at(0); ++i) {
+            for (size_t j = 0; j < destination.m_dims.at(1); ++j) {
+                for (size_t k = 0; k < lhs.m_dims.at(1); ++k) {
                     destination.at({i, j}) += lhs.at({i, k}) * rhs.at({k, j});
                 }
             }

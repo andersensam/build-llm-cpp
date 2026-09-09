@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-08
+ * @version: 2026-09-09
  *
  * General Notes:
  *
@@ -1071,7 +1071,7 @@ requires std::is_arithmetic_v<T>
  * @param rhs Const reference to a TensorSlice
  * @returns Returns a new Tensor with the result
  */
-Tensor<T> matmul(const Tensor<T>& lhs, const TensorSlice<T>& rhs) {
+inline Tensor<T> matmul(const Tensor<T>& lhs, const TensorSlice<T>& rhs) {
     // Ensure this can only run on 2-D Tensors
     if (lhs.rank() != 2) {
         throw std::invalid_argument("TensorSlice_NS::matmul: Tensor must have rank == 2.\n");
