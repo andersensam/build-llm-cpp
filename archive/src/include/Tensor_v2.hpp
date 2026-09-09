@@ -190,106 +190,6 @@ requires std::is_arithmetic_v<T>
     }
 }
 
-// NOLINTBEGIN(cppcoreguidelines-special-member-functions)
-/**
- * Abstract Tensor class, to implement both Tensor and the various
- * TensorSlice classes
- */
-template <typename T>
-requires std::is_arithmetic_v<T>
-class AbstractTensor {
-public:
-    /**
-     * Virtual destructor for AbstractTensor
-     */
-    virtual ~AbstractTensor() = default;
-
-    /**
-     * Whether or not the underlying data type of the Tensor has a risk of overflow / underflow
-     */
-    static constexpr bool _can_overflow = std::is_same_v<T, char> || std::is_same_v<T, signed char> || std::is_same_v<T, int> || std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> || std::is_same_v<T, int32_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, unsigned char> || std::is_same_v<T, unsigned int> || std::is_same_v<T, size_t> || std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>;
-
-    /**
-     * Get the rank of the Tensor
-     * @returns Returns the rank
-     */
-    virtual size_t rank() const = 0;
-
-    /**
-     * Get the dimensions of the Tensor
-     * @returns Returns a const reference to the vector containing the dimensions
-     */
-    virtual const std::vector<size_t>& shape() const = 0;
-
-    /**
-     * Get the stride used to advance inside the Tensor
-     * @returns Returns a const reference to the vector containing the stide of each dim
-     */
-    virtual const std::vector<size_t>& stride() const = 0;
-
-    /**
-     * Get the extent of a specified dim
-     * @param dim Dimension to query
-     * @returns Returns the extent of the dim
-     */
-    virtual size_t extent(size_t dim) const = 0;
-
-    /**
-     * Get the total number of elements in the Tensor
-     * @returns Returns the total number of elements
-     */
-    virtual size_t elements() const = 0;
-
-    /**
-     * Get a mutable reference to the value stored at the provided coordinates
-     * @param target Initializer list containing the desired coordinates
-     * @returns Returns a mutable reference to the desired value
-     */
-    virtual T& at(std::initializer_list<size_t> target) = 0;
-
-    /**
-     * Get a const reference to the value stored at the provided coordinates
-     * @param target Initializer list containing the desired coordinates
-     * @returns Returns a const reference to the desired value
-     */
-    virtual const T& at(std::initializer_list<size_t> target) const = 0;
-
-    /**
-     * Get a mutable reference to the value stored at the provided coordinates
-     * @param target Const reference to a vector containing the desired coordinates
-     * @returns Returns a mutable reference to the desired value
-     */
-    virtual T& at(const std::vector<size_t>& target) = 0;
-
-    /**
-     * Get a const reference to the value stored at the provided coordinates
-     * @param target Const reference to a vector containing the desired coordinates
-     * @returns Returns a const reference to the desired value
-     */
-    virtual const T& at(const std::vector<size_t>& target) const = 0;
-
-    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-    /**
-     * Transpose a Tensor along two dims
-     * @param dim0 First dim to swap
-     * @param dim1 Second dim to swap
-     */
-    virtual AbstractTensor<T>& transpose(size_t dim0, size_t dim1) = 0;
-    // NOLINTEND(bugprone-easily-swappable-parameters)
-
-    /**
-     * Determine whether two Tensors (with specified dims) can matmul
-     * @param dim0 First dim
-     * @param dim1 Second dim
-     * @param target The other Tensor to check against
-     * @param target_dim0 The target's first dim
-     * @param target_dim1 The target's second dim
-     */
-    [[nodiscard]] virtual std::expected<bool, std::string> _can_matmul(size_t dim0, size_t dim1, const AbstractTensor<T>& target,
-                                                                       size_t target_dim0, size_t target_dim1) const = 0;
-};
-// NOLINTEND(cppcoreguidelines-special-member-functions)
-
 /* Forward delcataion for Tensor and the matmul functions */
 template <typename T> 
 requires std::is_arithmetic_v<T>
@@ -310,8 +210,8 @@ class Tensor;
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
-                         const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
+inline Tensor<T>& matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
                          Tensor<T>& destination);
 
 /**
@@ -327,8 +227,8 @@ inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t l
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T> matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
-                        const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates);
+inline Tensor<T> matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                        const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates);
 
 
 /**
@@ -343,8 +243,8 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lh
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
-                         const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1,
+inline Tensor<T>& matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
+                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1,
                          Tensor<T>& destination);
 
 /**
@@ -358,8 +258,8 @@ inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t l
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T> matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
-                        const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1);
+inline Tensor<T> matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
+                        const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1);
 
 
 /**
@@ -370,7 +270,7 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lh
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs, Tensor<T>& destination);
+inline Tensor<T>& matmul(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& destination);
 
 /**
  * Perform a matmul across two Tensors, with their target dims specified
@@ -379,7 +279,7 @@ inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& 
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T> matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs);
+inline Tensor<T> matmul(const Tensor<T>& lhs, const Tensor<T>& rhs);
 
 /**
  * Naive matmul implementation
@@ -397,8 +297,8 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& r
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
-                               const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
+inline void _naive_matmul_impl(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                               const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
                                Tensor<T>& destination);
 /**
  * Naive matmul implementation for Tensors of rank == 2 only
@@ -410,7 +310,7 @@ inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, size_t lhs_dim0, si
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs, Tensor<T>& destination);
+inline void _naive_matmul_impl(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& destination);
 // NOLINTEND(bugprone-easily-swappable-parameters)
 
 /**
@@ -419,7 +319,7 @@ inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, const AbstractTenso
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-class Tensor : public AbstractTensor<T> {
+class Tensor {
 // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 /* Private data elements */
 private:
@@ -451,13 +351,19 @@ private:
      */
     std::vector<size_t> m_dims = std::vector<size_t>();
 
+    /**
+     * Determine if a numeric type can overflow and should be checked by the compiler's built
+     * in checking function
+     */
+    static constexpr bool _can_overflow = std::is_same_v<T, char> || std::is_same_v<T, signed char> || std::is_same_v<T, int> || std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> || std::is_same_v<T, int32_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, unsigned char> || std::is_same_v<T, unsigned int> || std::is_same_v<T, size_t> || std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>;
+
 /* Private functions */
     /**
      * Calculate the offset from a set of input cooridnates
      * @param c Coordinates to calculate the offset from
      * @returns Returns a size_t representing the offset we want
      */
-    [[nodiscard]] std::expected<size_t, std::string> _get_offset(std::initializer_list<size_t> c) const {
+    [[nodiscard]] std::expected<size_t, std::string> _get_offset(const std::initializer_list<size_t>& c) const {
         // Do some pointer arithmetic to calculate the exact address to retrieve from m_data
         size_t target_offset = 0;
         // Ensure the coordinates are valid for our Tensor
@@ -515,19 +421,50 @@ private:
         return true;
     }
 
+    /**
+     * Determine whether two Tensors (with specified dims) can matmul
+     * @param dim0 First dim
+     * @param dim1 Second dim
+     * @param target The other Tensor to check against
+     * @param target_dim0 The target's first dim
+     * @param target_dim1 The target's second dim
+     */
+    [[nodiscard]] std::expected<bool, std::string> _can_matmul(size_t dim0, size_t dim1, const Tensor<T>& target,
+                                                               size_t target_dim0, size_t target_dim1) const {
+        // Ensure the Tensors have rank >= 2 and that their specified dims are valid
+        if (c_rank < 2 || target.c_rank < 2) {
+            return std::unexpected("Tensors must have rank >= 2");
+        }
+        if (dim0 >= c_rank || dim1 >= c_rank) {
+            return std::unexpected(
+                std::format(
+                    "Invalid dims provided for Tensor lhs. Got {} and {} but lhs.rank == {}",
+                        dim0, dim1, c_rank));
+        }
+        if (target_dim0 >= target.c_rank || target_dim1 >= target.c_rank) {
+            return std::unexpected(
+                std::format(
+                    "Invalid dims provided for Tensor rhs. Got {} and {} but rhs.rank == {}",
+                        target_dim0, target_dim1, target.c_rank));
+        }
+        // Ensure the dims are compatible
+        if (m_dims.at(dim1) != target.m_dims.at(target_dim0)) {
+            return std::unexpected(
+                std::format(
+                    "Incompatible Tensors for matmul. Dims [{}, {}] and [{}, {}] cannot matmul.",
+                        m_dims.at(dim0), m_dims.at(dim1), target.m_dims.at(target_dim0), target.m_dims.at(target_dim1)));
+        }
+        return true;
+    }
+
 /* Public functions */
 public:
     /**
-     * Use _can_overflow from the AbstractTensor base class
-     */
-    using AbstractTensor<T>::_can_overflow;
-
-    /**
      * Default constructor for Tensor, taking in a reference to a vector containing the desired dimensions
      * for the resulting Tensor
-     * @param dims std::initializer_list<size_t> containing the desired dimensions
+     * @param dims Const reference to std::initializer_list<size_t> containing the desired dimensions
      */
-    Tensor(std::initializer_list<size_t> dims) : c_rank(dims.size()), m_stride(dims.size()), m_dims(dims) {
+    Tensor(const std::initializer_list<size_t>& dims) : c_rank(dims.size()), m_stride(dims.size()), m_dims(dims) {
         // Handle the case where we have a rank-0 tensor (scalar value). Allocate space for the singular
         // element and then return immediately
         if (c_rank == 0) {
@@ -976,7 +913,7 @@ public:
     /**
      * Default destructor for Tensor
      */
-    ~Tensor() override {
+    ~Tensor() {
         // Do nothing since all of our data elements are either trivial types or will be cleaned up
         // automatically when they go out of scope
     }
@@ -985,7 +922,7 @@ public:
      * Get the number of elements in a Tensor
      * @returns Returns size_t of the number of elements present in the Tensor
      */
-    size_t elements() const override {
+    size_t elements() const {
         return c_elements;
     }
 
@@ -993,7 +930,7 @@ public:
      * Get the rank of a Tensor
      * @returns Returns size_t of the Tensor's rank
      */
-    size_t rank() const override {
+    size_t rank() const {
         return c_rank;
     }
 
@@ -1006,32 +943,17 @@ public:
     }
 
     /**
-     * Get the dimensions of the Tensor
-     * @returns Returns a const reference to the vector containing the dimensions
+     * Whether a Tensor's dtype can overflow / underflow
+     * @returns Returns true or false
      */
-    const std::vector<size_t>& shape() const override {
-        return m_dims;
-    }
+    constexpr bool can_overflow() const { return _can_overflow; }
 
     /**
      * Get the stride of a Tensor
      * @returns Returns a const ref to m_stride
      */
-    const std::vector<size_t>& stride() const override {
+    const std::vector<size_t>& stride() const {
         return m_stride;
-    }
-
-    /**
-     * Get the extent of a specified dim
-     * @param dim Dimension to query
-     * @returns Returns the extent of the dim
-     */
-    size_t extent(size_t dim) const override {
-        // Ensure the dim is valid
-        if (dim >= c_rank) {
-            throw std::invalid_argument("Tensor.extent: Invalid dim provided.\n");
-        }
-        return m_dims.at(dim);
     }
 
     /**
@@ -1048,48 +970,11 @@ public:
     }
 
     /**
-     * Determine whether two Tensors (with specified dims) can matmul
-     * @param dim0 First dim
-     * @param dim1 Second dim
-     * @param target The other Tensor to check against
-     * @param target_dim0 The target's first dim
-     * @param target_dim1 The target's second dim
-     */
-    [[nodiscard]] std::expected<bool, std::string> _can_matmul(size_t dim0, size_t dim1, const AbstractTensor<T>& target,
-                                                               size_t target_dim0, size_t target_dim1) const override {
-        // Ensure the Tensors have rank >= 2 and that their specified dims are valid
-        size_t target_rank = target.rank();
-        if (c_rank < 2 || target_rank < 2) {
-            return std::unexpected("Tensors must have rank >= 2");
-        }
-        if (dim0 >= c_rank || dim1 >= c_rank) {
-            return std::unexpected(
-                std::format(
-                    "Invalid dims provided for Tensor lhs. Got {} and {} but lhs.rank == {}",
-                        dim0, dim1, c_rank));
-        }
-        if (target_dim0 >= target_rank || target_dim1 >= target_rank) {
-            return std::unexpected(
-                std::format(
-                    "Invalid dims provided for Tensor rhs. Got {} and {} but rhs.rank == {}",
-                        target_dim0, target_dim1, target_rank));
-        }
-        // Ensure the dims are compatible
-        if (m_dims.at(dim1) != target.extent(target_dim0)) {
-            return std::unexpected(
-                std::format(
-                    "Incompatible Tensors for matmul. Dims [{}, {}] and [{}, {}] cannot matmul.",
-                        m_dims.at(dim0), m_dims.at(dim1), target.extent(target_dim0), target.extent(target_dim1)));
-        }
-        return true;
-    }
-
-    /**
      * Get or set a value at a specific coordinate inside the Tensor
      * @param target The coordinate (wrapped in std::vector) we want to fetch from the Tensor
      * @returns Returns a reference to the value that can be updated
      */
-    T& at(const std::vector<size_t>& target) override {
+    T& at(const std::vector<size_t>& target) {
         // Handle the case where we have a rank-0 tensor
         if (c_rank == 0) {
             return m_data.get()[0];
@@ -1111,7 +996,7 @@ public:
      * @param target The coordinate we want to fetch from the Tensor
      * @returns Returns a reference to the value that can be updated
      */
-    T& at(std::initializer_list<size_t> target) override {
+    T& at(const std::initializer_list<size_t>& target) {
         // Handle the case where we have a rank-0 tensor
         if (c_rank == 0) {
             return m_data.get()[0];
@@ -1133,7 +1018,7 @@ public:
      * @param target The coordinate (wrapped in std::vector) we want to fetch from the tensor
      * @returns Returns the value at the coordinate
      */
-    const T& at(const std::vector<size_t>& target) const override {
+    const T& at(const std::vector<size_t>& target) const {
         // Handle the case where we have a rank-0 tensor
         if (c_rank == 0) {
             return m_data.get()[0];
@@ -1155,7 +1040,7 @@ public:
      * @param target The coordinate we want to fetch from the tensor
      * @returns Returns the value at the coordinate
      */
-    const T& at(std::initializer_list<size_t> target) const override {
+    const T& at(const std::initializer_list<size_t>& target) const {
         // Handle the case where we have a rank-0 tensor
         if (c_rank == 0) {
             return m_data.get()[0];
@@ -1190,7 +1075,7 @@ public:
      * @param v Values to set inside the Tensor
      * @returns Returns a reference to this Tensor
      */
-    Tensor<T>& set(std::initializer_list<T> v) {
+    Tensor<T>& set(const std::initializer_list<T>& v) {
         // Ensure v has enough values to satisfy the number of elements in the Tensor
         if (v.size() != c_elements) {
             std::invalid_argument(std::format("Tensor.set: Invalid number of value provided to set. Wanted {} but got {}\n.", c_elements, v.size()));
@@ -1360,7 +1245,7 @@ public:
      * @param dim1 Second dim to swap
      * @returns Returns a reference to this Tensor
      */
-    Tensor<T>& transpose(size_t dim0, size_t dim1) override {
+    Tensor<T>& transpose(size_t dim0, size_t dim1) {
         // Ensure we have valid dims
         if (dim0 >= c_rank || dim1 >= c_rank) {
             throw std::invalid_argument("Tensor.transpose: Invalid axes provided to transpose.\n");
@@ -1438,6 +1323,69 @@ public:
         // NOLINTNEXTLINE(bugprone-sizeof-expression)
         return *(std::max_element(m_data.get(), m_data.get() + c_elements));
     }
+
+    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
+    /**
+     * Perform a matmul across two Tensors, with their target dims specified
+     * @param lhs Lefthand Tensor to matmul
+     * @param lhs_dim0 The first dim of lhs for the matmul
+     * @param lhs_dim1 The second dim of lhs for the matmul
+     * @param lhs_coordinates Base coordinates if we don't want to use 0
+     * @param rhs Righthand Tensor to matmul
+     * @param rhs_dim0 The first dim of the rhs for the matmul
+     * @param rhs_dim1 The second dim of the rhs for the matmul
+     * @param rhs_coordinates Base coordinates if we don't want to use 0
+     */
+    friend Tensor<T> matmul<>(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                              const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates);
+
+    /**
+     * Perform a matmul across two Tensors, with their target dims specified
+     * @param lhs Lefthand Tensor to matmul
+     * @param lhs_dim0 The first dim of lhs for the matmul
+     * @param lhs_dim1 The second dim of lhs for the matmul
+     * @param rhs Righthand Tensor to matmul
+     * @param rhs_dim0 The first dim of the rhs for the matmul
+     * @param rhs_dim1 The second dim of the rhs for the matmul
+     */
+    friend Tensor<T> matmul<>(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
+                              const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1);
+
+    /**
+     * Perform a matmul across two Tensors, with their target dims specified
+     * @param lhs Lefthand Tensor to matmul
+     * @param rhs Righthand Tensor to matmul
+     */
+    friend Tensor<T> matmul<>(const Tensor<T>& lhs, const Tensor<T>& rhs);
+
+    /**
+     * Naive matmul implementation
+     * @param lhs Lefthand Tensor to matmul
+     * @param lhs_dim0 The first dim of lhs for the matmul
+     * @param lhs_dim1 The second dim of lhs for the matmul
+     * @param lhs_coordinates Reference to a coordinate vector to handle dims of high-rank Tensors
+     * @param rhs Righthand Tensor to matmul
+     * @param rhs_dim0 The first dim of the rhs for the matmul
+     * @param rhs_dim1 The second dim of the rhs for the matmul
+     * @param rhs_coordinates Reference to a coordinate vector to handle dims of high-rank Tensors
+     * @param destination Reference to the Tensor to put the output into
+     * NOTE: We assume this will never be called directly so we skip the additional
+     * safety checks you would otherwise need to do (handled in Tensor::matmul, etc.)
+     */
+    friend void _naive_matmul_impl<>(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                                     const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
+                                     Tensor<T>& destination);
+
+    /**
+     * Naive matmul implementation for Tensors of rank == 2 only
+     * @param lhs Lefthand Tensor to matmul
+     * @param rhs Righthand Tensor to matmul
+     * @param destination Reference to the Tensor to put the output into
+     * NOTE: We assume this will never be called directly so we skip the additional
+     * safety checks you would otherwise need to do (handled in Tensor::matmul, etc.)
+     */
+    friend void _naive_matmul_impl<>(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& destination);
+    // NOLINTEND(bugprone-easily-swappable-parameters)
 
     /** 
      * Perform a matmul on a Tensor instance with itself
@@ -1914,8 +1862,8 @@ public:
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
-                         const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
+inline Tensor<T>& matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
                          Tensor<T>& destination) {
     // Use the checker function instead of writing the check manually several times
     auto compat = lhs._can_matmul(lhs_dim0, lhs_dim1, rhs, rhs_dim0, rhs_dim1);
@@ -1923,15 +1871,15 @@ inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t l
         throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
     }
     // Ensure lhs_coordinates and rhs_coordinates have the correct size
-    if (lhs_coordinates.size() != lhs.rank() || rhs_coordinates.size() != rhs.rank()) {
+    if (lhs_coordinates.size() != lhs.c_rank || rhs_coordinates.size() != rhs.c_rank) {
         throw std::invalid_argument("Tensor::matmul: Invalid coordinate vector(s) provided.\n");
     }
     // Ensure the destination Tensor has the right dimensions
-    if (destination.extent(0) != lhs.extent(lhs_dim0) || destination.extent(1) != rhs.extent(rhs_dim1)) {
+    if (destination.rows() != lhs.m_dims.at(lhs_dim0) || destination.cols() != rhs.m_dims.at(rhs_dim1)) {
         throw std::invalid_argument(
             std::format(
                 "Tensor::matmul: Destination Tensor has shape [{}, {}] but should be [{}, {}].\n",
-                destination.extent(0), destination.extent(1), lhs.extent(lhs_dim0), rhs.extent(rhs_dim1)
+                destination.rows(), destination.cols(), lhs.m_dims.at(lhs_dim0), rhs.m_dims.at(rhs_dim1)
             )
         );
     }
@@ -1955,19 +1903,19 @@ inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t l
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T> matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
-                        const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates) {
+inline Tensor<T> matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                        const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates) {
     // Use the checker function instead of writing the check manually several times
     auto compat = lhs._can_matmul(lhs_dim0, lhs_dim1, rhs, rhs_dim0, rhs_dim1);
     if (!compat.has_value()) {
         throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
     }
     // Ensure lhs_coordinates and rhs_coordinates have the correct size
-    if (lhs_coordinates.size() != lhs.rank() || rhs_coordinates.size() != rhs.rank()) {
+    if (lhs_coordinates.size() != lhs.c_rank || rhs_coordinates.size() != rhs.c_rank) {
         throw std::invalid_argument("Tensor::matmul: Invalid coordinate vector(s) provided.\n");
     }
     // Create a Tensor to store the result
-    Tensor<T> result({lhs.extent(lhs_dim0), rhs.extent(rhs_dim1)});
+    Tensor<T> result({lhs.m_dims.at(lhs_dim0), rhs.m_dims.at(rhs_dim1)});
     // Use the desired matmul impl to execute the operation
     _naive_matmul_impl(lhs, lhs_dim0, lhs_dim1, lhs_coordinates, rhs, rhs_dim0, rhs_dim1, rhs_coordinates, result);
     // Use RVO to return the result without copying
@@ -1986,8 +1934,8 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lh
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
-                         const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1,
+inline Tensor<T>& matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
+                         const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1,
                          Tensor<T>& destination) {
     // Use the checker function instead of writing the check manually several times
     auto compat = lhs._can_matmul(lhs_dim0, lhs_dim1, rhs, rhs_dim0, rhs_dim1);
@@ -1995,14 +1943,14 @@ inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t l
         throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
     }
     // Create reusable std::vector to use with Tensor.at
-    std::vector<size_t> lhs_coordinates(lhs.rank(), 0);
-    std::vector<size_t> rhs_coordinates(rhs.rank(), 0);
+    std::vector<size_t> lhs_coordinates(lhs.c_rank, 0);
+    std::vector<size_t> rhs_coordinates(rhs.c_rank, 0);
     // Ensure the destination Tensor has the right dimensions
-    if (destination.extent(0) != lhs.extent(lhs_dim0) || destination.extent(1) != rhs.extent(rhs_dim1)) {
+    if (destination.rows() != lhs.m_dims.at(lhs_dim0) || destination.cols() != rhs.m_dims.at(rhs_dim1)) {
         throw std::invalid_argument(
             std::format(
                 "Tensor::matmul: Destination Tensor has shape [{}, {}] but should be [{}, {}].\n",
-                destination.extent(0), destination.extent(1), lhs.extent(lhs_dim0), rhs.extent(rhs_dim1)
+                destination.rows(), destination.cols(), lhs.m_dims.at(lhs_dim0), rhs.m_dims.at(rhs_dim1)
             )
         );
     }
@@ -2024,18 +1972,18 @@ inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t l
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T> matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
-                        const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1) {
+inline Tensor<T> matmul(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1,
+                        const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1) {
     // Use the checker function instead of writing the check manually several times
     auto compat = lhs._can_matmul(lhs_dim0, lhs_dim1, rhs, rhs_dim0, rhs_dim1);
     if (!compat.has_value()) {
         throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
     }
     // Create reusable std::vector to use with Tensor.at
-    std::vector<size_t> lhs_coordinates(lhs.rank(), 0);
-    std::vector<size_t> rhs_coordinates(rhs.rank(), 0);
+    std::vector<size_t> lhs_coordinates(lhs.c_rank, 0);
+    std::vector<size_t> rhs_coordinates(rhs.c_rank, 0);
     // Create a Tensor to store the result
-    Tensor<T> result({lhs.extent(lhs_dim0), rhs.extent(rhs_dim1)});
+    Tensor<T> result({lhs.m_dims.at(lhs_dim0), rhs.m_dims.at(rhs_dim1)});
     // Use the desired matmul impl to execute the operation
     _naive_matmul_impl(lhs, lhs_dim0, lhs_dim1, lhs_coordinates, rhs, rhs_dim0, rhs_dim1, rhs_coordinates, result);
     // Use RVO to return the result without copying
@@ -2050,24 +1998,24 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lh
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T> matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs, Tensor<T>& destination) {
+inline Tensor<T> matmul(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& destination) {
     // Assume we want dims 0 and 1 from lhs and rhs and that their rank must == 2
-    if (lhs.rank() != 2 || rhs.rank() != 2) {
+    if (lhs.c_rank != 2 || rhs.c_rank != 2) {
         throw std::invalid_argument(
             std::format(
                 "Tensor::matmul: Invalid Tensor rank for matmul(lhs, rhs). lhs.rank == {}. rhs.rank == {}.",
-                    lhs.rank(), rhs.rank()));
+                    lhs.c_rank, rhs.c_rank));
     }
     auto compat = lhs._can_matmul(0, 1, rhs, 0, 1);
     if (!compat.has_value()) {
         throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
     }
     // Ensure the destination Tensor has the right dimensions
-    if (destination.extent(0) != lhs.extent(0) || destination.extent(1) != rhs.extent(1)) {
+    if (destination.rows() != lhs.m_dims.at(0) || destination.cols() != rhs.m_dims.at(1)) {
         throw std::invalid_argument(
             std::format(
                 "Tensor::matmul: Destination Tensor has shape [{}, {}] but should be [{}, {}].\n",
-                destination.extent(0), destination.extent(1), lhs.extent(0), rhs.extent(1)
+                destination.rows(), destination.cols(), lhs.m_dims.at(0), rhs.m_dims.at(1)
             )
         );
     }
@@ -2085,20 +2033,20 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& r
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T> matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs) {
+inline Tensor<T> matmul(const Tensor<T>& lhs, const Tensor<T>& rhs) {
     // Assume we want dims 0 and 1 from lhs and rhs and that their rank must == 2
-    if (lhs.rank() != 2 || rhs.rank() != 2) {
+    if (lhs.c_rank != 2 || rhs.c_rank != 2) {
         throw std::invalid_argument(
             std::format(
                 "Tensor::matmul: Invalid Tensor rank for matmul(lhs, rhs). lhs.rank == {}. rhs.rank == {}.",
-                    lhs.rank(), rhs.rank()));
+                    lhs.c_rank, rhs.c_rank));
     }
     auto compat = lhs._can_matmul(0, 1, rhs, 0, 1);
     if (!compat.has_value()) {
         throw std::invalid_argument(std::format("Tensor::matmul: Unable to matmul. Error: {}.", compat.error()));
     }
     // Create a Tensor to store the result
-    Tensor<T> result({lhs.extent(0), rhs.extent(1)});
+    Tensor<T> result({lhs.m_dims.at(0), rhs.m_dims.at(1)});
     // Use the desired matmul impl to execute the operation
     _naive_matmul_impl(lhs, rhs, result);
     // Use RVO to return the result without copying
@@ -2121,22 +2069,22 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& r
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
-                               const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
+inline void _naive_matmul_impl(const Tensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+                               const Tensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
                                Tensor<T>& destination) {
     // Per the NOTE above, skip the regular safety checks and perform the operation
     if constexpr (destination._can_overflow) {
         // Create buffer for overflow / underflow checking
         T mul_result = 0;
-        for (size_t i = 0; i < destination.extent(0); ++i) {
+        for (size_t i = 0; i < destination.m_dims.at(0); ++i) {
             // Update the coordinate for i in lhs
             lhs_coordinates.at(lhs_dim0) = i;
-            for (size_t j = 0; j < destination.extent(1); ++j) {
+            for (size_t j = 0; j < destination.m_dims.at(1); ++j) {
                 // Update the coordinate for j in rhs
                 rhs_coordinates.at(rhs_dim1) = j;
                 // Get a pointer to the result's [i, j]
                 T* result_i_j = &(destination.at({i, j}));
-                for (size_t k = 0; k < lhs.extent(lhs_dim1); ++k) {
+                for (size_t k = 0; k < lhs.m_dims.at(lhs_dim1); ++k) {
                     // Update the coordinate for k in lhs and rhs
                     lhs_coordinates.at(lhs_dim1) = k;
                     rhs_coordinates.at(rhs_dim0) = k;
@@ -2153,13 +2101,13 @@ inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, size_t lhs_dim0, si
     }
     else {
         // Use a naive loop to perform matmul
-        for (size_t i = 0; i < destination.extent(0); ++i) {
+        for (size_t i = 0; i < destination.m_dims.at(0); ++i) {
             // Update the coordinate for i in lhs
             lhs_coordinates.at(lhs_dim0) = i;
-            for (size_t j = 0; j < destination.extent(1); ++j) {
+            for (size_t j = 0; j < destination.m_dims.at(1); ++j) {
                 // Update the coordinate for j in rhs
                 rhs_coordinates.at(rhs_dim1) = j;
-                for (size_t k = 0; k < lhs.extent(lhs_dim1); ++k) {
+                for (size_t k = 0; k < lhs.m_dims.at(lhs_dim1); ++k) {
                     // Update the coordinate for k in lhs and rhs
                     lhs_coordinates.at(lhs_dim1) = k;
                     rhs_coordinates.at(rhs_dim0) = k;
@@ -2180,16 +2128,16 @@ inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, size_t lhs_dim0, si
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs, Tensor<T>& destination) {
+inline void _naive_matmul_impl(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& destination) {
     // Per the NOTE above, skip the regular safety checks and perform the operation
     if constexpr (destination._can_overflow) {
         // Create buffer for overflow / underflow checking
         T mul_result = 0;
-        for (size_t i = 0; i < destination.extent(0); ++i) {
-            for (size_t j = 0; j < destination.extent(1); ++j) {
+        for (size_t i = 0; i < destination.m_dims.at(0); ++i) {
+            for (size_t j = 0; j < destination.m_dims.at(1); ++j) {
                 // Get a pointer to the result's [i, j]
                 T* result_i_j = &(destination.at({i, j}));
-                for (size_t k = 0; k < lhs.extent(1); ++k) {
+                for (size_t k = 0; k < lhs.m_dims.at(1); ++k) {
                     // First multiply [i, k] * [k, j]
                     if (_mul_overflow(lhs.at({i, k}), rhs.at({k, j}), &mul_result)) {
                         throw std::overflow_error("Tensor::_naive_matmul_impl: Multiplication results in overflow / underflow.\n");
@@ -2203,9 +2151,9 @@ inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, const AbstractTenso
     }
     else {
         // Use a naive loop to perform matmul
-        for (size_t i = 0; i < destination.extent(0); ++i) {
-            for (size_t j = 0; j < destination.extent(1); ++j) {
-                for (size_t k = 0; k < lhs.extent(1); ++k) {
+        for (size_t i = 0; i < destination.m_dims.at(0); ++i) {
+            for (size_t j = 0; j < destination.m_dims.at(1); ++j) {
+                for (size_t k = 0; k < lhs.m_dims.at(1); ++k) {
                     destination.at({i, j}) += lhs.at({i, k}) * rhs.at({k, j});
                 }
             }

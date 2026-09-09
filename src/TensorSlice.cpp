@@ -25,8 +25,8 @@ using TensorSlice_NS::IndexType;
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 
-VectorSliceConfig::VectorSliceConfig(size_t idx_dim, size_t idx, size_t dim1, const std::initializer_list<size_t>& dim1_filter,
-                                     VectorSliceOrientation orientation, const std::initializer_list<std::pair<size_t,size_t>>& other_dims) : c_dim0(idx_dim),
+VectorSliceConfig::VectorSliceConfig(size_t idx_dim, size_t idx, size_t dim1, std::initializer_list<size_t> dim1_filter,
+                                     VectorSliceOrientation orientation, std::initializer_list<std::pair<size_t,size_t>> other_dims) : c_dim0(idx_dim),
                                      c_dim1(dim1), c_orientation(orientation) {
     // Store the index
     c_idx.push_back(idx);
@@ -110,8 +110,8 @@ std::pair<size_t, size_t> VectorSliceConfig::get_dim1_filter() const {
 }
 
 MatrixSliceConfig::MatrixSliceConfig(size_t idx_dim, IndexType idx_type, const std::vector<size_t>& idxs, size_t dim1, 
-                                     const std::initializer_list<size_t>& dim1_filter,
-                                     const std::initializer_list<std::pair<size_t,size_t>>& other_dims) :
+                                     std::initializer_list<size_t> dim1_filter,
+                                     std::initializer_list<std::pair<size_t,size_t>> other_dims) :
                                      c_dim0(idx_dim), c_dim1(dim1), c_idx_type(idx_type), c_idxs(idxs) {
     // Ensure we didn't get an empty vector for idxs
     if (idxs.empty()) {

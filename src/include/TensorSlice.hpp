@@ -193,8 +193,8 @@ public:
      * @param orientation Desired orientation of the vector
      * @param other_dims Other dims coordinates, needed for high-rank Tensors
      */
-    VectorSliceConfig(size_t idx_dim, size_t idx, size_t dim1, const std::initializer_list<size_t>& dim1_filter,
-                      VectorSliceOrientation orientation, const std::initializer_list<std::pair<size_t,size_t>>& other_dims);
+    VectorSliceConfig(size_t idx_dim, size_t idx, size_t dim1, std::initializer_list<size_t> dim1_filter,
+                      VectorSliceOrientation orientation, std::initializer_list<std::pair<size_t,size_t>> other_dims);
 
     /**
      * Get the first dimension for the Slice
@@ -307,8 +307,8 @@ public:
      * @param dim1_filter Optional filter for dim1 (limiting number of rows / columns)
      * @param other_dims Other dims coordinates, needed for high-rank Tensors
      */
-    MatrixSliceConfig(size_t idx_dim, IndexType idx_type, const std::vector<size_t>& idxs, size_t dim1, const std::initializer_list<size_t>& dim1_filter,
-                      const std::initializer_list<std::pair<size_t,size_t>>& other_dims);
+    MatrixSliceConfig(size_t idx_dim, IndexType idx_type, const std::vector<size_t>& idxs, size_t dim1, std::initializer_list<size_t> dim1_filter,
+                      std::initializer_list<std::pair<size_t,size_t>> other_dims);
 
     /**
      * Get the first dimension for the Slice
@@ -622,7 +622,7 @@ public:
      * @param c Initializer list with a single index or coordinate to fetch
      * @returns Returns the value at the index / coordinate
      */
-    const T& at(const std::initializer_list<size_t>& c) const {
+    const T& at(std::initializer_list<size_t> c) const {
         // Ensure we get at least one coordinate
         if (c.size() == 0) {
             throw std::invalid_argument("TensorSlice.at: No coordinates received.\n");
@@ -698,7 +698,7 @@ public:
      * allocating new std::vector for each lookup
      * @returns Returns the value at the index / coordinate
      */
-    const T& at(const std::initializer_list<size_t>& c, std::vector<size_t>& v) const {
+    const T& at(std::initializer_list<size_t> c, std::vector<size_t>& v) const {
         // Ensure we get at least one coordinate
         if (c.size() == 0) {
             throw std::invalid_argument("TensorSlice.at: No coordinates received.\n");
@@ -867,7 +867,7 @@ public:
             lhs_v.resize(c_tensor_rank);
         }
         // Check to see if we need to be concerned about overflow / underflow
-        if (c_ptr->can_overflow()) {
+        if constexpr (c_ptr->_can_overflow) {
             // Use the overflow / underflow detection for safety
             T result = 0, mul_result = 0;
             // Iterate over the elements and multiply them element-wise, then sum
@@ -1087,7 +1087,7 @@ inline Tensor<T> matmul(const Tensor<T>& lhs, const TensorSlice<T>& rhs) {
     // Store the result in a new Tensor
         Tensor<T> result({lhs.rows(), rhs.cols()});
         // Check if we have to worry about overflow
-        if constexpr (lhs.can_overflow()) {
+        if constexpr (lhs._can_overflow) {
             // Create buffer for overflow / underflow checking
             T mul_result = 0;
             for (size_t i = 0; i < result.rows(); ++i) {
