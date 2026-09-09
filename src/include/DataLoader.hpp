@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-29
+ * @version: 2026-09-08
  *
  * General Notes:
  *
@@ -37,7 +37,6 @@ namespace DataLoader_NS {
 
 using Tokenizer_NS::Tokenizer;
 using Tensor_NS::Tensor;
-using Tensor_NS::Matrix;
 
 /**
  * Data loader class for reading in text, tokenizing it, and then splitting into defined batches
@@ -83,12 +82,12 @@ private:
     /**
      * Tensor representing the input ids
      */
-    Matrix<size_t> m_input_ids = Matrix<size_t>({0});
+    Tensor<size_t> m_input_ids = Tensor<size_t>({0});
 
     /**
      * Tensor representing the target ids (i.e input ids + 1)
      */
-    Matrix<size_t> m_target_ids = Matrix<size_t>({0});
+    Tensor<size_t> m_target_ids = Tensor<size_t>({0});
 
 
 /* Private functions */
@@ -120,13 +119,13 @@ public:
      * Get input ids for the next batch
      * @returns Returns a const reference to a Tensor containing the input token ids
      */
-    const Matrix<size_t>& next_input();
+    const Tensor<size_t>& next_input();
 
     /**
      * Get target ids for the next batch
      * @returns Returns a const reference to a Tensor containing the target token ids
      */
-    const Matrix<size_t>& next_target();
+    const Tensor<size_t>& next_target();
 
 };
 

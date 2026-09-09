@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-13
+ * @version: 2026-09-08
  *
  * General Notes:
  *
@@ -35,13 +35,12 @@
 
 namespace TensorSlice_NS {
 
-// Use logging functions
+/* Use logging functions */
 using Log::log_message;
 using Log::Log_Priority;
 
-// Use Tensor, Matrix, and helper functions from Tensor_NS
+/* Use Tensor and helper functions from Tensor_NS */
 using Tensor_NS::Tensor;
-using Tensor_NS::Matrix;
 using Tensor_NS::_add_overflow;
 using Tensor_NS::_mul_overflow;
 
@@ -376,7 +375,7 @@ public:
 
 /**
  * Struct containing control information for TensorSlice, required when translating
- * coordinates to access the underlying Tensor / Matrix
+ * coordinates to access the underlying Tensor
  */
 struct DimInfo {
     /**
@@ -420,14 +419,14 @@ struct DimInfo {
 template <typename T>
 requires std::is_arithmetic_v<T>
 /**
- * Class for storing slices of a Tensor or Matrix, containing mappings of desired dims. The underlying data
- * still belongs to the parents Tensor / Matrix, resulting in a relatively lightweight container
+ * Class for storing slices of a Tensor, containing mappings of desired dims. The underlying data
+ * still belongs to the parents Tensor, resulting in a relatively lightweight container
  */
 class TensorSlice {
 /* Private data elements */
 private:
     /**
-     * Shared pointer to a Tensor or Matrix, ensuring the underlying data source isn't 
+     * Shared pointer to a Tensor, ensuring the underlying data source isn't 
      * deleted while the TensorSlice is in scope
      */
     std::shared_ptr<const Tensor<T>> c_ptr;
@@ -439,13 +438,13 @@ private:
 
     /**
      * Map of the slice axis indices to their underlying values. If, for example, we create a 1-D Tensor from a
-     * Matrix, we should be able to request an index from the map and get its location in the underlying
-     * Matrix instance
+     * Tensor, we should be able to request an index from the map and get its location in the underlying
+     * Tensor instance
      */
     std::map<size_t, size_t> m_dim0_map = std::map<size_t, size_t>();
 
     /**
-     * Map of an optional second slice axis, used when creating a 2-D slice from either a larger Matrix
+     * Map of an optional second slice axis, used when creating a 2-D slice from either a larger Tensor
      * or from a multidimensional Tensor
      */
     std::map<size_t, size_t> m_dim1_map = std::map<size_t, size_t>();
@@ -461,11 +460,17 @@ private:
      */
     std::map<size_t, DimInfo> c_other_dims = std::map<size_t, DimInfo>();
 
+    /**
+     * Determine if a numeric type can overflow and should be checked by the compiler's built
+     * in checking function
+     */
+    static constexpr bool _can_overflow = std::is_same_v<T, char> || std::is_same_v<T, signed char> || std::is_same_v<T, int> || std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> || std::is_same_v<T, int32_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, unsigned char> || std::is_same_v<T, unsigned int> || std::is_same_v<T, size_t> || std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>;
+
 /* Public methods */
 public:
     /**
-     * Constructor for TensorSlice, accepting a const reference to a Tensor / Matrix and the SliceConfig object
-     * @param tensor Const ref to a Tensor / Matrix
+     * Constructor for TensorSlice, accepting a const reference to a Tensor and the SliceConfig object
+     * @param tensor Const ref to a Tensor
      * @param config SliceConfig object, either VectorSliceConfig or MatrixSliceConfig
      */
     TensorSlice(std::shared_ptr<const Tensor<T>> ptr, const SliceConfig& config) : c_ptr(std::move(ptr)), c_tensor_rank(c_ptr->rank()) {
@@ -613,7 +618,7 @@ public:
     }
 
     /**
-     * Get the value at a specified index or coordinate, following the syntax of Tensor / Matrix
+     * Get the value at a specified index or coordinate, following the syntax of Tensor
      * @param c Initializer list with a single index or coordinate to fetch
      * @returns Returns the value at the index / coordinate
      */
@@ -686,7 +691,7 @@ public:
     }
 
     /**
-     * Get the value at a specified index or coordinate, following the syntax of Tensor / Matrix.
+     * Get the value at a specified index or coordinate, following the syntax of Tensor.
      * This `at` should only be used for high-rank Tensors (rank > 2)
      * @param c Initializer list with a single index or coordinate to fetch
      * @param v Mutable reference to a std::vector to use for coordinate mapping, instead of 
@@ -801,24 +806,6 @@ public:
     }
 
     /**
-     * Convert a TensorSlice to a Matrix
-     * @returns Returns a new Matrix instance with the dimensions of the TensorSlice
-     */
-    Matrix<T> to_matrix() const {
-        // Ensure we are dealing with a 2-D TensorSlice
-        if (rank() != 2) {
-            throw std::invalid_argument("TensorSlice.to_matrix: Cannot convert a 1-D TensorSlice to a Matrix.\n");
-        }
-        Matrix<T> target({rows(), cols()});
-        for (size_t i = 0; i < rows(); ++i) {
-            for (size_t j = 0; j < cols(); ++j) {
-                target.at({i, j}) = this->at({i, j});
-            }
-        }
-        return target;
-    }
-
-    /**
      * Convert a TensorSlice to a string, useful for viewing its contents. Possible because TensorSlices
      * are either 1-D or 2-D
      * @returns Returns a string containing the contents of the TensorSlice
@@ -837,7 +824,7 @@ public:
             for (size_t i = 0; i < rows(); ++i) {
                 result += "[";
                 for (size_t j = 0; j < cols(); ++j) {
-                    // Add the value in the Matrix
+                    // Add the value in the Tensor
                     result += std::format("{}", this->at({i, j}));
                     if (j + 1 < cols()) {
                         // Separate the values by tabs, for readability
@@ -851,7 +838,7 @@ public:
                     result += "\n";
                 }
             }
-            // Close out the Matrix final bracket and print out the info (dims and dtype)
+            // Close out the Tensor final bracket and print out the info (dims and dtype)
             result += std::format("]. {}.", this->info());
         }
         return result;
@@ -862,7 +849,7 @@ public:
      * @param lhs TensorSlice to calculate dot product with
      * @returns Returns the sum of the slices
      */
-    T dot(const TensorSlice<T>& lhs) {
+    T dot(const TensorSlice<T>& lhs) const {
         // Ensure each TensorSlice has rank == 1
         if (rank() != 1 || lhs.rank() != 1) {
             throw std::invalid_argument("TensorSlice.dot: TensorSlices must have rank == 1 for dot.\n");
@@ -901,7 +888,238 @@ public:
         }
         return result;
     }
+
+    /**
+     * Naive matmul implementation for a TensorSlice, returning a Tensor containing
+     * the result
+     * @param rhs Reference to the TensorSlice to perform the matmul with
+     * @returns Returns a new Tensor containing the result
+     * NOTE: This is essentially the same implementation found in Tensor.hpp
+     */
+    Tensor<T> matmul(const TensorSlice<T>& rhs) const {
+        // Ensure both TensorSlices have rank == 2
+        if (rank() != 2 || rhs.rank() != 2) {
+            throw std::invalid_argument("TensorSlice.matmul: TensorSlices must have rank == 2 to perform matmul.\n");
+        }
+        // Ensure the dims are compatible for the matmul
+        if (cols() != rhs.rows()) {
+            throw std::invalid_argument("TensorSlice.matmul: Incompatible dims for matmul.\n");
+        }
+        // Store the result in a new Tensor
+        Tensor<T> result({rows(), rhs.cols()});
+        // Check if we have to worry about overflow
+        if constexpr (_can_overflow) {
+            // Create buffer for overflow / underflow checking
+            T mul_result = 0;
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    // Get a pointer to the result's [i, j]
+                    T* result_i_j = &(result.at({i, j}));
+                    for (size_t k = 0; k < cols(); ++k) {
+                        // First multiply [i, k] * [k, j]
+                        if (_mul_overflow(at({i, k}), rhs.at({k, j}), &mul_result)) {
+                            throw std::overflow_error("TensorSlice.matmul: Multiplication results in overflow / underflow.\n");
+                        }
+                        if (_add_overflow(*result_i_j, rhs.at({k, j}), result_i_j)) {
+                            throw std::overflow_error("TensorSlice.matmul: Addition results in overflow / underflow.\n");
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            // Use a naive loop to perform matmul
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    for (size_t k = 0; k < cols(); ++k) {
+                        // Benefit of using spans to access the underlying data
+                        result.at({i, j}) += at({i, k}) * rhs.at({k, j});
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Naive matmul implementation for a TensorSlice, returning a Tensor containing
+     * the result
+     * @param rhs Reference to the Tensor to perform the matmul with
+     * @returns Returns a new Tensor containing the result
+     * NOTE: This is essentially the same implementation found in Tensor.hpp
+     */
+    Tensor<T> matmul(const Tensor<T>& rhs) const {
+        // Ensure the calling TensorSlice has rank == 2
+        if (rank() != 2 || rhs.rank() != 2) {
+            throw std::invalid_argument("TensorSlice.matmul: TensorSlice and Tensor must have rank == 2 to perform matmul.\n");
+        }
+        // Ensure the dims are compatible for the matmul
+        if (cols() != rhs.rows()) {
+            throw std::invalid_argument("TensorSlice.matmul: Incompatible dims for matmul.\n");
+        }
+        // Store the result in a new Tensor
+        Tensor<T> result({rows(), rhs.cols()});
+        // Check if we have to worry about overflow
+        if constexpr (_can_overflow) {
+            // Create buffer for overflow / underflow checking
+            T mul_result = 0;
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    // Get a pointer to the result's [i, j]
+                    T* result_i_j = &(result.at({i, j}));
+                    for (size_t k = 0; k < cols(); ++k) {
+                        // First multiply [i, k] * [k, j]
+                        if (_mul_overflow(at({i, k}), rhs.at({k, j}), &mul_result)) {
+                            throw std::overflow_error("TensorSlice.matmul: Multiplication results in overflow / underflow.\n");
+                        }
+                        if (_add_overflow(*result_i_j, rhs.at({k, j}), result_i_j)) {
+                            throw std::overflow_error("TensorSlice.matmul: Addition results in overflow / underflow.\n");
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            // Use a naive loop to perform matmul
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    for (size_t k = 0; k < cols(); ++k) {
+                        // Benefit of using spans to access the underlying data
+                        result.at({i, j}) += at({i, k}) * rhs.at({k, j});
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /** 
+     * Perform a matmul on a TensorSlice instance with itself
+     * @param transpose Whether to transpose self when performing the matmul, resulting in
+     * self @ self.transpose()
+     * @returns Returns a new Tensor instance containing the matmul result
+     * NOTE: This is essentially the same implementation found in Tensor.hpp
+     */
+    Tensor<T> matmul_self(bool transpose) const {
+        // Ensure we are dealing with a 2D TensorSlice
+        if (rank() != 2) {
+            throw std::invalid_argument("TensorSlice.matmul_self: Cannot perform matmul_self on a 1D TensorSlice.\n");
+        }
+        if (!transpose) {
+            if (rows() != cols()) {
+                throw std::invalid_argument("TensorSlice.matmul_self: Cannot perform matmul_self on a TensorSlice that is not square.\n");
+            }
+        }
+        // Create a new Tensor and initialize its values to zero (done in the Tensor constructor)
+        Tensor<T> result({rows(), rows()});
+        // Check if we have to be concerned about overflow / underflow
+        if constexpr (_can_overflow) {
+            // Create buffer for overflow / underflow checking
+            T mul_result = 0;
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    // Get a pointer to the result's [i, j]
+                    T lhs_val = 0, rhs_val = 0;
+                    T* result_i_j = &(result.at({i, j}));
+                    for (size_t k = 0; k < cols(); ++k) {
+                        // First multiply [i, k] * [k, j]
+                        lhs_val = at({i, k});
+                        if (transpose) {
+                            rhs_val = at({j, k});
+                        }
+                        else {
+                            rhs_val = lhs_val;
+                        }
+                        if (_mul_overflow(lhs_val, rhs_val, &mul_result)) {
+                            throw std::overflow_error("TensorSlice.matmul_self: Multiplication results in overflow / underflow.\n");
+                        }
+                        if (_add_overflow(*result_i_j, mul_result, result_i_j)) {
+                            throw std::overflow_error("TensorSlice.matmul_self: Addition results in overflow / underflow.\n");
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            T lhs_val = 0, rhs_val = 0;
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    for (size_t k = 0; k < rows(); ++k) {
+                        lhs_val = at({i, k});
+                        if (transpose) {
+                            rhs_val = at({j, k});
+                        }
+                        else {
+                            rhs_val = lhs_val;
+                        }
+                        result.at({i, j}) = lhs_val * rhs_val;
+                    }
+                }
+            }
+        }
+        return result;
+    }
 };
+
+template <typename T>
+requires std::is_arithmetic_v<T>
+/**
+ * Perform matmul with a Tensor and TensorSlice
+ * @param lhs Const reference to a Tensor
+ * @param rhs Const reference to a TensorSlice
+ * @returns Returns a new Tensor with the result
+ */
+Tensor<T> matmul(const Tensor<T>& lhs, const TensorSlice<T>& rhs) {
+    // Ensure this can only run on 2-D Tensors
+    if (lhs.rank() != 2) {
+        throw std::invalid_argument("TensorSlice_NS::matmul: Tensor must have rank == 2.\n");
+    }
+    // Ensure the TensorSlice has the correct rank
+    if (rhs.rank() != 2) {
+        throw std::invalid_argument("TensorSlice_NS::matmul: TensorSlice must have rank == 2.\n");
+    }
+    // Ensure the dims are compatible
+    if (lhs.cols() != rhs.rows()) {
+        throw std::invalid_argument("TensorSlice_NS::matmul: Incompatible shapes for matmul.\n");
+    }
+    // Store the result in a new Tensor
+        Tensor<T> result({lhs.rows(), rhs.cols()});
+        // Check if we have to worry about overflow
+        if constexpr (lhs.can_overflow()) {
+            // Create buffer for overflow / underflow checking
+            T mul_result = 0;
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    // Get a pointer to the result's [i, j]
+                    T* result_i_j = &(result.at({i, j}));
+                    for (size_t k = 0; k < lhs.cols(); ++k) {
+                        // First multiply [i, k] * [k, j]
+                        if (_mul_overflow(lhs.at({i, k}), rhs.at({k, j}), &mul_result)) {
+                            throw std::overflow_error("TensorSlice_NS::matmul: Multiplication results in overflow / underflow.\n");
+                        }
+                        if (_add_overflow(*result_i_j, rhs.at({k, j}), result_i_j)) {
+                            throw std::overflow_error("TensorSlice_NS::matmul: Addition results in overflow / underflow.\n");
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            // Use a naive loop to perform matmul
+            for (size_t i = 0; i < result.rows(); ++i) {
+                for (size_t j = 0; j < result.cols(); ++j) {
+                    for (size_t k = 0; k < lhs.cols(); ++k) {
+                        // Benefit of using spans to access the underlying data
+                        result.at({i, j}) += lhs.at({i, k}) * rhs.at({k, j});
+                    }
+                }
+            }
+        }
+
+        return result;
+}
 
 }; // namespace TensorSlice_NS
 

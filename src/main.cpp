@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-13
+ * @version: 2026-09-08
  *
  * General Notes:
  *
@@ -39,8 +39,8 @@ int main() {
     using Log::log_message;
 
     using Tensor_NS::Tensor;
-    using Tensor_NS::Matrix;
     using Tensor_NS::CausalMaskType;
+    using Tensor_NS::matmul;
 
     using TensorSlice_NS::TensorSlice;
     using TensorSlice_NS::VectorSliceConfig;
@@ -51,6 +51,7 @@ int main() {
     using DataLoader_NS::DataLoader;
 
     using Attention_NS::CausalAttention;
+    using Attention_NS::MultiHeadAttention;
 
     try {
         
@@ -64,9 +65,9 @@ int main() {
         size_t emb_dim = 256;
 
         // Create the embedding Matrix
-        //Matrix<float> emb({vocab_size, emb_dim});
-        std::shared_ptr<Matrix<float>> emb_ptr = std::make_shared<Matrix<float>>(std::initializer_list<size_t>{vocab_size, emb_dim});
-        Matrix<float>& emb = *(emb_ptr);
+        //Tensor<float> emb({vocab_size, emb_dim});
+        std::shared_ptr<Tensor<float>> emb_ptr = std::make_shared<Tensor<float>>(std::initializer_list<size_t>{vocab_size, emb_dim});
+        Tensor<float>& emb = *(emb_ptr);
         // Fill the Matrix with random values
         emb.random(-2.f, 2.f);
 
@@ -74,8 +75,8 @@ int main() {
         DataLoader d(tokenizer_ptr, 4, 8, 4);
         d.ingest("./data/the-verdict.txt");
         // Get the first input batch and then target batch (shifted by one token)
-        const Matrix<size_t>& input_batch = d.next_input();
-        const Matrix<size_t>& target_batch = d.next_target();
+        const Tensor<size_t>& input_batch = d.next_input();
+        const Tensor<size_t>& target_batch = d.next_target();
         log_message(Log_Priority::INFO, "main", std::format("Input batch info: {}\nTarget batch info: {}", input_batch.to_string(), target_batch.to_string()));
 
         // Work on basic self-attention without trainable weights
@@ -99,8 +100,8 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Lookup TensorSlice: {}", query_mat.info()));
 
         // Convert the TensorSlice to a Matrix
-        Matrix<float> query_result = query_mat.to_matrix();
-        Matrix<float> attn_scores = query_result.matmul_self(true);
+        Tensor<float> query_result = query_mat.to_tensor();
+        Tensor<float> attn_scores = query_result.matmul_self(true);
         log_message(Log_Priority::INFO, "main", std::format("Attention scores for batch 0: {}", attn_scores.to_string()));
 
         // Apply softmax to get the attention weights
@@ -108,31 +109,32 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Attention weights: {}\nRow 0 sum: {}", attn_scores.to_string(), attn_scores.sum(0, 0)));
 
         // Create the context Matrix
-        Matrix<float> context = attn_scores.matmul(query_result);
+        //Tensor<float> context = attn_scores.matmul(query_result);
+        Tensor<float> context = matmul(attn_scores, query_result);
         log_message(Log_Priority::INFO, "main", std::format("Context Matrix: {}", context.info()));
 
         // Create the QKV matrices
-        Matrix<float> W_q({emb_dim, emb_dim});
-        Matrix<float> W_k({emb_dim, emb_dim});
-        Matrix<float> W_v({emb_dim, emb_dim});
+        Tensor<float> W_q({emb_dim, emb_dim});
+        Tensor<float> W_k({emb_dim, emb_dim});
+        Tensor<float> W_v({emb_dim, emb_dim});
         // Fill the matrices with random weights
         W_q.random(-2.f, 2.f);
         W_k.random(-2.f, 2.f);
         W_v.random(-2.f, 2.f);
 
         // Calculate all keys and values
-        Matrix<float> queries = query_result.matmul(W_q);
-        Matrix<float> keys = query_result.matmul(W_k);
-        Matrix<float> values = query_result.matmul(W_v);
+        Tensor<float> queries = matmul(query_result, W_q);
+        Tensor<float> keys = matmul(query_result, W_k);
+        Tensor<float> values = matmul(query_result, W_v);
         log_message(Log_Priority::INFO, "main", std::format("Query Matrix: {}. Key Matrix: {}. Value Matrix: {}.", queries.info(), keys.info(), values.info()));
 
         // Transpose keys for using the matmul
-        Matrix<float> keys_t = keys.transpose();
-        Matrix<float> attn_scores_full = queries.matmul(keys_t);
+        Tensor<float> keys_t = keys.transpose();
+        Tensor<float> attn_scores_full = matmul(queries, keys_t);
         // Apply masking
         //attn_scores_full.ninf_tri(CausalMaskType::LOWER);
         // Create a triangular Matrix for masking as using ninf appears to cause strange behavior
-        Matrix<float> lower_tri({attn_scores_full.rows(), attn_scores_full.cols()});
+        Tensor<float> lower_tri({attn_scores_full.rows(), attn_scores_full.cols()});
         lower_tri.tri(CausalMaskType::LOWER);
         attn_scores_full *= lower_tri;
         // Scale the attention scores by the squareroot of the embedding dimension
@@ -142,12 +144,25 @@ int main() {
         // Apply dropout
         attn_scores_full.apply_dropout(0.1);
         // Calculate the context vector
-        Matrix<float> context_full = attn_scores_full.matmul(values);
+        Tensor<float> context_full = matmul(attn_scores_full, values);
         log_message(Log_Priority::INFO, "main", std::format("Context Matrix: {}", context_full.info()));
 
         // Create a CausalAttention head
         CausalAttention<float> head(emb_dim, emb_dim, 0.1);
-        Matrix<float> ca_result = head.forward(query_result);
+        Tensor<float> ca_result = head.forward(query_result);
+
+        // Test matmul with TensorSlice
+        MatrixSliceConfig emb_msc(0, IndexType::RANGE, std::vector<size_t>{0, 10}, 1, {0, 10}, {});
+        TensorSlice<float> emb_tsc(emb_ptr, emb_msc);
+        Tensor<float> mm_res = emb_tsc.matmul_self(true);
+        log_message(Log_Priority::INFO, "main", std::format("Slice Matrix: {}", mm_res.to_string()));
+
+        // Ensure Matrix can initiate matmul with TensorSlice
+        Tensor<float> mm_res_b = TensorSlice_NS::matmul(mm_res, emb_tsc);
+        log_message(Log_Priority::INFO, "main", std::format("Slice Matrix 2: {}", mm_res_b.to_string()));
+
+        // Create MultiHeadAttention instance
+        MultiHeadAttention<float> mha(emb_dim, emb_dim, 1024, 0.1, 8);
 
     } catch (const std::exception& e) {
 

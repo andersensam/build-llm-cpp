@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-29
+ * @version: 2026-09-08
  *
  * General Notes:
  *
@@ -19,7 +19,6 @@
 
 using DataLoader_NS::DataLoader;
 using Tensor_NS::Tensor;
-using Tensor_NS::Matrix;
 using Log::Log_Priority;
 using Log::log_message;
 
@@ -71,12 +70,12 @@ bool DataLoader::ingest(const std::string& path) {
         m_tokens = m_tokenizer->tokenize(s);
         return true;
     } catch (const std::exception& e) {
-        log_message(Log_Priority::ERROR, "DataLoader::ingest", std::format("Exception when ingesting data source: {}", e.what()));
+        log_message(Log_Priority::ERROR, "DataLoader.ingest", std::format("Exception when ingesting data source: {}", e.what()));
         return false;
     }
 }
 
-const Matrix<size_t>& DataLoader::next_input() {
+const Tensor<size_t>& DataLoader::next_input() {
     // Get a list of indices for our next input batch
     std::vector<std::pair<size_t, size_t>> idxs = get_idxs(m_next_input_idx);
     // Zero out the input ids before making any changes
@@ -94,7 +93,7 @@ const Matrix<size_t>& DataLoader::next_input() {
     return m_input_ids;
 }
 
-const Matrix<size_t>& DataLoader::next_target() {
+const Tensor<size_t>& DataLoader::next_target() {
     // Get a list of indices for our next input batch, using offset = 1 to fetch
     // the next token too
     std::vector<std::pair<size_t, size_t>> idxs = get_idxs(m_next_target_idx);
