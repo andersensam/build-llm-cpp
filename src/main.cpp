@@ -47,6 +47,7 @@ int main() {
     using TensorSlice_NS::MatrixSliceConfig;
     using TensorSlice_NS::VectorSliceOrientation;
     using TensorSlice_NS::IndexType;
+    using TensorSlice_NS::ListTensorSlice;
 
     using DataLoader_NS::DataLoader;
 
@@ -163,6 +164,10 @@ int main() {
 
         // Create MultiHeadAttention instance
         MultiHeadAttention<float> mha(emb_dim, emb_dim, 1024, 0.1, 8);
+
+        // Try out the new ListTensorSlice
+        ListTensorSlice<float> qq(emb_ptr, query_vsc);
+        log_message(Log_Priority::INFO, "main", std::format("ListTensorSlice: {}", qq.info()));
 
     } catch (const std::exception& e) {
 

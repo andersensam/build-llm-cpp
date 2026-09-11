@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-09
+ * @version: 2026-09-10
  *
  * General Notes:
  *
@@ -268,6 +268,20 @@ public:
      */
     virtual const T& at(const std::vector<size_t>& target) const = 0;
 
+    /**
+     * Get a mutable reference to the value stored at the provided index
+     * @param target Index to fetch from
+     * @returns Returns a mutable reference to the desired value
+     */
+    virtual T& at(size_t target) = 0;
+
+    /**
+     * Get a const reference to the value stored at the provided index
+     * @param target Index to fetch from
+     * @returns Returns a const reference to the desired value
+     */
+    virtual const T& at(size_t target) const = 0;
+
     // NOLINTBEGIN(bugprone-easily-swappable-parameters)
     /**
      * Transpose a Tensor along two dims
@@ -278,15 +292,58 @@ public:
     // NOLINTEND(bugprone-easily-swappable-parameters)
 
     /**
-     * Determine whether two Tensors (with specified dims) can matmul
+     * Determine whether two AbstractTensors (with specified dims) can matmul
      * @param dim0 First dim
      * @param dim1 Second dim
      * @param target The other Tensor to check against
      * @param target_dim0 The target's first dim
      * @param target_dim1 The target's second dim
      */
-    [[nodiscard]] virtual std::expected<bool, std::string> _can_matmul(size_t dim0, size_t dim1, const AbstractTensor<T>& target,
-                                                                       size_t target_dim0, size_t target_dim1) const = 0;
+    [[nodiscard]] std::expected<bool, std::string> _can_matmul(size_t dim0, size_t dim1, const AbstractTensor<T>& target,
+                                                               size_t target_dim0, size_t target_dim1) const {
+        // Ensure dim0 and dim1 are different
+        if (dim0 == dim1 || target_dim0 == target_dim1) {
+            return std::unexpected("AbstractTensor::_can_matmul: Caller / target dim0 and dim1 cannot be the same.\n");
+        }
+        // Ensure dim0 and dim1 are valid for the calling AbstractTensor
+        const auto& caller_dims = shape();
+        const auto& target_dims = target.shape();
+        // We know that shape().size() must be equual to rank()
+        size_t caller_rank = rank(), target_rank = target.rank();
+        if (dim0 >= caller_rank || dim1 >= caller_rank) {
+            return std::unexpected(
+                std::format(
+                    "AbstractTensor::_can_matmul: Invalid dims specified for caller AbstractTensor. Got {} and {} but have rank {}.\n",
+                    dim0, dim1, caller_rank
+                )
+            );
+        }
+        if (target_dim0 >= target_rank || target_dim1 >= target_rank) {
+            return std::unexpected(
+                std::format(
+                    "AbstractTensor::_can_matmul: Invalid dims specified for target AbstractTensor. Got {} and {} but have rank {}.\n",
+                    dim0, dim1, caller_rank
+                )
+            );
+        }
+        // Ensure the inner dims are the same size
+        if (caller_dims.at(dim1) != target_dims.at(target_dim0)) {
+            return std::unexpected(
+                std::format(
+                    "AbstractTensor::_can_matmul: Incompatible dims. Got [{}, {}] x [{}, {}], {} != {}.\n",
+                    caller_dims.at(dim0), caller_dims.at(dim1), target_dims.at(target_dim0), target_dims.at(target_dim1),
+                        caller_dims.at(dim1), target_dims.at(target_dim0)
+                )
+            );
+        }
+        return true;
+    }
+
+    /**
+     * Get a string containing information about the underlying Tensor
+     * @returns Returns a string with the Tensor's info
+     */
+    virtual std::string info() const = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 
@@ -518,9 +575,10 @@ private:
 /* Public functions */
 public:
     /**
-     * Use _can_overflow from the AbstractTensor base class
+     * Use _can_overflow and _can_matmul from the AbstractTensor base class
      */
     using AbstractTensor<T>::_can_overflow;
+    using AbstractTensor<T>::_can_matmul;
 
     /**
      * Default constructor for Tensor, taking in a reference to a vector containing the desired dimensions
@@ -1048,43 +1106,6 @@ public:
     }
 
     /**
-     * Determine whether two Tensors (with specified dims) can matmul
-     * @param dim0 First dim
-     * @param dim1 Second dim
-     * @param target The other Tensor to check against
-     * @param target_dim0 The target's first dim
-     * @param target_dim1 The target's second dim
-     */
-    [[nodiscard]] std::expected<bool, std::string> _can_matmul(size_t dim0, size_t dim1, const AbstractTensor<T>& target,
-                                                               size_t target_dim0, size_t target_dim1) const override {
-        // Ensure the Tensors have rank >= 2 and that their specified dims are valid
-        size_t target_rank = target.rank();
-        if (c_rank < 2 || target_rank < 2) {
-            return std::unexpected("Tensors must have rank >= 2");
-        }
-        if (dim0 >= c_rank || dim1 >= c_rank) {
-            return std::unexpected(
-                std::format(
-                    "Invalid dims provided for Tensor lhs. Got {} and {} but lhs.rank == {}",
-                        dim0, dim1, c_rank));
-        }
-        if (target_dim0 >= target_rank || target_dim1 >= target_rank) {
-            return std::unexpected(
-                std::format(
-                    "Invalid dims provided for Tensor rhs. Got {} and {} but rhs.rank == {}",
-                        target_dim0, target_dim1, target_rank));
-        }
-        // Ensure the dims are compatible
-        if (m_dims.at(dim1) != target.extent(target_dim0)) {
-            return std::unexpected(
-                std::format(
-                    "Incompatible Tensors for matmul. Dims [{}, {}] and [{}, {}] cannot matmul.",
-                        m_dims.at(dim0), m_dims.at(dim1), target.extent(target_dim0), target.extent(target_dim1)));
-        }
-        return true;
-    }
-
-    /**
      * Get or set a value at a specific coordinate inside the Tensor
      * @param target The coordinate (wrapped in std::vector) we want to fetch from the Tensor
      * @returns Returns a reference to the value that can be updated
@@ -1170,6 +1191,42 @@ public:
             return m_data.get()[target_offset.value()];
         }
         throw std::out_of_range(std::format("Tensor.at: Out of range: {}", target_offset.error()));
+    }
+
+    /**
+     * Get a mutable reference to the value stored at the provided index
+     * @param target Index to fetch from
+     * @returns Returns a mutable reference to the desired value
+     */
+    T& at(size_t target) override {
+        // Ensure the index exists
+        if (target >= c_elements) {
+            throw std::invalid_argument(
+                std::format(
+                    "Tensor.at: Index {} exceeds number of elements {} in Tensor.\n",
+                    target, c_elements
+                )
+            );
+        }
+        return m_data.get()[target];
+    }
+
+    /**
+     * Get a const reference to the value stored at the provided index
+     * @param target Index to fetch from
+     * @returns Returns a const reference to the desired value
+     */
+    const T& at(size_t target) const override {
+        // Ensure the index exists
+        if (target >= c_elements) {
+            throw std::invalid_argument(
+                std::format(
+                    "Tensor.at: Index {} exceeds number of elements {} in Tensor.\n",
+                    target, c_elements
+                )
+            );
+        }
+        return m_data.get()[target];
     }
 
     /**
@@ -1272,7 +1329,7 @@ public:
      * Get a string representing information about a Tensor, including its dimenstions and underlying type
      * @returns Returns an info string about the Tensor
      */
-    std::string info() const {
+    std::string info() const override {
         // Setup a base string to add information to
         std::string result = "Tensor: [";
         // Iterate over the dims and concatenate them to the result string
