@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-08
+ * @version: 2026-09-12
  *
  * General Notes:
  *
@@ -35,7 +35,8 @@ namespace Attention_NS {
 
 using Tensor_NS::Tensor;
 using Tensor_NS::CausalMaskType;
-using TensorSlice_NS::TensorSlice;
+using TensorSlice_NS::ListTensorSlice;
+using TensorSlice_NS::RangeTensorSlice;
 using TensorSlice_NS::MatrixSliceConfig;
 using TensorSlice_NS::IndexType;
 
@@ -174,17 +175,17 @@ private:
     /**
      * Query Matrix TensorSlice
      */
-    TensorSlice<T> m_w_query;
+    RangeTensorSlice<T> m_w_query;
 
     /**
      * Key Matrix TensorSlice
      */
-    TensorSlice<T> m_w_key;
+    RangeTensorSlice<T> m_w_key;
 
     /**
      * Value Matrix TensorSlice
      */
-    TensorSlice<T> m_w_value;
+    RangeTensorSlice<T> m_w_value;
 
 /* Public functions */
 public:
@@ -228,7 +229,7 @@ public:
      * Get the query TensorSlice
      * @returns Returns a reference to the TensorSlice
      */
-    const TensorSlice<T>& query() const {
+    const RangeTensorSlice<T>& query() const {
         return m_w_query;
     }
 
@@ -236,7 +237,7 @@ public:
      * Get the key TensorSlice
      * @returns Returns a reference to the TensorSlice
      */
-    const TensorSlice<T>& key() const {
+    const RangeTensorSlice<T>& key() const {
         return m_w_key;
     }
 
@@ -244,7 +245,7 @@ public:
      * Get the value TensorSlice
      * @returns Returns a reference to the TensorSlice
      */
-    const TensorSlice<T>& value() const {
+    const RangeTensorSlice<T>& value() const {
         return m_w_value;
     }
 };
@@ -367,9 +368,9 @@ public:
         for (const AttentionHead<T>& head : c_heads) {
             // Create TensorSlices for QKV based on the sharding inside the AttentionHead
             const MatrixSliceConfig& msc = head.slice_config();
-            TensorSlice<T> q_slice(q_ptr, msc);
-            TensorSlice<T> k_slice(k_ptr, msc);
-            TensorSlice<T> v_slice(v_ptr, msc);
+            RangeTensorSlice<T> q_slice(q_ptr, msc);
+            RangeTensorSlice<T> k_slice(k_ptr, msc);
+            RangeTensorSlice<T> v_slice(v_ptr, msc);
             // 
         }
         // Return a fake value for now and implement later

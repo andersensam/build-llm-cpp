@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-08
+ * @version: 2026-09-13
  *
  * General Notes:
  *
@@ -42,12 +42,12 @@ int main() {
     using Tensor_NS::CausalMaskType;
     using Tensor_NS::matmul;
 
-    using TensorSlice_NS::TensorSlice;
     using TensorSlice_NS::VectorSliceConfig;
     using TensorSlice_NS::MatrixSliceConfig;
     using TensorSlice_NS::VectorSliceOrientation;
     using TensorSlice_NS::IndexType;
     using TensorSlice_NS::ListTensorSlice;
+    using TensorSlice_NS::RangeTensorSlice;
 
     using DataLoader_NS::DataLoader;
 
@@ -85,7 +85,7 @@ int main() {
         size_t query_token = input_batch.at({0, 1}); // First batch, second token
         // Lookup the embedding for the query_token
         VectorSliceConfig query_vsc(0, query_token, 1, {}, VectorSliceOrientation::ROW, {});
-        TensorSlice<float> query_emb(emb_ptr, query_vsc);
+        ListTensorSlice<float> query_emb(emb_ptr, query_vsc);
         log_message(Log_Priority::INFO, "main", std::format("Querying for token id {}. Slice info: {}", query_token, query_emb.info()));
 
         // Instead of creating a single vector with one token's embeddings, get the embeddings of every token in the batch
@@ -97,7 +97,7 @@ int main() {
         }
         // Create the MatrixSliceConfig to get all tokens listed
         MatrixSliceConfig query_msc(0, IndexType::LIST, lookup_tokens, 1, {}, {});
-        TensorSlice<float> query_mat(emb_ptr, query_msc);
+        ListTensorSlice<float> query_mat(emb_ptr, query_msc);
         log_message(Log_Priority::INFO, "main", std::format("Lookup TensorSlice: {}", query_mat.info()));
 
         // Convert the TensorSlice to a Matrix
@@ -154,13 +154,10 @@ int main() {
 
         // Test matmul with TensorSlice
         MatrixSliceConfig emb_msc(0, IndexType::RANGE, std::vector<size_t>{0, 10}, 1, {0, 10}, {});
-        TensorSlice<float> emb_tsc(emb_ptr, emb_msc);
-        Tensor<float> mm_res = emb_tsc.matmul_self(true);
+        RangeTensorSlice<float> emb_tsc(emb_ptr, emb_msc);
+        //Tensor<float> mm_res = emb_tsc.matmul_self(true);
+        Tensor<float> mm_res = matmul(emb_tsc, 0, 1, emb_tsc, 1, 0);
         log_message(Log_Priority::INFO, "main", std::format("Slice Matrix: {}", mm_res.to_string()));
-
-        // Ensure Matrix can initiate matmul with TensorSlice
-        Tensor<float> mm_res_b = TensorSlice_NS::matmul(mm_res, emb_tsc);
-        log_message(Log_Priority::INFO, "main", std::format("Slice Matrix 2: {}", mm_res_b.to_string()));
 
         // Create MultiHeadAttention instance
         MultiHeadAttention<float> mha(emb_dim, emb_dim, 1024, 0.1, 8);
