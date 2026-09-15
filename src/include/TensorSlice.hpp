@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-13
+ * @version: 2026-09-14
  *
  * General Notes:
  *
@@ -423,7 +423,7 @@ struct DimInfo {
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-class ListTensorSlice : public AbstractTensor<T> {
+class ListTensorSlice final : public AbstractTensor<T> {
 /* Private data elements */
 private:
     /**
@@ -597,22 +597,18 @@ private:
                     }
                     // See if dim0 maps to underlying Tensor dim0
                     if (dim0_rules.rewrite_to == 0) {
-                        //return c_ptr->at({m_dim0_map.at(0), m_dim1_map.at(c.begin()[0])});
                         // We don't need to check tensor_stride.at(1) since a 2-D Tensor always has stride == 1
                         // for the outer dim
                         return (tensor_stride.at(0) * m_dim0_map.at(0)) + m_dim1_map.at(c.begin()[0]);
                     }
                     // Otherwise
-                    //return c_ptr->at({m_dim1_map.at(c.begin()[0]), m_dim0_map.at(0)});
                     return (tensor_stride.at(0) * m_dim1_map.at(c.begin()[0])) + m_dim0_map.at(0);
                 }
                 else {
                     // If we don't filter dim1, pass through the coordinate directly
                     if (dim0_rules.rewrite_to == 0) {
-                        //return c_ptr->at({m_dim0_map.at(0), c.begin()[0]});
                         return (tensor_stride.at(0) * m_dim0_map.at(0)) + c.begin()[0];
                     }
-                    //return c_ptr->at({c.begin()[0], m_dim0_map.at(0)});
                     return (tensor_stride.at(0) * c.begin()[0]) + m_dim0_map.at(0);
                 }
             }
@@ -624,26 +620,22 @@ private:
                 const auto& dim_rule = m_other_dims.at(i);
                 if (dim_rule.requires_rewrite) {
                     if (dim_rule.rewrite_to == 0) {
-                        //v.at(i) = m_dim0_map.at(0);
                         target_index += tensor_stride.at(i) * m_dim0_map.at(0);
                     }
                     // If not rewrite_to == 0, then must be == 1
                     else {
                         // Check to see if we are applying a filter on dim1
                         if (!m_dim1_map.empty()) {
-                            //v.at(i) = m_dim1_map.at(c.begin()[0]);
                             target_index += tensor_stride.at(i) * m_dim1_map.at(c.begin()[0]);
                         }
                         else {
                             // Otherwise pass the original coordinate
-                            //v.at(i) = c.begin()[0];
                             target_index += tensor_stride.at(i) * c.begin()[0];
                         }
                     }
                 }
                 // If we don't require rewrite, pull the static values for the other dims
                 else {
-                    //v.at(i) = dim_rule.base;
                     target_index += tensor_stride.at(i) * dim_rule.base;
                 }
             }
@@ -660,15 +652,12 @@ private:
                 // Check to see which dim is rewritten to 0
                 if (dim0_rules.rewrite_to == 0) {
                     if (!m_dim1_map.empty()) {
-                        //return c_ptr->at({m_dim0_map.at(c.begin()[0]), m_dim1_map.at(c.begin()[1])});
                         return (tensor_stride.at(0) * m_dim0_map.at(c.begin()[0])) + m_dim1_map.at(c.begin()[1]);
                     }
-                    //return c_ptr->at({m_dim0_map.at(c.begin()[0]), c.begin()[1]});
                     return (tensor_stride.at(0) * m_dim0_map.at(c.begin()[0])) + c.begin()[1];
                 }
                 // Otherwise flip the mapping
                 if (!m_dim1_map.empty()) {
-                    //return c_ptr->at({m_dim1_map.at(c.begin()[0]), m_dim0_map.at(c.begin()[1])});
                     return (tensor_stride.at(0) * m_dim1_map.at(c.begin()[0])) + m_dim0_map.at(c.begin()[1]);
                 }
                 //return c_ptr->at({c.begin()[0], m_dim0_map.at(c.begin()[1])});
@@ -682,24 +671,20 @@ private:
                 const auto& dim_rule = m_other_dims.at(i);
                 if (dim_rule.requires_rewrite) {
                     if (dim_rule.rewrite_to == 0) {
-                        //v.at(i) = m_dim0_map.at(c.begin()[0]);
                         target_idx += tensor_stride.at(i) * m_dim0_map.at(c.begin()[0]);
                     }
                     // If not rewrite_to == 0, then must be == 1
                     else {
                         if (!m_dim1_map.empty()) {
-                            //v.at(i) = m_dim1_map.at(c.begin()[1]);
                             target_idx += tensor_stride.at(i) * m_dim1_map.at(c.begin()[1]);
                         }
                         else {
-                            //v.at(i) = c.begin()[1];
                             target_idx += tensor_stride.at(i) * c.begin()[1];
                         }
                     }
                 }
                 // If we don't require rewrite, pull the static values for the other dims
                 else {
-                    //v.at(i) = dim_rule.base;
                     target_idx += tensor_stride.at(i) * dim_rule.base;
                 }
             }
@@ -991,7 +976,7 @@ public:
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-class RangeTensorSlice : public AbstractTensor<T> {
+class RangeTensorSlice final : public AbstractTensor<T> {
 /* Private data elements */
 private:
     /**

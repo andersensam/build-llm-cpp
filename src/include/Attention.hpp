@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-12
+ * @version: 2026-09-14
  *
  * General Notes:
  *
@@ -364,6 +364,12 @@ public:
         auto q_ptr = std::make_shared<Tensor<T>>(std::move(queries));
         auto k_ptr = std::make_shared<Tensor<T>>(std::move(keys));
         auto v_ptr = std::make_shared<Tensor<T>>(std::move(values));
+        // Create an output Tensor
+        Tensor<T> output({c_head_dim, c_head_dim});
+        // Create another Tensor for attn_weights @ values
+        Tensor<T> context_vec({c_head_dim, input.extent(0)});
+        // Create a Tensor for the final, concatenated context vector
+        Tensor<T> result({input.extent(0), c_output_dim});
         // Iterate over the Attention Heads
         for (const AttentionHead<T>& head : c_heads) {
             // Create TensorSlices for QKV based on the sharding inside the AttentionHead
@@ -371,10 +377,34 @@ public:
             RangeTensorSlice<T> q_slice(q_ptr, msc);
             RangeTensorSlice<T> k_slice(k_ptr, msc);
             RangeTensorSlice<T> v_slice(v_ptr, msc);
-            // 
+            // Calculate the attention scores, Q @ K.transpose
+            Tensor_NS::matmul(q_slice, 0, 1, k_slice, 1, 0, output);
+            // Apply masking
+            output.apply_mask(CausalMaskType::UPPER);
+            // Divide each value by the embedding dim
+            output /= std::sqrtf(static_cast<T>(c_emb_dim));
+            // Apply softmax on dim 0
+            output.softmax(0);
+            // Apply dropout
+            output.apply_dropout(c_dropout);
+            // Calculate the context vector via attn_weights (output) @ values (v_slice)
+            Tensor_NS::matmul(output, v_slice, context_vec);
+            // Transpose the context vector
+            context_vec.transpose();
+            // Store the AttentionHead id to avoid repeated calls
+            size_t head_id = head.id();
+            // Copy the values into the final result Tensor
+            for (size_t i = 0; i < input.extent(0); ++i) {
+                // Copy the second dim from the slice
+                for (size_t j = head_id * c_head_dim; j < (head_id + 1) * c_head_dim; ++j) {
+                    result.at({i, j}) = context_vec.at({i, j - (head_id * c_head_dim)});
+                }
+            }
+            // Transpose the context vector back for the next iteration
+            context_vec.transpose();
         }
-        // Return a fake value for now and implement later
-        return Tensor<T>({0});
+        // Return the concatenated context vector
+        return result;
     }
 };
 

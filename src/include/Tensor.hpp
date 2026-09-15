@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-10
+ * @version: 2026-09-14
  *
  * General Notes:
  *
@@ -476,7 +476,7 @@ inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, const AbstractTenso
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-class Tensor : public AbstractTensor<T> {
+class Tensor final : public AbstractTensor<T> {
 // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 /* Private data elements */
 private:
@@ -2107,7 +2107,7 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lh
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline Tensor<T> matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs, Tensor<T>& destination) {
+inline Tensor<T>& matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs, Tensor<T>& destination) {
     // Assume we want dims 0 and 1 from lhs and rhs and that their rank must == 2
     if (lhs.rank() != 2 || rhs.rank() != 2) {
         throw std::invalid_argument(

@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-13
+ * @version: 2026-09-14
  *
  * General Notes:
  *
@@ -161,6 +161,9 @@ int main() {
 
         // Create MultiHeadAttention instance
         MultiHeadAttention<float> mha(emb_dim, emb_dim, 1024, 0.1, 8);
+        // Run the forward pass
+        Tensor<float> mha_result = mha.forward(query_result);
+        log_message(Log_Priority::INFO, "main", std::format("MultiHeadAttention result: {}", mha_result.info()));
 
         // Try out the new ListTensorSlice
         ListTensorSlice<float> qq(emb_ptr, query_vsc);
