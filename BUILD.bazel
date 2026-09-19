@@ -19,6 +19,36 @@ cc_library(
     includes = [],
 )
 
+# Numeric definitions for use by Tensor and TensorSlice, defining
+# which types can be used and their associated double-width types
+cc_library(
+    name = "numerics",
+    hdrs = glob(
+        [
+            "src/include/Numerics.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = []
+)
+
+# Math operations executed by Tensors and TensorSlices, checking for
+# overflow and underflow, ensuring the right casting is used, etc.
+cc_library(
+    name = "tensormath",
+    hdrs = glob(
+        [
+            "src/include/TensorMath.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":numerics",
+    ]
+)
+
 # Tensor template library
 cc_library(
     name = "tensor",
@@ -31,6 +61,8 @@ cc_library(
     includes = [],
     deps = [
         ":llmlog",
+        ":numerics",
+        ":tensormath",
     ]
 )
 
@@ -52,6 +84,7 @@ cc_library(
     deps = [
         ":llmlog",
         ":tensor",
+        ":numerics",
     ]
 )
 

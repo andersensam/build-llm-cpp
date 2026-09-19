@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-18
+ * @version: 2026-09-14
  *
  * General Notes:
  *
@@ -41,8 +41,6 @@
 
 /* Local dependencies */
 #include "Log.hpp"
-#include "Numerics.hpp"
-#include "TensorMath.hpp"
 
 namespace Tensor_NS {
 
@@ -90,7 +88,7 @@ requires std::is_arithmetic_v<T>
     // this function, so no need to check again
     if constexpr (std::numeric_limits<T>::is_signed) {
         if (((b > 0) && (a > (std::numeric_limits<T>::max() - b))) || 
-            ((b < 0) && (a < (std::numeric_limits<T>::min() + b)))) {
+            ((b < 0) && (a < (std::numeric_limits<T>::min() - b)))) {
             return true;
         }
     }
@@ -117,7 +115,7 @@ requires std::is_arithmetic_v<T>
     // this function, so no need to check again
     if constexpr (std::numeric_limits<T>::is_signed) {
         if (((b > 0) && (a < (std::numeric_limits<T>::min() + b))) || 
-            ((b < 0) && (a > (std::numeric_limits<T>::max() - b)))) {
+            ((b < 0) && (a > (std::numeric_limits<T>::max() + b)))) {
             return true;
         }
     }
@@ -191,32 +189,6 @@ requires std::is_arithmetic_v<T>
         }
     }
 }
-
-/**
- * Storage class, containing the raw data pointer used by Tensor and TensorSlice
- */
-template <typename T>
-requires std::is_arithmetic_v<T>
-struct Storage {
-    /**
-     * Number of elements in the memory block
-     */
-
-    size_t c_elements = 0;
-    /**
-     * Smart pointer to a block of memory
-     */
-    std::unique_ptr<T[]> m_data = nullptr;
-
-    /**
-     * Constructor for Storage, taking in the desired number of elements
-     * @param elements Number of elements desired in the memory block
-     */
-    Storage(size_t elements) : c_elements(elements), m_data(std::make_unique<T[]>(c_elements)) {
-        // Clear out any possible garbage and set the block to zero
-        std::memset(m_data.get(), 0, sizeof(T) * c_elements);
-    }
-};
 
 // NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**
@@ -509,21 +481,15 @@ class Tensor final : public AbstractTensor<T> {
 /* Private data elements */
 private:
     /**
-     * Instance of Storage<T>, which owns the memory being used by the Tensor. We wrap Storage in
-     * std::shared_ptr to manage its lifetime and deallocate when all Tensor / TensorSlice instances
-     * go out of scope
+     * Smart pointer representing the memory block allocated to the Tensor. We use a smart pointer here
+     * to aid in lifecycle management
      */
-    std::shared_ptr<Storage<T>> m_data = nullptr;
-
-    /**
-     * Offset to begin accessing m_data.m_data, useful when creating a TensorSlice
-     */
-    size_t c_offset = 0;
+    std::unique_ptr<T[]> m_data = nullptr;
 
     /**
      * Total number of elements stored in the Tensor
      */
-    size_t c_elements = 0;
+    size_t c_elements = 1;
 
     /**
      * Tensor rank, i.e. how many dimensions a Tensor represents, anywhere from 0..N, where rank 0 represents
@@ -548,18 +514,18 @@ private:
      * @param c Coordinates to calculate the offset from
      * @returns Returns a size_t representing the offset we want
      */
-    [[nodiscard]] size_t _get_offset(std::initializer_list<size_t> c) const {
+    [[nodiscard]] std::expected<size_t, std::string> _get_offset(std::initializer_list<size_t> c) const {
         // Do some pointer arithmetic to calculate the exact address to retrieve from m_data
-        size_t target_offset = 0
+        size_t target_offset = 0;
         // Ensure the coordinates are valid for our Tensor
         for (size_t i = 0; i < c_rank; ++i) {
+            if (c.begin()[i] >= m_dims.at(i)) {
+                return std::unexpected(std::format("Tensor._get_offset: Index {} exceeds dim ({}). Max possible index is {}. {}.", 
+                                                    c.begin()[i], m_dims.at(i), m_dims.at(i) - 1, info()));
+            }
             target_offset += c.begin()[i] * m_stride.at(i);
         }
-        if (target_offset >= c_elements) {
-            throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds dim ({}). Max possible index is {}. {}.", 
-                                                c.begin()[i], m_dims.at(i), m_dims.at(i) - 1, info()));
-        }
-        return target_offset + c_offset;
+        return target_offset;
     }
 
     /**
@@ -567,18 +533,18 @@ private:
      * @param c Coordinates (wrapped in std::vector) to calculate the offset from
      * @returns Returns a size_t representing the offset we want
      */
-    [[nodiscard]] size_t _get_offset(const std::vector<size_t>& c) const {
+    [[nodiscard]] std::expected<size_t, std::string> _get_offset(const std::vector<size_t>& c) const {
         // Do some pointer arithmetic to calculate the exact address to retrieve from m_data
         size_t target_offset = 0;
         // Ensure the coordinates are valid for our Tensor
         for (size_t i = 0; i < c_rank; ++i) {
+            if (c.at(i) >= m_dims.at(i)) {
+                return std::unexpected(std::format("Tensor._get_offset: Index {} exceeds dim ({}). Max possible index is {}. {}.", 
+                                                    c.at(i), m_dims.at(i), m_dims.at(i) - 1, info()));
+            }
             target_offset += c.at(i) * m_stride.at(i);
         }
-        if (target_offset >= c_elements) {
-            throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds dim ({}). Max possible index is {}. {}.", 
-                                                c.at(i), m_dims.at(i), m_dims.at(i) - 1, info()));
-        }
-        return target_offset + c_offset;
+        return target_offset;
     }
 
     /**
@@ -623,18 +589,20 @@ public:
         // Handle the case where we have a rank-0 tensor (scalar value). Allocate space for the singular
         // element and then return immediately
         if (c_rank == 0) {
-            m_data = std::make_shared<Storage<T>>(1);
+            m_data = std::make_unique<T[]>(1);
+            std::memset(m_data.get(), 0, sizeof(T));
             return;
         }
         // Store the target 1-D representation of the desired size of our Tensor
         for (const size_t& ds : dims) {
-            if (ds == 0) {
+            if (ds <= 1) {
                 throw std::invalid_argument(std::format("Tensor.Tensor: invalid dim ({}) provided to Tensor. Dims must be >= 1 or should be omitted.", ds));
             }
             c_elements *= ds;
         }
         // Allocate the block of memory for the Tensor
-        m_data = std::make_shared<Storage<T>>(c_elements);
+        m_data = std::make_unique<T[]>(c_elements);
+        std::memset(m_data.get(), 0, sizeof(T) * c_elements);
         // Calculate the stides needed to get between dims
         if (c_rank == 1) {
             m_stride.at(0) = 1;
@@ -645,7 +613,7 @@ public:
         }
         else {
             m_stride.at(c_rank - 1) = 1;
-            for (size_t i = c_rank - 2; i > 0; --i) {
+            for (size_t i = c_rank - 2; i >= 0; --i) {
                 m_stride.at(i) = m_stride.at(i + 1) * m_dims.at(i);
             }
         }
@@ -655,8 +623,11 @@ public:
      * Copy constructor for Tensor, creating a deep copy
      * @param target Tensor to make a copy of
      */
-    Tensor(const Tensor<T>& target) : m_data(target.m_data), c_offset(target.c_offset), c_elements(target.c_elements), 
-                                      c_rank(target.c_rank), m_stride(target.m_stride), m_dims(target.m_dims) {
+    Tensor(const Tensor<T>& target) : c_elements(target.c_elements), c_rank(target.c_rank), m_stride(target.m_stride), m_dims(target.m_dims) {
+        // Create a new unique_ptr memory block
+        m_data = std::make_unique<T[]>(c_elements);
+        // Copy the entire m_data block
+        std::memcpy(m_data.get(), target.m_data.get(), sizeof(T) * c_elements);
         // Debug logging
         if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
             log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy constructor called");
@@ -664,7 +635,7 @@ public:
     }
 
     /**
-     * Copy assignment operator, creating a shallow copy (without copying data block)
+     * Copy assignment operator, creating a deep copy and overwriting this one
      * @param target Tensor to make a copy of
      * @returns Returns a reference to this Tensor
      */
@@ -674,12 +645,14 @@ public:
             return *this;
         }
         // Copy data elements into the Tensor
-        m_data = target.m_data;
-        c_offset = target.c_offset;
         c_elements = target.c_elements;
         c_rank = target.c_rank;
         m_stride = std::vector<size_t>(target.m_stride);
         m_dims = std::vector<size_t>(target.m_dims);
+        // Allocate a new block of memory for the data. Since we are using std::unique_ptr, this should cause any
+        // existing pointer to go out of scope and be cleaned up automatically
+        m_data = std::make_unique<T[]>(c_elements);
+        std::memcpy(m_data.get(), target.m_data.get(), sizeof(T) * c_elements);
         // Debug logging
         if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
             log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy assignment called");
@@ -692,10 +665,9 @@ public:
      * Move constructor for Tensor, taking the data from target
      * @param target Tensor to move data out of
      */
-    Tensor(Tensor<T>&& target) noexcept : m_data(std::move(target.m_data)), c_offset(target.c_offset) c_elements(target.c_elements), 
-                                          c_rank(target.c_rank), m_stride(std::move(target.m_stride)), m_dims(std::move(target.m_dims)) {
-        // Set target.m_data to nullptr
-        target.m_data = nullptr;
+    Tensor(Tensor<T>&& target) noexcept : m_data(std::move(target.m_data)), c_elements(target.c_elements), c_rank(target.c_rank), 
+                                          m_stride(std::move(target.m_stride)), m_dims(std::move(target.m_dims)) {
+        // Left blank since using the move constructors for std::vector and std::unique_ptr handle the setup
         // Debug logging
         if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
             log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move constructor called");
@@ -713,7 +685,6 @@ public:
             return *this;
         }
         // Copy trivial data elements into this Tensor
-        c_offset = target.c_offset;
         c_elements = target.c_elements;
         c_rank = target.c_rank;
         // Move eligible vectors
@@ -741,27 +712,21 @@ public:
         if (!_compatible(target)) {
             throw std::invalid_argument("Tensor.+=: Incompatible Tensor shapes provided to +=.\n");
         }
-        // Grab the base pointer from m_data
-        T* lhs_base = m_data->m_data.get() + c_offset;
-        T* rhs_base = target.m_data->m_data.get() + target.c_offset;
-        // Check to see if the type has a risk of overflow / underflow
-        if constexpr (_can_overflow) {
-            // Scan for the max values in each Tensor
-            T lhs = max(), rhs = target.max(), result = 0;
-            // If we don't experience overflow with the two largest values, do the vectorized addition
-            if (_add_overflow(lhs, rhs, &result)) {
-                throw std::overflow_error(std::format("Tensor.+=: Adding {} and {} results in overflow / underflow.\n", lhs, rhs));
-            }
-        }
+        // Create variables for using _add_overflow and avoid calling get() multiple times
+        T lhs = 0, rhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
-            lhs_base[i] += rhs_base[i];
-        }
-        // Ensure we don't have any NaN or inf in the result
-        if constexpr (std::is_floating_point_v<T>) {
-            if (std::any_of(lhs_base, lhs_base + c_elements, [](T val) {
-                return std::isinf(val);
-            })) {
-                throw std::overflow_error("Tensor.+=: NaN or infinity detected after addition.\n");
+            lhs = m_data.get()[i];
+            rhs = target.m_data.get()[i];
+            if constexpr (_can_overflow) {
+                if (_add_overflow(lhs, rhs, &result)) {
+                    throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, rhs));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
+            }
+            else {
+                m_data.get()[i] += rhs;
             }
         }
         return *this;
@@ -773,24 +738,20 @@ public:
      * @returns Reterns a reference to this Tensor
      */
     Tensor<T>& operator+=(const T& s) {
-        // Grab the base pointer from m_data
-        T* lhs_base = m_data->m_data.get() + c_offset;
-        // Check to see if the type has a risk of overflow / underflow
-        if constexpr (_can_overflow) {
-            T lhs = max(), result = 0;
-            if (_add_overflow(lhs, s, &result)) {
-                throw std::overflow_error(std::format("Tensor.+=: Adding {} and {} results in overflow / underflow.\n", lhs, s));
-            }
-        }
+        // Create variables for using _add_overflow and avoid calling get() multiple times
+        T lhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
-            lhs_base[i] += s;
-        }
-        // Ensure we don't have any NaN or inf in the result
-        if constexpr (std::is_floating_point_v<T>) {
-            if (std::any_of(lhs_base, lhs_base + c_elements, [](T val) {
-                return std::isinf(val);
-            })) {
-                throw std::overflow_error("Tensor.+=: NaN or infinity detected after addition.\n");
+            lhs = m_data.get()[i];
+            if constexpr (_can_overflow) {
+                if (_add_overflow(lhs, s, &result)) {
+                    throw std::overflow_error(std::format("Tensor.+=: adding {} and {} results in overflow / underflow.\n", lhs, s));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
+            }
+            else {
+                m_data.get()[i] += s;
             }
         }
         return *this;
@@ -832,29 +793,22 @@ public:
     Tensor<T>& operator-=(const Tensor<T>& target) {
         // Check to see if our Tensor shapes are compatible
         if (!_compatible(target)) {
-            throw std::invalid_argument("Tensor.+=: Incompatible Tensor shapes provided to +=.\n");
+            throw std::invalid_argument("Tensor.-=: Incompatible Tensor shapes provided to -=.\n");
         }
-        // Grab the base pointer from m_data
-        T* lhs_base = m_data->m_data.get() + c_offset;
-        T* rhs_base = target.m_data->m_data.get() + target.c_offset;
-        // Check to see if the type has a risk of overflow / underflow
-        if constexpr (_can_overflow) {
-            // Scan for the min value of lhs and max of rhs (results in most negative)
-            T lhs = min(), rhs = target.max(), result = 0;
-            // If we don't experience overflow with the two largest values, do the vectorized addition
-            if (_sub_overflow(lhs, rhs, &result)) {
-                throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, rhs));
-            }
-        }
+        T lhs = 0, rhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
-            lhs_base[i] -= rhs_base[i];
-        }
-        // Ensure we don't have any NaN or inf in the result
-        if constexpr (std::is_floating_point_v<T>) {
-            if (std::any_of(lhs_base, lhs_base + c_elements, [](T val) {
-                return std::isinf(val);
-            })) {
-                throw std::overflow_error("Tensor.-=: NaN or infinity detected after subtraction.\n");
+            lhs = m_data.get()[i];
+            rhs = target.m_data.get()[i];
+            if constexpr (_can_overflow) {
+                if (_sub_overflow(lhs, rhs, &result)) {
+                    throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, rhs));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
+            }
+            else {
+                m_data.get()[i] -= rhs;
             }
         }
         return *this;
@@ -866,24 +820,20 @@ public:
      * @returns Reterns a reference to this Tensor
      */
     Tensor<T>& operator-=(const T& s) {
-        // Grab the base pointer from m_data
-        T* lhs_base = m_data->m_data.get() + c_offset;
-        // Check to see if the type has a risk of overflow / underflow
-        if constexpr (_can_overflow) {
-            T lhs = max(), result = 0;
-            if (_sub_overflow(lhs, s, &result)) {
-                throw std::overflow_error(std::format("Tensor.+=: Adding {} and {} results in overflow / underflow.\n", lhs, s));
-            }
-        }
+        // Create variables for using _sub_overflow and avoid calling get() multiple times
+        T lhs = 0, result = 0;
         for (size_t i = 0; i < c_elements; ++i) {
-            lhs_base[i] += s;
-        }
-        // Ensure we don't have any NaN or inf in the result
-        if constexpr (std::is_floating_point_v<T>) {
-            if (std::any_of(lhs_base, lhs_base + c_elements, [](T val) {
-                return std::isinf(val);
-            })) {
-                throw std::overflow_error("Tensor.+=: NaN or infinity detected after addition.\n");
+            lhs = m_data.get()[i];
+            if constexpr (_can_overflow) {
+                if (_sub_overflow(lhs, s, &result)) {
+                    throw std::overflow_error(std::format("Tensor.-=: Subtracting {} and {} results in overflow / underflow.\n", lhs, s));
+                }
+                else {
+                    m_data.get()[i] = result;
+                }
+            }
+            else {
+                m_data.get()[i] -= s;
             }
         }
         return *this;
@@ -1543,16 +1493,7 @@ public:
      */
     T max() const {
         // NOLINTNEXTLINE(bugprone-sizeof-expression)
-        return *(std::max_element(m_data.m_data.get() + c_offset, m_data.m_data.get() + c_offset + c_elements));
-    }
-
-    /**
-     * Find the minimum value in a Tensor
-     * @returns Returns the minimum value
-     */
-    T min() const {
-        // NOLINTNEXTLINE(bugprone-sizeof-expression)
-        return *(std::min_element(m_data.m_data.get() + c_offset, m_data.m_data.get() + c_offset + c_elements));
+        return *(std::max_element(m_data.get(), m_data.get() + c_elements));
     }
 
     /** 

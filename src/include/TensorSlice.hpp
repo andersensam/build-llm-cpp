@@ -31,6 +31,7 @@
 
 /* Local dependencies */
 #include "Log.hpp"
+#include "Numerics.hpp"
 #include "Tensor.hpp"
 
 namespace TensorSlice_NS {
