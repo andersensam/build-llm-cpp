@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-14
+ * @version: 2026-09-28
  *
  * General Notes:
  *
@@ -698,9 +698,8 @@ private:
 /* Public methods */
 public:
     /**
-     * Use _can_overflow and _can_matmul from the AbstractTensor base class
+     * Use _can_matmul from the AbstractTensor base class
      */
-    using AbstractTensor<T>::_can_overflow;
     using AbstractTensor<T>::_can_matmul;
 
     explicit ListTensorSlice(std::shared_ptr<Tensor<T>> ptr, const SliceConfig& config) : c_ptr(std::move(ptr)), c_tensor_rank(c_ptr->rank()), _is_writable(true) {
@@ -969,6 +968,14 @@ public:
         }
         return target;
     }
+
+    /**
+     * Check whether a Tensor's memory block is contiguous
+     * @returns True if contiguous
+     */
+    bool contiguous() const override {
+        return false;
+    }
 };
 
 /**
@@ -1128,9 +1135,8 @@ private:
 /* Public methods */
 public:
     /**
-     * Use _can_overflow and _can_matmul from the AbstractTensor base class
+     * Use _can_matmul from the AbstractTensor base class
      */
-    using AbstractTensor<T>::_can_overflow;
     using AbstractTensor<T>::_can_matmul;
 
     explicit RangeTensorSlice(std::shared_ptr<Tensor<T>> ptr, const SliceConfig& config) : c_ptr(std::move(ptr)), c_tensor_rank(c_ptr->rank()), _is_writable(true) {
@@ -1372,6 +1378,14 @@ public:
             }
         }
         return target;
+    }
+
+    /**
+     * Check whether a Tensor's memory block is contiguous
+     * @returns True if contiguous
+     */
+    bool contiguous() const override {
+        return true;
     }
 };
 
