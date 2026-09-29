@@ -834,6 +834,7 @@ public:
         return *this;
     }
 
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
     /**
      * Check to see if a Tensor is the same as this Tensor, or if the memory blocks overlap
      * with each other
@@ -845,14 +846,35 @@ public:
         if (this == &target) {
             return false;
         }
-        // Check to see if the underlying pointer in the Storage object is the same
-        if (_data() == target._data()) {
-            return false;
+        // If the base pointers are different in m_data->m_data.get(), we
+        // must have unique underlying Storage
+        if (_data() != target._data()) {
+            return true;
         }
-        // If we aren't the same object and have different pointers in _data(), we must
-        // be two, non-overlapping Tensors
-        return true;
+        // Determine whether or not the memory blocks overlap based on c_elements
+        auto get_memory_range = [](const Tensor<T>& t) {
+            uintptr_t start = reinterpret_cast<uintptr_t>(t._data() + t.c_offset);
+            size_t element_span = t.c_elements;
+            // If non-contiguous, compute true span using dimension extents and strides
+            if (!t.c_contiguous && t.c_rank > 0) {
+                element_span = 0;
+                for (size_t i = 0; i < t.c_rank; ++i) {
+                    if (t.extent(i) > 0) {
+                        element_span += (t.extent(i) - 1) * t.dim_stride(i);
+                    }
+                }
+                element_span += 1; // Include final element
+            }
+
+            uintptr_t end = start + (element_span * sizeof(T));
+            return std::make_pair(start, end);
+        };
+        // Calculate the ranges for each Tensor
+        auto [data_start, data_end] = get_memory_range(*this);
+        auto [target_start, target_end] = get_memory_range(target);
+        return std::max(data_start, target_start) >= std::min(data_end, target_end);
     }
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 
     /**
      * Apply a uniform basic math operation over a Tensor, reducing the amount of boilerplate
@@ -870,7 +892,7 @@ public:
         }
         // If lhs, rhs, and dest don't overlap and are contiguous, use the fastest possible, vectorized
         // method to perform the operation
-        if ((lhs.c_contiguous && rhs.c_contiguous && dest.c_contiguous) && (dest.is_unique(lhs) && dest.is_unique(rhs) && lhs.is_unique(rhs))) {
+        if ((lhs.c_contiguous && rhs.c_contiguous && dest.c_contiguous) && (dest.is_unique(lhs) && dest.is_unique(rhs)) {
             switch (op) {
                 case SqueezedOpType::ADD:
                     TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.c_offset,
@@ -966,83 +988,137 @@ public:
         else {
             // _compatible ensures that the Tensors have the same shape and number of 
             // elements, so iterate using _get_offset(size_t) to save boilerplate code
-            for (size_t i = 0; i < dest.c_elements; ++i) {
-                const T& lhs_val = lhs._data()[lhs._get_offset(i)];
-                const T& rhs_val = rhs._data()[rhs._get_offset(i)];
-                T& dest_val = dest._data()[dest._get_offset(i)];
-                // Move the constexpr inside the loop since there's no perf penalty
-                // and we always know the type traits
-                if constexpr (std::is_floating_point_v<T>) {
-                    switch (op) {
-                        case SqueezedOpType::ADD:
+            if constexpr (std::is_floating_point_v<T>) {
+                bool overflowed = false;
+                switch (op) {
+                    case SqueezedOpType::ADD:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             dest_val = lhs_val + rhs_val;
-                            break;
-                        case SqueezedOpType::SUB:
+                            overflowed |= !std::isfinite(dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::SUB:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             dest_val = lhs_val - rhs_val;
-                            break;
-                        case SqueezedOpType::MUL:
+                            overflowed |= !std::isfinite(dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::MUL:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             dest_val = lhs_val * rhs_val;
-                            break;
-                        case SqueezedOpType::DIV:
+                            overflowed |= !std::isfinite(dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::DIV:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             dest_val = lhs_val / rhs_val;
-                            break;
-                    }
-                    if (!std::isfinite(dest_val)) {
-                        throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                    }
+                            overflowed |= !std::isfinite(dest_val);
+                        }
+                        break;
                 }
-                else if constexpr (std::is_signed_v<T>) {
-                    switch (op) {
-                        case SqueezedOpType::ADD:
-                            if (TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::SUB:
-                            if (TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::MUL:
-                            if (TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::DIV:
+                if (overflowed) {
+                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                }
+            }
+            else if constexpr (std::is_signed_v<T>) {
+                bool overflowed = false;
+                switch (op) {
+                    case SqueezedOpType::ADD:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::SUB:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::MUL:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::DIV:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             if (rhs_val == 0) {
                                 throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
                             }
                             if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                                throw std::overflow_error("Tensor.uniform_op: Division causes overflow / underflow.\n");
                             }
                             dest_val = lhs_val / rhs_val;
-                            break;
-                    }
+                        }
+                        break;
                 }
-                else {
-                    switch (op) {
-                        case SqueezedOpType::ADD:
-                            if (TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::SUB:
-                            if (TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::MUL:
-                            if (TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::DIV:
+                if (overflowed) {
+                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                }
+            }
+            else {
+                bool overflowed = false;
+                switch (op) {
+                    case SqueezedOpType::ADD:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::SUB:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::MUL:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::DIV:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             if (rhs_val == 0) {
                                 throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
                             }
                             dest_val = lhs_val / rhs_val;
-                            break;
-                    }
+                        }
+                        break;
+                }
+                if (overflowed) {
+                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
                 }
             }
             return dest;
@@ -1161,82 +1237,125 @@ public:
         else {
             // _compatible ensures that the Tensors have the same shape and number of 
             // elements, so iterate using _get_offset(size_t) to save boilerplate code
-            for (size_t i = 0; i < dest.c_elements; ++i) {
-                const T& lhs_val = lhs._data()[lhs._get_offset(i)];
-                T& dest_val = dest._data()[dest._get_offset(i)];
-                // Move the constexpr inside the loop since there's no perf penalty
-                // and we always know the type traits
-                if constexpr (std::is_floating_point_v<T>) {
-                    switch (op) {
-                        case SqueezedOpType::ADD:
+            if constexpr (std::is_floating_point_v<T>) {
+                bool overflowed = false;
+                switch (op) {
+                    case SqueezedOpType::ADD:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             dest_val = lhs_val + rhs_val;
-                            break;
-                        case SqueezedOpType::SUB:
+                            overflowed |= !std::isfinite(dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::SUB:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             dest_val = lhs_val - rhs_val;
-                            break;
-                        case SqueezedOpType::MUL:
+                            overflowed |= !std::isfinite(dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::MUL:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             dest_val = lhs_val * rhs_val;
-                            break;
-                        case SqueezedOpType::DIV:
+                            overflowed |= !std::isfinite(dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::DIV:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             dest_val = lhs_val / rhs_val;
-                            break;
-                    }
-                    if (!std::isfinite(dest_val)) {
-                        throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                    }
+                            overflowed |= !std::isfinite(dest_val);
+                        }
+                        break;
                 }
-                else if constexpr (std::is_signed_v<T>) {
-                    switch (op) {
-                        case SqueezedOpType::ADD:
-                            if (TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::SUB:
-                            if (TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::MUL:
-                            if (TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::DIV:
+                if (overflowed) {
+                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                }
+            }
+            else if constexpr (std::is_signed_v<T>) {
+                bool overflowed = false;
+                switch (op) {
+                    case SqueezedOpType::ADD:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::SUB:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::MUL:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::DIV:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             if (rhs_val == 0) {
                                 throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
                             }
                             if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                                throw std::overflow_error("Tensor.uniform_op: Division causes overflow / underflow.\n");
                             }
                             dest_val = lhs_val / rhs_val;
-                            break;
-                    }
+                        }
+                        break;
                 }
-                else {
-                    switch (op) {
-                        case SqueezedOpType::ADD:
-                            if (TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::SUB:
-                            if (TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::MUL:
-                            if (TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
-                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                            }
-                            break;
-                        case SqueezedOpType::DIV:
+                if (overflowed) {
+                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                }
+            }
+            else {
+                bool overflowed = false;
+                switch (op) {
+                    case SqueezedOpType::ADD:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::SUB:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::MUL:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
+                            overflowed |= TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                        }
+                        break;
+                    case SqueezedOpType::DIV:
+                        for (size_t i = 0; i < dest.c_elements; ++i) {
+                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
+                            T& dest_val = dest._data()[dest._get_offset(i)];
                             if (rhs_val == 0) {
                                 throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
                             }
                             dest_val = lhs_val / rhs_val;
-                            break;
-                    }
+                        }
+                        break;
+                }
+                if (overflowed) {
+                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
                 }
             }
             return dest;

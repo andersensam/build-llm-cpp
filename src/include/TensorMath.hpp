@@ -307,9 +307,6 @@ inline void _safe_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_add_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -396,9 +393,6 @@ inline void _safe_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size
                 throw std::overflow_error("TensorMath::_safe_2d_tensor_add_contiguous_v: Overflow / underflow detected.\n");
             }
         }
-    }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_add_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
     }
 }
 
@@ -492,9 +486,6 @@ inline void _safe_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_add_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -581,9 +572,6 @@ inline void _safe_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_add_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -649,9 +637,6 @@ inline void _safe_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t 
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_add_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -712,9 +697,6 @@ inline void _safe_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t 
                 throw std::overflow_error("TensorMath::_safe_tensor_add_contiguous_v: Overflow / underflow detected.\n");
             }
         }
-    }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_add_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
     }
 }
 
@@ -777,9 +759,6 @@ inline void _safe_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset,
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_add_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -839,9 +818,6 @@ inline void _safe_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset,
                 throw std::overflow_error("TensorMath::_safe_tensor_add_contiguous: Overflow / underflow detected.\n");
             }
         }
-    }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_add_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
     }
 }
 
@@ -936,9 +912,6 @@ inline void _safe_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_sub_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -1025,9 +998,6 @@ inline void _safe_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size
                 throw std::overflow_error("TensorMath::_safe_2d_tensor_sub_contiguous_v: Overflow / underflow detected.\n");
             }
         }
-    }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_sub_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
     }
 }
 
@@ -1121,9 +1091,6 @@ inline void _safe_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_sub_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -1210,9 +1177,6 @@ inline void _safe_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_sub_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -1276,9 +1240,6 @@ inline void _safe_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t 
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_sub_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -1339,9 +1300,6 @@ inline void _safe_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t 
                 throw std::overflow_error("TensorMath::_safe_tensor_sub_contiguous_v: Overflow / underflow detected.\n");
             }
         }
-    }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_sub_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
     }
 }
 
@@ -1404,9 +1362,6 @@ inline void _safe_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset,
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_sub_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -1466,9 +1421,6 @@ inline void _safe_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset,
                 throw std::overflow_error("TensorMath::_safe_tensor_sub_contiguous: Overflow / underflow detected.\n");
             }
         }
-    }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_sub_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
     }
 }
 
@@ -1563,9 +1515,6 @@ inline void _safe_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_mul_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -1652,9 +1601,6 @@ inline void _safe_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size
                 throw std::overflow_error("TensorMath::_safe_2d_tensor_mul_contiguous_v: Overflow / underflow detected.\n");
             }
         }
-    }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_mul_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
     }
 }
 
@@ -1748,9 +1694,6 @@ inline void _safe_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_mul_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -1837,9 +1780,6 @@ inline void _safe_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_2d_tensor_mul_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -1903,9 +1843,6 @@ inline void _safe_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t 
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_mul_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -1966,9 +1903,6 @@ inline void _safe_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t 
                 throw std::overflow_error("TensorMath::_safe_tensor_mul_contiguous_v: Overflow / underflow detected.\n");
             }
         }
-    }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_mul_contiguous_v: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
     }
 }
 
@@ -2031,9 +1965,6 @@ inline void _safe_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset,
             }
         }
     }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_mul_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
-    }
 }
 
 template <typename T>
@@ -2093,9 +2024,6 @@ inline void _safe_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset,
                 throw std::overflow_error("TensorMath::_safe_tensor_mul_contiguous: Overflow / underflow detected.\n");
             }
         }
-    }
-    else {
-        throw std::logic_error("TensorMath::_safe_tensor_mul_contiguous: Invalid type (not std::is_floating_point_v or std::is_integral_v).\n");
     }
 }
 
