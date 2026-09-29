@@ -34,6 +34,7 @@
 #include <numeric>
 #include <random>
 #include <string>
+#include <string_view>
 #include <stdexcept>
 #include <type_traits>
 #include <unordered_set>
@@ -75,6 +76,20 @@ enum class SqueezedOpType : uint8_t {
     MUL,
     DIV
 };
+
+/**
+ * Convert SqueezedOpType to a string view
+ * @param op SqueededOpType
+ * @returns Returns a std::string_view with the string representation of the type
+ */
+constexpr std::string_view squeezed_op_to_string(SqueezedOpType op) {
+    switch (op) {
+        case SqueezedOpType::ADD: return "ADD";
+        case SqueezedOpType::SUB: return "SUB";
+        case SqueezedOpType::MUL: return "MUL";
+        case SqueezedOpType::DIV: return "DIV";
+    }
+}
 
 /**
  * Compiler-independent check for addition overflow / underflow
@@ -202,8 +217,8 @@ struct Storage {
     /**
      * Number of elements in the memory block
      */
-
     size_t c_elements = 0;
+
     /**
      * Smart pointer to a block of memory
      */
@@ -599,7 +614,8 @@ private:
             throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds number of elements.", target_idx));
         }
         // If the memory is contiguous, return the target index + base offset
-        if (c_contiguous) {
+        // The previous check also prevents index > 0 for Tensors with rank == 0
+        if (c_contiguous || c_rank == 0) {
             return c_offset + target_idx;
         }
         // Traverse the Tensor shape and strides to get the target offset
@@ -819,153 +835,430 @@ public:
     }
 
     /**
+     * Check to see if a Tensor is the same as this Tensor, or if the memory blocks overlap
+     * with each other
+     * @param target Tensor to validate uniqueness with
+     * @returns Returns true if the Tensors are unique and do not have overlapping memory
+     */
+    bool is_unique(const Tensor<T>& target) const {
+        // Easiest check to make sure we aren't pointing at the same object
+        if (this == &target) {
+            return false;
+        }
+        // Check to see if the underlying pointer in the Storage object is the same
+        if (_data() == target._data()) {
+            return false;
+        }
+        // If we aren't the same object and have different pointers in _data(), we must
+        // be two, non-overlapping Tensors
+        return true;
+    }
+
+    /**
+     * Apply a uniform basic math operation over a Tensor, reducing the amount of boilerplate
+     * code required for the various operators and friends
+     * @param lhs Const reference to a Tensor to serve as the lefthand side
+     * @param rhs Const reference to a Tensor to serve as the righthand side
+     * @param dest Reference to a Tensor to write the result to
+     * @param op Target operation to perform
+     * @returns Returns a reference to the destination Tensor
+     */
+    friend Tensor<T>& uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& dest, SqueezedOpType op) {
+        // Ensure the Tensors are compatible, including that the destination has the right shape
+        if (!lhs._compatible(rhs) || !lhs._compatible(dest)) {
+            throw std::invalid_argument("Tensor.uniform_op: Incompatible Tensor for uniform_op(lhs, rhs, dest, op).\n");
+        }
+        // If lhs, rhs, and dest don't overlap and are contiguous, use the fastest possible, vectorized
+        // method to perform the operation
+        if ((lhs.c_contiguous && rhs.c_contiguous && dest.c_contiguous) && (dest.is_unique(lhs) && dest.is_unique(rhs) && lhs.is_unique(rhs))) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.c_offset,
+                                                                 rhs._data(), rhs.c_offset,
+                                                                 dest._data(), dest.c_offset,
+                                                                 dest.c_elements);
+                    break;
+                case SqueezedOpType::SUB:
+                    TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.c_offset,
+                                                                 rhs._data(), rhs.c_offset,
+                                                                 dest._data(), dest.c_offset,
+                                                                 dest.c_elements);
+                    break;
+                case SqueezedOpType::MUL:
+                    TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.c_offset,
+                                                                 rhs._data(), rhs.c_offset,
+                                                                 dest._data(), dest.c_offset,
+                                                                 dest.c_elements);
+                    break;
+                case SqueezedOpType::DIV:
+                    TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.c_offset,
+                                                                 rhs._data(), rhs.c_offset,
+                                                                 dest._data(), dest.c_offset,
+                                                                 dest.c_elements);
+                    break;
+            }
+            return dest;
+        }
+        // If both Tensors are fully contiguous, use the fastest version possible
+        if (lhs.c_contiguous && rhs.c_contiguous && dest.c_contiguous) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    TensorMath_NS::_safe_tensor_add_contiguous(lhs._data(), lhs.c_offset,
+                                                               rhs._data(), rhs.c_offset,
+                                                               dest._data(), dest.c_offset,
+                                                               dest.c_elements);
+                    break;
+                case SqueezedOpType::SUB:
+                    TensorMath_NS::_safe_tensor_sub_contiguous(lhs._data(), lhs.c_offset,
+                                                               rhs._data(), rhs.c_offset,
+                                                               dest._data(), dest.c_offset,
+                                                               dest.c_elements);
+                    break;
+                case SqueezedOpType::MUL:
+                    TensorMath_NS::_safe_tensor_mul_contiguous(lhs._data(), lhs.c_offset,
+                                                               rhs._data(), rhs.c_offset,
+                                                               dest._data(), dest.c_offset,
+                                                               dest.c_elements);
+                    break;
+                case SqueezedOpType::DIV:
+                    TensorMath_NS::_safe_tensor_div_contiguous(lhs._data(), lhs.c_offset,
+                                                               rhs._data(), rhs.c_offset,
+                                                               dest._data(), dest.c_offset,
+                                                               dest.c_elements);
+                    break;
+            }
+            return dest;
+        }
+        // If the Tensors are not entirely contiguous, but are rank == 2 and they all have strides
+        // of 1 for dim1, we can also speed up this op
+        else if (lhs.c_rank == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    TensorMath_NS::_safe_2d_tensor_add_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
+                                                                  rhs._data(), rhs.c_offset, rhs.dim_stride(0),
+                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
+                                                                  dest.extent(0), dest.extent(1));
+                    break;
+                case SqueezedOpType::SUB:
+                    TensorMath_NS::_safe_2d_tensor_sub_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
+                                                                  rhs._data(), rhs.c_offset, rhs.dim_stride(0),
+                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
+                                                                  dest.extent(0), dest.extent(1));
+                    break;
+                case SqueezedOpType::MUL:
+                    TensorMath_NS::_safe_2d_tensor_mul_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
+                                                                  rhs._data(), rhs.c_offset, rhs.dim_stride(0),
+                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
+                                                                  dest.extent(0), dest.extent(1));
+                    break;
+                case SqueezedOpType::DIV:
+                    TensorMath_NS::_safe_2d_tensor_div_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
+                                                                  rhs._data(), rhs.c_offset, rhs.dim_stride(0),
+                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
+                                                                  dest.extent(0), dest.extent(1));
+                    break;
+            }
+            return dest;
+        }
+        // If we are dealing with either a non-contiguous Tensor or some other edge case,
+        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
+        // if overflow / underflow occur
+        else {
+            // _compatible ensures that the Tensors have the same shape and number of 
+            // elements, so iterate using _get_offset(size_t) to save boilerplate code
+            for (size_t i = 0; i < dest.c_elements; ++i) {
+                const T& lhs_val = lhs._data()[lhs._get_offset(i)];
+                const T& rhs_val = rhs._data()[rhs._get_offset(i)];
+                T& dest_val = dest._data()[dest._get_offset(i)];
+                // Move the constexpr inside the loop since there's no perf penalty
+                // and we always know the type traits
+                if constexpr (std::is_floating_point_v<T>) {
+                    switch (op) {
+                        case SqueezedOpType::ADD:
+                            dest_val = lhs_val + rhs_val;
+                            break;
+                        case SqueezedOpType::SUB:
+                            dest_val = lhs_val - rhs_val;
+                            break;
+                        case SqueezedOpType::MUL:
+                            dest_val = lhs_val * rhs_val;
+                            break;
+                        case SqueezedOpType::DIV:
+                            dest_val = lhs_val / rhs_val;
+                            break;
+                    }
+                    if (!std::isfinite(dest_val)) {
+                        throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                    }
+                }
+                else if constexpr (std::is_signed_v<T>) {
+                    switch (op) {
+                        case SqueezedOpType::ADD:
+                            if (TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::SUB:
+                            if (TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::MUL:
+                            if (TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::DIV:
+                            if (rhs_val == 0) {
+                                throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
+                            }
+                            if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            dest_val = lhs_val / rhs_val;
+                            break;
+                    }
+                }
+                else {
+                    switch (op) {
+                        case SqueezedOpType::ADD:
+                            if (TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::SUB:
+                            if (TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::MUL:
+                            if (TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::DIV:
+                            if (rhs_val == 0) {
+                                throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
+                            }
+                            dest_val = lhs_val / rhs_val;
+                            break;
+                    }
+                }
+            }
+            return dest;
+        }
+    }
+
+    /**
+     * Apply a uniform basic math operation over a Tensor, reducing the amount of boilerplate
+     * code required for the various operators and friends
+     * @param lhs Const reference to a Tensor to serve as the lefthand side
+     * @param rhs_val Scalar value to perform the op with lhs
+     * @param dest Reference to a Tensor to write the result to
+     * @param op Target operation to perform
+     * @returns Returns a reference to the destination Tensor
+     */
+    friend Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, SqueezedOpType op) {
+        // Ensure the Tensors are compatible, including that the destination has the right shape
+        if (!lhs._compatible(dest)) {
+            throw std::invalid_argument("Tensor.uniform_op: Incompatible Tensor for uniform_op(lhs, rhs_val, dest, op).\n");
+        }
+        // If lhs, rhs, and dest don't overlap and are contiguous, use the fastest possible, vectorized
+        // method to perform the operation
+        if ((lhs.c_contiguous && dest.c_contiguous) && dest.is_unique(lhs)) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.c_offset,
+                                                                 rhs_val,
+                                                                 dest._data(), dest.c_offset,
+                                                                 dest.c_elements);
+                    break;
+                case SqueezedOpType::SUB:
+                    TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.c_offset,
+                                                                 rhs_val,
+                                                                 dest._data(), dest.c_offset,
+                                                                 dest.c_elements);
+                    break;
+                case SqueezedOpType::MUL:
+                    TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.c_offset,
+                                                                 rhs_val,
+                                                                 dest._data(), dest.c_offset,
+                                                                 dest.c_elements);
+                    break;
+                case SqueezedOpType::DIV:
+                    TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.c_offset,
+                                                                 rhs_val,
+                                                                 dest._data(), dest.c_offset,
+                                                                 dest.c_elements);
+                    break;
+            }
+            return dest;
+        }
+        // If both Tensors are fully contiguous, use the fastest version possible
+        if (lhs.c_contiguous && dest.c_contiguous) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    TensorMath_NS::_safe_tensor_add_contiguous(lhs._data(), lhs.c_offset,
+                                                               rhs_val,
+                                                               dest._data(), dest.c_offset,
+                                                               dest.c_elements);
+                    break;
+                case SqueezedOpType::SUB:
+                    TensorMath_NS::_safe_tensor_sub_contiguous(lhs._data(), lhs.c_offset,
+                                                               rhs_val,
+                                                               dest._data(), dest.c_offset,
+                                                               dest.c_elements);
+                    break;
+                case SqueezedOpType::MUL:
+                    TensorMath_NS::_safe_tensor_mul_contiguous(lhs._data(), lhs.c_offset,
+                                                               rhs_val,
+                                                               dest._data(), dest.c_offset,
+                                                               dest.c_elements);
+                    break;
+                case SqueezedOpType::DIV:
+                    TensorMath_NS::_safe_tensor_div_contiguous(lhs._data(), lhs.c_offset,
+                                                               rhs_val,
+                                                               dest._data(), dest.c_offset,
+                                                               dest.c_elements);
+                    break;
+            }
+            return dest;
+        }
+        // If the Tensors are not entirely contiguous, but are rank == 2 and they all have strides
+        // of 1 for dim1, we can also speed up this op
+        else if (lhs.c_rank == 2 && (lhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    TensorMath_NS::_safe_2d_tensor_add_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
+                                                                  rhs_val,
+                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
+                                                                  dest.extent(0), dest.extent(1));
+                    break;
+                case SqueezedOpType::SUB:
+                    TensorMath_NS::_safe_2d_tensor_sub_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
+                                                                  rhs_val,
+                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
+                                                                  dest.extent(0), dest.extent(1));
+                    break;
+                case SqueezedOpType::MUL:
+                    TensorMath_NS::_safe_2d_tensor_mul_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
+                                                                  rhs_val,
+                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
+                                                                  dest.extent(0), dest.extent(1));
+                    break;
+                case SqueezedOpType::DIV:
+                    TensorMath_NS::_safe_2d_tensor_div_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
+                                                                  rhs_val,
+                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
+                                                                  dest.extent(0), dest.extent(1));
+                    break;
+            }
+            return dest;
+        }
+        // If we are dealing with either a non-contiguous Tensor or some other edge case,
+        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
+        // if overflow / underflow occur
+        else {
+            // _compatible ensures that the Tensors have the same shape and number of 
+            // elements, so iterate using _get_offset(size_t) to save boilerplate code
+            for (size_t i = 0; i < dest.c_elements; ++i) {
+                const T& lhs_val = lhs._data()[lhs._get_offset(i)];
+                T& dest_val = dest._data()[dest._get_offset(i)];
+                // Move the constexpr inside the loop since there's no perf penalty
+                // and we always know the type traits
+                if constexpr (std::is_floating_point_v<T>) {
+                    switch (op) {
+                        case SqueezedOpType::ADD:
+                            dest_val = lhs_val + rhs_val;
+                            break;
+                        case SqueezedOpType::SUB:
+                            dest_val = lhs_val - rhs_val;
+                            break;
+                        case SqueezedOpType::MUL:
+                            dest_val = lhs_val * rhs_val;
+                            break;
+                        case SqueezedOpType::DIV:
+                            dest_val = lhs_val / rhs_val;
+                            break;
+                    }
+                    if (!std::isfinite(dest_val)) {
+                        throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                    }
+                }
+                else if constexpr (std::is_signed_v<T>) {
+                    switch (op) {
+                        case SqueezedOpType::ADD:
+                            if (TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::SUB:
+                            if (TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::MUL:
+                            if (TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::DIV:
+                            if (rhs_val == 0) {
+                                throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
+                            }
+                            if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            dest_val = lhs_val / rhs_val;
+                            break;
+                    }
+                }
+                else {
+                    switch (op) {
+                        case SqueezedOpType::ADD:
+                            if (TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::SUB:
+                            if (TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::MUL:
+                            if (TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val)) {
+                                throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+                            }
+                            break;
+                        case SqueezedOpType::DIV:
+                            if (rhs_val == 0) {
+                                throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
+                            }
+                            dest_val = lhs_val / rhs_val;
+                            break;
+                    }
+                }
+            }
+            return dest;
+        }
+    }
+
+    /**
      * Addition assignment operator, adding values from target to this Tensor
      * @param target Tensor to add with
      * @returns Returns a reference to this Tensor
      */
     Tensor<T>& operator+=(const Tensor<T>& target) {
-        // Check to see if our Tensor shapes are compatible
-        if (!_compatible(target)) {
-            throw std::invalid_argument("Tensor.+=: Incompatible Tensor shapes provided to +=.\n");
-        }
-        // Handle a special case for rank-0 Tensors
-        if (c_rank == 0) {
-            T& lhs = at({});
-            const T& rhs = target.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                lhs += rhs;
-                if (!std::isfinite(lhs)) {
-                    throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_add_overflow_signed(lhs, rhs, &lhs)) {
-                    throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_add_overflow_unsigned(lhs, rhs, &lhs)) {
-                    throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                }
-            }
-            return *this;
-        }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (c_contiguous && target.c_contiguous) {
-            TensorMath_NS::_safe_tensor_add_contiguous(_data(), c_offset,
-                                                       target._data(), target.c_offset,
-                                                       _data(), c_offset, c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_add_contiguous, we must ensure that the dim1 stride == 1
-        else if (c_rank == 2 && (dim_stride(1) == 1 && target.dim_stride(1) == 1)) {
-            TensorMath_NS::_safe_2d_tensor_add_contiguous(_data(), c_offset, dim_stride(0),
-                                                          target._data(), target.c_offset, target.dim_stride(0),
-                                                          _data(), c_offset, dim_stride(0),
-                                                          extent(0), extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // _compatible ensures that the Tensors have the same shape and number of 
-            // elements, so iterate using _get_offset(size_t) to save boilerplate code
-            for (size_t i = 0; i < c_elements; ++i) {
-                T& lhs = _data()[_get_offset(i)];
-                const T& rhs = target._data()[target._get_offset(i)];
-                // Move the constexpr inside the loop since there's no perf penalty
-                // and we always know the type traits
-                if constexpr (std::is_floating_point_v<T>) {
-                    lhs += rhs;
-                    if (!std::isfinite(lhs)) {
-                        throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                    }
-                }
-                else if constexpr (std::is_signed_v<T>) {
-                    if (TensorMath_NS::_add_overflow_signed(lhs, rhs, &lhs)) {
-                        throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                    }
-                }
-                else {
-                    if (TensorMath_NS::_add_overflow_unsigned(lhs, rhs, &lhs)) {
-                        throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                    }
-                }
-            }
-        }
-        return *this;
+        return uniform_op(*this, target, *this, SqueezedOpType::ADD);
     }
 
     /**
      * Scalar addition assignment operator, adding a scalar value to every value in the Tensor
      * @param s Scalar to add to each value in the Tensor
-     * @returns Reterns a reference to this Tensor
+     * @returns Returns a reference to this Tensor
      */
-    Tensor<T>& operator+=(const T& s) {
-        // Handle a special case for rank-0 Tensors
-        if (c_rank == 0) {
-            T& lhs = at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                lhs += s;
-                if (!std::isfinite(lhs)) {
-                    throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_add_overflow_signed(lhs, s, &lhs)) {
-                    throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_add_overflow_unsigned(lhs, s, &lhs)) {
-                    throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                }
-            }
-            return *this;
-        }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (c_contiguous) {
-            TensorMath_NS::_safe_tensor_add_contiguous(_data(), c_offset,
-                                                       s,
-                                                       _data(), c_offset, c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_add_contiguous, we must ensure that the dim1 stride == 1
-        else if (c_rank == 2 && dim_stride(1) == 1) {
-            TensorMath_NS::_safe_2d_tensor_add_contiguous(_data(), c_offset, dim_stride(0),
-                                                          s,
-                                                          _data(), c_offset, dim_stride(0),
-                                                          extent(0), extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // _compatible ensures that the Tensors have the same shape and number of 
-            // elements, so iterate using _get_offset(size_t) to save boilerplate code
-            for (size_t i = 0; i < c_elements; ++i) {
-                T& lhs = _data()[_get_offset(i)];
-                // Move the constexpr inside the loop since there's no perf penalty
-                // and we always know the type traits
-                if constexpr (std::is_floating_point_v<T>) {
-                    lhs += s;
-                    if (!std::isfinite(lhs)) {
-                        throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                    }
-                }
-                else if constexpr (std::is_signed_v<T>) {
-                    if (TensorMath_NS::_add_overflow_signed(lhs, s, &lhs)) {
-                        throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                    }
-                }
-                else {
-                    if (TensorMath_NS::_add_overflow_unsigned(lhs, s, &lhs)) {
-                        throw std::overflow_error("Tensor.+=: Overflow / underflow detected.\n");
-                    }
-                }
-            }
-        }
-        return *this;
+    Tensor<T>& operator+=(T s) {
+        return uniform_op(*this, s, *this, SqueezedOpType::ADD);
     }
 
     /**
@@ -980,158 +1273,22 @@ public:
         if (!lhs._compatible(rhs)) {
             throw std::invalid_argument("Tensor.+: Incompatible Tensor shapes provided to +.\n");
         }
-        // Handle a special case for rank-0 Tensors
-        if (lhs.rank() == 0) {
-            Tensor<T> result({});
-            T& result_val = result.at({});
-            const T& lhs_val = lhs.at({});
-            const T& rhs_val = rhs.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                result_val = lhs_val + rhs_val;
-                if (!std::isfinite(result_val)) {
-                    throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &result_val)) {
-                    throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &result_val)) {
-                    throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                }
-            }
-            return result;
-        }
-        // Otherwise allocate a new Tensor with the same dimensions
+        // Allocate a new Tensor with the same dimensions as lhs
         Tensor<T> result(lhs.dims());
-        // Since by definition result allocates a new memory block that is contiguous, we can use
-        // the __restrict__ version of _safe_tensor_add_contiguous (_v)
-        if (lhs.c_contiguous && rhs.c_contiguous) {
-            TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.c_offset,
-                                                         rhs._data(), rhs.c_offset,
-                                                         result._data(), result.c_offset, result.c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_add_contiguous_v, we must ensure that the dim1 stride == 1
-        else if (lhs.c_rank == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1)) {
-            TensorMath_NS::_safe_2d_tensor_add_contiguous_v(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                            rhs._data(), rhs.c_offset, rhs.dim_stride(0),
-                                                            result._data(), result.c_offset, result.dim_stride(0),
-                                                            result.extent(0), result.extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // _compatible ensures that the Tensors have the same shape and number of 
-            // elements, so iterate using _get_offset(size_t) to save boilerplate code
-            for (size_t i = 0; i < lhs.c_elements; ++i) {
-                // Skip using _get_offset since by definition, result is a new contiguous Tensor
-                T& result_val = result._data()[i];
-                const T& lhs_val = lhs._data()[lhs._get_offset(i)];
-                const T& rhs_val = rhs._data()[rhs._get_offset(i)];
-                // Move the constexpr inside the loop since there's no perf penalty
-                // and we always know the type traits
-                if constexpr (std::is_floating_point_v<T>) {
-                    result_val = lhs_val + rhs_val;
-                    if (!std::isfinite(result_val)) {
-                        throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                    }
-                }
-                else if constexpr (std::is_signed_v<T>) {
-                    if (TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &result_val)) {
-                        throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                    }
-                }
-                else {
-                    if (TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &result_val)) {
-                        throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                    }
-                }
-            }
-        }
+        uniform_op(lhs, rhs, result, SqueezedOpType::ADD);
         return result;
     }
 
     /**
      * Scalar addition operator for adding scalar values, storing the result in a new Tensor
      * @param lhs Const ref to the Tensor<T>
-     * @param rhs Const ref to the scalar value we want to use
+     * @param rhs Scalar value we want to use
      * @returns Returns a new Tensor<T> containing the result of the addition
      */
-    friend Tensor<T> operator+(const Tensor<T>& lhs, const T& rhs) {
-        // Handle a special case for rank-0 Tensors
-        if (lhs.rank() == 0) {
-            Tensor<T> result({});
-            T& result_val = result.at({});
-            const T& lhs_val = lhs.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                result_val = lhs_val + rhs;
-                if (!std::isfinite(result_val)) {
-                    throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_add_overflow_signed(lhs_val, rhs, &result_val)) {
-                    throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs, &result_val)) {
-                    throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                }
-            }
-            return result;
-        }
-        // Otherwise allocate a new Tensor with the same dimensions
+    friend Tensor<T> operator+(const Tensor<T>& lhs, T rhs) {
+        // Allocate a new Tensor with the same dimensions as lhs
         Tensor<T> result(lhs.dims());
-        // Since by definition result allocates a new memory block that is contiguous, we can use
-        // the __restrict__ version of _safe_tensor_add_contiguous (_v)
-        if (lhs.c_contiguous) {
-            TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.c_offset,
-                                                         rhs,
-                                                         result._data(), result.c_offset, result.c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_add_contiguous_v, we must ensure that the dim1 stride == 1
-        else if (lhs.c_rank == 2 && lhs.dim_stride(1) == 1) {
-            TensorMath_NS::_safe_2d_tensor_add_contiguous_v(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                            rhs,
-                                                            result._data(), result.c_offset, result.dim_stride(0),
-                                                            result.extent(0), result.extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // _compatible ensures that the Tensors have the same shape and number of 
-            // elements, so iterate using _get_offset(size_t) to save boilerplate code
-            for (size_t i = 0; i < lhs.c_elements; ++i) {
-                // Skip using _get_offset since by definition, result is a new contiguous Tensor
-                T& result_val = result._data()[i];
-                const T& lhs_val = lhs._data()[lhs._get_offset(i)];
-                // Move the constexpr inside the loop since there's no perf penalty
-                // and we always know the type traits
-                if constexpr (std::is_floating_point_v<T>) {
-                    result_val = lhs_val + rhs;
-                    if (!std::isfinite(result_val)) {
-                        throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                    }
-                }
-                else if constexpr (std::is_signed_v<T>) {
-                    if (TensorMath_NS::_add_overflow_signed(lhs_val, rhs, &result_val)) {
-                        throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                    }
-                }
-                else {
-                    if (TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs, &result_val)) {
-                        throw std::overflow_error("Tensor.+: Overflow / underflow detected.\n");
-                    }
-                }
-            }
-        }
+        uniform_op(lhs, rhs, result, SqueezedOpType::ADD);
         return result;
     }
 
@@ -1141,188 +1298,16 @@ public:
      * @returns Returns a reference to this Tensor
      */
     Tensor<T>& operator-=(const Tensor<T>& target) {
-        // Check to see if our Tensor shapes are compatible
-        if (!_compatible(target)) {
-            throw std::invalid_argument("Tensor.-=: Incompatible Tensor shapes provided to -=.\n");
-        }
-        // Handle a special case for rank-0 Tensors
-        if (c_rank == 0) {
-            T& lhs = at({});
-            const T& rhs = target.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                lhs -= rhs;
-                if (!std::isfinite(lhs)) {
-                    throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_sub_overflow_signed(lhs, rhs, &lhs)) {
-                    throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_sub_overflow_unsigned(lhs, rhs, &lhs)) {
-                    throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                }
-            }
-            return *this;
-        }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (c_contiguous && target.c_contiguous) {
-            TensorMath_NS::_safe_tensor_sub_contiguous(_data(), c_offset,
-                                                       target._data(), target.c_offset,
-                                                       _data(), c_offset, c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_sub_contiguous, we must ensure that the dim1 stride == 1
-        else if (c_rank == 2 && (dim_stride(1) == 1 && target.dim_stride(1) == 1)) {
-            TensorMath_NS::_safe_2d_tensor_sub_contiguous(_data(), c_offset, dim_stride(0),
-                                                          target._data(), target.c_offset, target.dim_stride(0),
-                                                          _data(), c_offset, dim_stride(0),
-                                                          extent(0), extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& lhs = at(c);
-                const T& rhs = target.at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    lhs -= rhs;
-                    if (!std::isfinite(lhs)) {
-                        throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (TensorMath_NS::_sub_overflow_signed(lhs, rhs, &lhs)) {
-                        throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                    }
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (TensorMath_NS::_sub_overflow_unsigned(lhs, rhs, &lhs)) {
-                        throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
-        return *this;
+        return uniform_op(*this, target, *this, SqueezedOpType::SUB);
     }
 
     /**
      * Scalar subtraction assignment operator, subtracting a scalar value from every value in the Tensor
      * @param s Scalar to subtract from each value in the Tensor
-     * @returns Reterns a reference to this Tensor
+     * @returns Returns a reference to this Tensor
      */
-    Tensor<T>& operator-=(const T& s) {
-        // Handle a special case for rank-0 Tensors
-        if (c_rank == 0) {
-            T& lhs = at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                lhs -= s;
-                if (!std::isfinite(lhs)) {
-                    throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_sub_overflow_signed(lhs, s, &lhs)) {
-                    throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_sub_overflow_unsigned(lhs, s, &lhs)) {
-                    throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                }
-            }
-            return *this;
-        }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (c_contiguous) {
-            TensorMath_NS::_safe_tensor_sub_contiguous(_data(), c_offset,
-                                                       s,
-                                                       _data(), c_offset, c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_sub_contiguous, we must ensure that the dim1 stride == 1
-        else if (c_rank == 2 && dim_stride(1) == 1) {
-            TensorMath_NS::_safe_2d_tensor_sub_contiguous(_data(), c_offset, dim_stride(0),
-                                                          s,
-                                                          _data(), c_offset, dim_stride(0),
-                                                          extent(0), extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& lhs = at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    lhs -= s;
-                    if (!std::isfinite(lhs)) {
-                        throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (TensorMath_NS::_sub_overflow_signed(lhs, s, &lhs)) {
-                        throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                    }
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (TensorMath_NS::_sub_overflow_unsigned(lhs, s, &lhs)) {
-                        throw std::overflow_error("Tensor.-=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
-        return *this;
+    Tensor<T>& operator-=(T s) {
+        return uniform_op(*this, s, *this, SqueezedOpType::SUB);
     }
 
     /**
@@ -1335,198 +1320,24 @@ public:
     friend Tensor<T> operator-(const Tensor<T>& lhs, const Tensor<T>& rhs) {
         // Check to see if our Tensor shapes are compatible
         if (!lhs._compatible(rhs)) {
-            throw std::invalid_argument("Tensor.-: Incompatible Tensor shapes provided to +.\n");
+            throw std::invalid_argument("Tensor.-: Incompatible Tensor shapes provided to -.\n");
         }
-        // Handle a special case for rank-0 Tensors
-        if (lhs.rank() == 0) {
-            Tensor<T> result({});
-            T& result_val = result.at({});
-            const T& lhs_val = lhs.at({});
-            const T& rhs_val = rhs.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                result_val = lhs_val - rhs_val;
-                if (!std::isfinite(result_val)) {
-                    throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &result_val)) {
-                    throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &result_val)) {
-                    throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                }
-            }
-            return result;
-        }
-        // Otherwise allocate a new Tensor with the same dimensions
+        // Allocate a new Tensor with the same dimensions as lhs
         Tensor<T> result(lhs.dims());
-        // Since by definition result allocates a new memory block that is contiguous, we can use
-        // the __restrict__ version of _safe_tensor_sub_contiguous (_v)
-        if (lhs.c_contiguous && rhs.c_contiguous) {
-            TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.c_offset,
-                                                         rhs._data(), rhs.c_offset,
-                                                         result._data(), result.c_offset, result.c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_sub_contiguous_v, we must ensure that the dim1 stride == 1
-        else if (lhs.c_rank == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1)) {
-            TensorMath_NS::_safe_2d_tensor_sub_contiguous_v(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                            rhs._data(), rhs.c_offset, rhs.dim_stride(0),
-                                                            result._data(), result.c_offset, result.dim_stride(0),
-                                                            result.extent(0), result.extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = lhs.dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& result_val = result.at(c);
-                const T& lhs_val = lhs.at(c);
-                const T& rhs_val = rhs.at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    result_val = lhs_val - rhs_val;
-                    if (!std::isfinite(result_val)) {
-                        throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &result_val)) {
-                        throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                    }
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &result_val)) {
-                        throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                    }
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
+        uniform_op(lhs, rhs, result, SqueezedOpType::SUB);
         return result;
     }
 
     /**
      * Scalar subtraction operator for subtracting scalar values, storing the result in a new Tensor
      * @param lhs Const ref to the Tensor<T>
-     * @param rhs Const ref to the scalar value we want to use
+     * @param rhs Scalar value we want to use
      * @returns Returns a new Tensor<T> containing the result of the subtraction
      */
-    friend Tensor<T> operator-(const Tensor<T>& lhs, const T& rhs) {
-        // Handle a special case for rank-0 Tensors
-        if (lhs.rank() == 0) {
-            Tensor<T> result({});
-            T& result_val = result.at({});
-            const T& lhs_val = lhs.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                result_val = lhs_val - rhs;
-                if (!std::isfinite(result_val)) {
-                    throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_sub_overflow_signed(lhs_val, rhs, &result_val)) {
-                    throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs, &result_val)) {
-                    throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                }
-            }
-            return result;
-        }
-        // Otherwise allocate a new Tensor with the same dimensions
+    friend Tensor<T> operator-(const Tensor<T>& lhs, T rhs) {
+        // Allocate a new Tensor with the same dimensions as lhs
         Tensor<T> result(lhs.dims());
-        // Since by definition result allocates a new memory block that is contiguous, we can use
-        // the __restrict__ version of _safe_tensor_sub_contiguous (_v)
-        if (lhs.c_contiguous) {
-            TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.c_offset,
-                                                         rhs,
-                                                         result._data(), result.c_offset, result.c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_sub_contiguous_v, we must ensure that the dim1 stride == 1
-        else if (lhs.c_rank == 2 && lhs.dim_stride(1) == 1) {
-            TensorMath_NS::_safe_2d_tensor_sub_contiguous_v(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                            rhs,
-                                                            result._data(), result.c_offset, result.dim_stride(0),
-                                                            result.extent(0), result.extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = lhs.dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& result_val = result.at(c);
-                const T& lhs_val = lhs.at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    result_val = lhs_val - rhs;
-                    if (!std::isfinite(result_val)) {
-                        throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (TensorMath_NS::_sub_overflow_signed(lhs_val, rhs, &result_val)) {
-                        throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                    }
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs, &result_val)) {
-                        throw std::overflow_error("Tensor.-: Overflow / underflow detected.\n");
-                    }
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
+        uniform_op(lhs, rhs, result, SqueezedOpType::SUB);
         return result;
     }
 
@@ -1536,188 +1347,16 @@ public:
      * @returns Returns a reference to this Tensor
      */
     Tensor<T>& operator*=(const Tensor<T>& target) {
-        // Check to see if our Tensor shapes are compatible
-        if (!_compatible(target)) {
-            throw std::invalid_argument("Tensor.*=: Incompatible Tensor shapes provided to *=.\n");
-        }
-        // Handle a special case for rank-0 Tensors
-        if (c_rank == 0) {
-            T& lhs = at({});
-            const T& rhs = target.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                lhs *= rhs;
-                if (!std::isfinite(lhs)) {
-                    throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_mul_overflow_signed(lhs, rhs, &lhs)) {
-                    throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_mul_overflow_unsigned(lhs, rhs, &lhs)) {
-                    throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                }
-            }
-            return *this;
-        }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (c_contiguous && target.c_contiguous) {
-            TensorMath_NS::_safe_tensor_mul_contiguous(_data(), c_offset,
-                                                       target._data(), target.c_offset,
-                                                       _data(), c_offset, c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_mul_contiguous, we must ensure that the dim1 stride == 1
-        else if (c_rank == 2 && (dim_stride(1) == 1 && target.dim_stride(1) == 1)) {
-            TensorMath_NS::_safe_2d_tensor_mul_contiguous(_data(), c_offset, dim_stride(0),
-                                                          target._data(), target.c_offset, target.dim_stride(0),
-                                                          _data(), c_offset, dim_stride(0),
-                                                          extent(0), extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& lhs = at(c);
-                const T& rhs = target.at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    lhs *= rhs;
-                    if (!std::isfinite(lhs)) {
-                        throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (TensorMath_NS::_mul_overflow_signed(lhs, rhs, &lhs)) {
-                        throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                    }
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (TensorMath_NS::_mul_overflow_unsigned(lhs, rhs, &lhs)) {
-                        throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
-        return *this;
+        return uniform_op(*this, target, *this, SqueezedOpType::MUL);
     }
 
     /**
      * Scalar multiplication assignment operator, multiplying a scalar value from every value in the Tensor
      * @param s Scalar to multiply with each value in the Tensor
-     * @returns Reterns a reference to this Tensor
+     * @returns Returns a reference to this Tensor
      */
-    Tensor<T>& operator*=(const T& s) {
-        // Handle a special case for rank-0 Tensors
-        if (c_rank == 0) {
-            T& lhs = at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                lhs *= s;
-                if (!std::isfinite(lhs)) {
-                    throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_mul_overflow_signed(lhs, s, &lhs)) {
-                    throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_mul_overflow_unsigned(lhs, s, &lhs)) {
-                    throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                }
-            }
-            return *this;
-        }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (c_contiguous) {
-            TensorMath_NS::_safe_tensor_mul_contiguous(_data(), c_offset,
-                                                       s,
-                                                       _data(), c_offset, c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_mul_contiguous, we must ensure that the dim1 stride == 1
-        else if (c_rank == 2 && dim_stride(1) == 1) {
-            TensorMath_NS::_safe_2d_tensor_mul_contiguous(_data(), c_offset, dim_stride(0),
-                                                          s,
-                                                          _data(), c_offset, dim_stride(0),
-                                                          extent(0), extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& lhs = at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    lhs *= s;
-                    if (!std::isfinite(lhs)) {
-                        throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (TensorMath_NS::_mul_overflow_signed(lhs, s, &lhs)) {
-                        throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                    }
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (TensorMath_NS::_mul_overflow_unsigned(lhs, s, &lhs)) {
-                        throw std::overflow_error("Tensor.*=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
-        return *this;
+    Tensor<T>& operator*=(T s) {
+        return uniform_op(*this, s, *this, SqueezedOpType::MUL);
     }
 
     /**
@@ -1732,196 +1371,22 @@ public:
         if (!lhs._compatible(rhs)) {
             throw std::invalid_argument("Tensor.*: Incompatible Tensor shapes provided to *.\n");
         }
-        // Handle a special case for rank-0 Tensors
-        if (lhs.rank() == 0) {
-            Tensor<T> result({});
-            T& result_val = result.at({});
-            const T& lhs_val = lhs.at({});
-            const T& rhs_val = rhs.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                result_val = lhs_val * rhs_val;
-                if (!std::isfinite(result_val)) {
-                    throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &result_val)) {
-                    throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &result_val)) {
-                    throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                }
-            }
-            return result;
-        }
-        // Otherwise allocate a new Tensor with the same dimensions
+        // Allocate a new Tensor with the same dimensions as lhs
         Tensor<T> result(lhs.dims());
-        // Since by definition result allocates a new memory block that is contiguous, we can use
-        // the __restrict__ version of _safe_tensor_mul_contiguous (_v)
-        if (lhs.c_contiguous && rhs.c_contiguous) {
-            TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.c_offset,
-                                                         rhs._data(), rhs.c_offset,
-                                                         result._data(), result.c_offset, result.c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_mul_contiguous_v, we must ensure that the dim1 stride == 1
-        else if (lhs.c_rank == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1)) {
-            TensorMath_NS::_safe_2d_tensor_mul_contiguous_v(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                            rhs._data(), rhs.c_offset, rhs.dim_stride(0),
-                                                            result._data(), result.c_offset, result.dim_stride(0),
-                                                            result.extent(0), result.extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = lhs.dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& result_val = result.at(c);
-                const T& lhs_val = lhs.at(c);
-                const T& rhs_val = rhs.at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    result_val = lhs_val * rhs_val;
-                    if (!std::isfinite(result_val)) {
-                        throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &result_val)) {
-                        throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                    }
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &result_val)) {
-                        throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                    }
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
+        uniform_op(lhs, rhs, result, SqueezedOpType::MUL);
         return result;
     }
 
     /**
      * Scalar multiplication operator for multiplying scalar values, storing the result in a new Tensor
      * @param lhs Const ref to the Tensor<T>
-     * @param rhs Const ref to the scalar value we want to use
+     * @param rhs Scalar value we want to use
      * @returns Returns a new Tensor<T> containing the result of the multiplication
      */
-    friend Tensor<T> operator*(const Tensor<T>& lhs, const T& rhs) {
-        // Handle a special case for rank-0 Tensors
-        if (lhs.rank() == 0) {
-            Tensor<T> result({});
-            T& result_val = result.at({});
-            const T& lhs_val = lhs.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                result_val = lhs_val * rhs;
-                if (!std::isfinite(result_val)) {
-                    throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (TensorMath_NS::_mul_overflow_signed(lhs_val, rhs, &result_val)) {
-                    throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                }
-            }
-            else {
-                if (TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs, &result_val)) {
-                    throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                }
-            }
-            return result;
-        }
-        // Otherwise allocate a new Tensor with the same dimensions
+    friend Tensor<T> operator*(const Tensor<T>& lhs, T rhs) {
+        // Allocate a new Tensor with the same dimensions as lhs
         Tensor<T> result(lhs.dims());
-        // Since by definition result allocates a new memory block that is contiguous, we can use
-        // the __restrict__ version of _safe_tensor_mul_contiguous (_v)
-        if (lhs.c_contiguous) {
-            TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.c_offset,
-                                                         rhs,
-                                                         result._data(), result.c_offset, result.c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_mul_contiguous_v, we must ensure that the dim1 stride == 1
-        else if (lhs.c_rank == 2 && lhs.dim_stride(1) == 1) {
-            TensorMath_NS::_safe_2d_tensor_mul_contiguous_v(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                            rhs,
-                                                            result._data(), result.c_offset, result.dim_stride(0),
-                                                            result.extent(0), result.extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = lhs.dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& result_val = result.at(c);
-                const T& lhs_val = lhs.at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    result_val = lhs_val * rhs;
-                    if (!std::isfinite(result_val)) {
-                        throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (TensorMath_NS::_mul_overflow_signed(lhs_val, rhs, &result_val)) {
-                        throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                    }
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs, &result_val)) {
-                        throw std::overflow_error("Tensor.*: Overflow / underflow detected.\n");
-                    }
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
+        uniform_op(lhs, rhs, result, SqueezedOpType::MUL);
         return result;
     }
 
@@ -1931,208 +1396,16 @@ public:
      * @returns Returns a reference to this Tensor
      */
     Tensor<T>& operator/=(const Tensor<T>& target) {
-        // Check to see if our Tensor shapes are compatible
-        if (!_compatible(target)) {
-            throw std::invalid_argument("Tensor./=: Incompatible Tensor shapes provided to *=.\n");
-        }
-        // Handle a special case for rank-0 Tensors
-        if (c_rank == 0) {
-            T& lhs = at({});
-            const T& rhs = target.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                lhs /= rhs;
-                if (!std::isfinite(lhs)) {
-                    throw std::overflow_error("Tensor./=: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (rhs == 0) {
-                    throw std::runtime_error("Tensor./=: Divide by zero detected.\n");
-                }
-                if (TensorMath_NS::_is_signed_div_overflow(lhs, rhs)) {
-                    throw std::overflow_error("Tensor./=: Overflow / underflow detected.\n");
-                }
-                lhs /= rhs;
-            }
-            else {
-                if (rhs == 0) {
-                    throw std::runtime_error("Tensor./=: Divide by zero detected.\n");
-                }
-                lhs /= rhs;
-            }
-            return *this;
-        }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (c_contiguous && target.c_contiguous) {
-            TensorMath_NS::_safe_tensor_div_contiguous(_data(), c_offset,
-                                                       target._data(), target.c_offset,
-                                                       _data(), c_offset, c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_div_contiguous, we must ensure that the dim1 stride == 1
-        else if (c_rank == 2 && (dim_stride(1) == 1 && target.dim_stride(1) == 1)) {
-            TensorMath_NS::_safe_2d_tensor_div_contiguous(_data(), c_offset, dim_stride(0),
-                                                          target._data(), target.c_offset, target.dim_stride(0),
-                                                          _data(), c_offset, dim_stride(0),
-                                                          extent(0), extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& lhs = at(c);
-                const T& rhs = target.at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    lhs /= rhs;
-                    if (!std::isfinite(lhs)) {
-                        throw std::overflow_error("Tensor./=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (rhs == 0) {
-                        throw std::runtime_error("Tensor./=: Divide by zero detected.\n");
-                    }
-                    if (TensorMath_NS::_is_signed_div_overflow(lhs, rhs)) {
-                        throw std::overflow_error("Tensor./=: Overflow / underflow detected.\n");
-                    }
-                    lhs /= rhs;
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (rhs == 0) {
-                        throw std::runtime_error("Tensor./=: Divide by zero detected.\n");
-                    }
-                    lhs /= rhs;
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
-        return *this;
+        return uniform_op(*this, target, *this, SqueezedOpType::DIV);
     }
 
     /**
      * Scalar division assignment operator, dividing a scalar value from every value in the Tensor
      * @param s Scalar to divide with each value in the Tensor
-     * @returns Reterns a reference to this Tensor
+     * @returns Returns a reference to this Tensor
      */
-    Tensor<T>& operator/=(const T& s) {
-        // Handle a special case for rank-0 Tensors
-        if (c_rank == 0) {
-            T& lhs = at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                lhs /= s;
-                if (!std::isfinite(lhs)) {
-                    throw std::overflow_error("Tensor./=: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (s == 0) {
-                    throw std::runtime_error("Tensor./=: Divide by zero detected.\n");
-                }
-                if (TensorMath_NS::_is_signed_div_overflow(lhs, s)) {
-                    throw std::overflow_error("Tensor./=: Overflow / underflow detected.\n");
-                }
-                lhs /= s;
-            }
-            else {
-                if (s == 0) {
-                    throw std::runtime_error("Tensor./=: Divide by zero detected.\n");
-                }
-                lhs /= s;
-            }
-            return *this;
-        }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (c_contiguous) {
-            TensorMath_NS::_safe_tensor_div_contiguous(_data(), c_offset,
-                                                       s,
-                                                       _data(), c_offset, c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_div_contiguous, we must ensure that the dim1 stride == 1
-        else if (c_rank == 2 && dim_stride(1) == 1) {
-            TensorMath_NS::_safe_2d_tensor_div_contiguous(_data(), c_offset, dim_stride(0),
-                                                          s,
-                                                          _data(), c_offset, dim_stride(0),
-                                                          extent(0), extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& lhs = at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    lhs /= s;
-                    if (!std::isfinite(lhs)) {
-                        throw std::overflow_error("Tensor./=: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (s == 0) {
-                        throw std::runtime_error("Tensor./=: Divide by zero detected.\n");
-                    }
-                    if (TensorMath_NS::_is_signed_div_overflow(lhs, s)) {
-                        throw std::overflow_error("Tensor./=: Overflow / underflow detected.\n");
-                    }
-                    lhs /= s;
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (s == 0) {
-                        throw std::runtime_error("Tensor./=: Divide by zero detected.\n");
-                    }
-                    lhs /= s;
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
-        return *this;
+    Tensor<T>& operator/=(T s) {
+        return uniform_op(*this, s, *this, SqueezedOpType::DIV);
     }
 
     /**
@@ -2145,218 +1418,24 @@ public:
     friend Tensor<T> operator/(const Tensor<T>& lhs, const Tensor<T>& rhs) {
         // Check to see if our Tensor shapes are compatible
         if (!lhs._compatible(rhs)) {
-            throw std::invalid_argument("Tensor./: Incompatible Tensor shapes provided to *.\n");
+            throw std::invalid_argument("Tensor./: Incompatible Tensor shapes provided to /.\n");
         }
-        // Handle a special case for rank-0 Tensors
-        if (lhs.rank() == 0) {
-            Tensor<T> result({});
-            T& result_val = result.at({});
-            const T& lhs_val = lhs.at({});
-            const T& rhs_val = rhs.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                result_val = lhs_val / rhs_val;
-                if (!std::isfinite(result_val)) {
-                    throw std::overflow_error("Tensor./: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (rhs_val == 0) {
-                    throw std::runtime_error("Tensor./: Divide by zero detected.\n");
-                }
-                if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
-                    throw std::overflow_error("Tensor./: Overflow / underflow detected.\n");
-                }
-                result_val = lhs_val / rhs_val;
-            }
-            else {
-                if (rhs_val == 0) {
-                    throw std::runtime_error("Tensor./: Divide by zero detected.\n");
-                }
-                result_val = lhs_val / rhs_val;
-            }
-            return result;
-        }
-        // Otherwise allocate a new Tensor with the same dimensions
+        // Allocate a new Tensor with the same dimensions as lhs
         Tensor<T> result(lhs.dims());
-        // Since by definition result allocates a new memory block that is contiguous, we can use
-        // the __restrict__ version of _safe_tensor_div_contiguous (_v)
-        if (lhs.c_contiguous && rhs.c_contiguous) {
-            TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.c_offset,
-                                                         rhs._data(), rhs.c_offset,
-                                                         result._data(), result.c_offset, result.c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_div_contiguous_v, we must ensure that the dim1 stride == 1
-        else if (lhs.c_rank == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1)) {
-            TensorMath_NS::_safe_2d_tensor_div_contiguous_v(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                            rhs._data(), rhs.c_offset, rhs.dim_stride(0),
-                                                            result._data(), result.c_offset, result.dim_stride(0),
-                                                            result.extent(0), result.extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = lhs.dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& result_val = result.at(c);
-                const T& lhs_val = lhs.at(c);
-                const T& rhs_val = rhs.at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    result_val = lhs_val / rhs_val;
-                    if (!std::isfinite(result_val)) {
-                        throw std::overflow_error("Tensor./: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (rhs_val == 0) {
-                        throw std::runtime_error("Tensor./: Divide by zero detected.\n");
-                    }
-                    if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
-                        throw std::overflow_error("Tensor./: Overflow / underflow detected.\n");
-                    }
-                    result_val = lhs_val / rhs_val;
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (rhs_val == 0) {
-                        throw std::runtime_error("Tensor./: Divide by zero detected.\n");
-                    }
-                    result_val = lhs_val / rhs_val;
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
+        uniform_op(lhs, rhs, result, SqueezedOpType::DIV);
         return result;
     }
 
     /**
      * Scalar division operator for dividing scalar values, storing the result in a new Tensor
      * @param lhs Const ref to the Tensor<T>
-     * @param rhs Const ref to the scalar value we want to use
+     * @param rhs Scalar value we want to use
      * @returns Returns a new Tensor<T> containing the result of the division
      */
-    friend Tensor<T> operator/(const Tensor<T>& lhs, const T& rhs) {
-        // Handle a special case for rank-0 Tensors
-        if (lhs.rank() == 0) {
-            Tensor<T> result({});
-            T& result_val = result.at({});
-            const T& lhs_val = lhs.at({});
-            if constexpr (std::is_floating_point_v<T>) {
-                result_val = lhs_val / rhs;
-                if (!std::isfinite(result_val)) {
-                    throw std::overflow_error("Tensor./: Overflow / underflow detected.\n"); 
-                }
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                if (rhs == 0) {
-                    throw std::runtime_error("Tensor./: Divide by zero detected.\n");
-                }
-                if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs)) {
-                    throw std::overflow_error("Tensor./: Overflow / underflow detected.\n");
-                }
-                result_val = lhs_val / rhs;
-            }
-            else {
-                if (rhs == 0) {
-                    throw std::runtime_error("Tensor./: Divide by zero detected.\n");
-                }
-                result_val = lhs_val / rhs;
-            }
-            return result;
-        }
-        // Otherwise allocate a new Tensor with the same dimensions
+    friend Tensor<T> operator/(const Tensor<T>& lhs, T rhs) {
+        // Allocate a new Tensor with the same dimensions as lhs
         Tensor<T> result(lhs.dims());
-        // Since by definition result allocates a new memory block that is contiguous, we can use
-        // the __restrict__ version of _safe_tensor_div_contiguous (_v)
-        if (lhs.c_contiguous) {
-            TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.c_offset,
-                                                         rhs,
-                                                         result._data(), result.c_offset, result.c_elements);
-        }
-        // If we have a rank 2 Tensor, use its function (_compatible ensures same rank / dims)
-        // For the _safe_2d_tensor_div_contiguous_v, we must ensure that the dim1 stride == 1
-        else if (lhs.c_rank == 2 && lhs.dim_stride(1) == 1) {
-            TensorMath_NS::_safe_2d_tensor_div_contiguous_v(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                            rhs,
-                                                            result._data(), result.c_offset, result.dim_stride(0),
-                                                            result.extent(0), result.extent(1));
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // Prepare to iterate over the dims of the Tensor
-            const std::vector<size_t>& tensor_dims = lhs.dims();
-            // Create a mutable vector to traverse the Tensors with
-            std::vector<size_t> c(tensor_dims.size(), 0);
-            bool done = false;
-            // Iterate over the contents of the Tensor
-            while (!done) {
-                // Grab refs to lhs and rhs to avoid redundant calls to at
-                T& result_val = result.at(c);
-                const T& lhs_val = lhs.at(c);
-                // Perform the op directly on floats and then check for inf / NaN later
-                if constexpr (std::is_floating_point_v<T>) {
-                    result_val = lhs_val / rhs;
-                    if (!std::isfinite(result_val)) {
-                        throw std::overflow_error("Tensor./: Overflow / underflow detected.\n");
-                    }
-                }
-                // Route to the correct overflow check
-                else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                    if (rhs == 0) {
-                        throw std::runtime_error("Tensor./: Divide by zero detected.\n");
-                    }
-                    if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs)) {
-                        throw std::overflow_error("Tensor./: Overflow / underflow detected.\n");
-                    }
-                    result_val = lhs_val / rhs;
-                }
-                // If we have an unsigned type, use the proper overflow check
-                else {
-                    if (rhs == 0) {
-                        throw std::runtime_error("Tensor./: Divide by zero detected.\n");
-                    }
-                    result_val = lhs_val / rhs;
-                }
-                // Increment the coordinates to traverse the Tensors
-                for (size_t i = tensor_dims.size(); i-- > 0; ) {
-                    c[i] += 1;
-                    // If we haven't reached the end of the dim, break
-                    if (c[i] < tensor_dims[i]) {
-                        break;
-                    }
-                    // Carry over to the next dim
-                    c[i] = 0;
-                    // If we get to the outer dim, stop
-                    if (i == 0) {
-                        done = true;
-                    }
-                }
-            }
-        }
+        uniform_op(lhs, rhs, result, SqueezedOpType::DIV);
         return result;
     }
 
