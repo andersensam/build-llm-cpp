@@ -462,8 +462,8 @@ public:
         }
         else {
             m_stride.at(c_rank - 1) = 1;
-            for (size_t i = c_rank - 2; i > 0; --i) {
-                m_stride.at(i) = m_stride.at(i + 1) * m_dims.at(i);
+            for (size_t i = c_rank - 1; i > 0; --i) {
+                m_stride.at(i - 1) = m_stride.at(i) * m_dims.at(i);
             }
         }
     }
@@ -1464,7 +1464,7 @@ public:
         // Calculate the number of elements that should be zeroed out
         size_t target_elements = static_cast<size_t>(static_cast<float>(c_elements) * dropout);
         // Calculate the scale factor for the remaining elements
-        T scale_factor = static_cast<T>(1.0f / dropout);
+        T scale_factor = static_cast<T>(1.0f - (1.0f / dropout));
         // Prepare to generate random values
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -1688,7 +1688,7 @@ public:
         }
         Tensor<T> result = (squeeze ? Tensor<T>({m_dims.at(dim)}) : Tensor<T>({rows(), cols()}));
         // Store the max value
-        T dim_max = 0;
+        T dim_max = std::numeric_limits<T>::lowest();
         // Iterate across the rows if dim == 0
         if (dim == 0) {
             for (size_t i = 0; i < rows(); ++i) {
