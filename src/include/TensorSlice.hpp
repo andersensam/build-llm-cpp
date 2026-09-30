@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-29
+ * @version: 2026-09-30
  *
  * General Notes:
  *
@@ -56,8 +56,6 @@ using Log::Log_Priority;
 using Tensor_NS::AbstractTensor;
 using Tensor_NS::Tensor;
 using Tensor_NS::Storage;
-using Tensor_NS::_add_overflow;
-using Tensor_NS::_mul_overflow;
 
 /* Use enum classes from SliceConfig_NS */
 using SliceConfig_NS::VectorSliceOrientation;
@@ -1086,7 +1084,7 @@ public:
      * @returns True if contiguous
      */
     bool contiguous() const override {
-        return true;
+        return false;
     }
 
     /**

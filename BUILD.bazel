@@ -109,6 +109,23 @@ cc_library(
     ]
 )
 
+# Tensor matmul kernel library
+cc_library(
+    name = "tensormatmul",
+    hdrs = glob(
+        [
+            "src/include/TensorMatmul.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
+        ":tensor",
+        ":tensormath",
+    ]
+)
+
 # TensorSlice template library
 cc_library(
     name = "tensorslice",
@@ -222,6 +239,7 @@ cc_library(
     deps = [
         ":llmlog",
         ":tensor",
+        ":tensormatmul",
         ":tensorslice"
     ]
 )
@@ -240,6 +258,7 @@ cc_binary(
         ":dataloader",
         ":llmlog",
         ":tensor",
+        ":tensormatmul",
         ":tensorslice",
     ]
 )

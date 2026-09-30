@@ -30,6 +30,7 @@
 #include "include/DataLoader.hpp"
 #include "include/Log.hpp"
 #include "include/Tensor.hpp"
+#include "include/TensorMatmul.hpp"
 #include "include/TensorSlice.hpp"
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
@@ -40,7 +41,7 @@ int main() {
 
     using Tensor_NS::Tensor;
     using Tensor_NS::CausalMaskType;
-    using Tensor_NS::matmul;
+    using Tensor_Matmul_NS::matmul;
 
     using TensorSlice_NS::VectorSliceConfig;
     using TensorSlice_NS::MatrixSliceConfig;
@@ -102,7 +103,9 @@ int main() {
 
         // Convert the TensorSlice to a Matrix
         Tensor<float> query_result = query_mat.to_tensor();
-        Tensor<float> attn_scores = query_result.matmul_self(true);
+        //Tensor<float> attn_scores = query_result.matmul_self(true);
+        // Transpose query_result inside the matmul
+        Tensor<float> attn_scores = matmul(query_result, 0 , 1, query_result, 1, 0);
         log_message(Log_Priority::INFO, "main", std::format("Attention scores for batch 0: {}", attn_scores.to_string()));
 
         // Apply softmax to get the attention weights

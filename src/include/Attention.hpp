@@ -30,6 +30,7 @@
 /* Local dependencies */
 #include "Log.hpp"
 #include "Tensor.hpp"
+#include "TensorMatmul.hpp"
 #include "TensorSlice.hpp"
 
 namespace Attention_NS {
@@ -132,12 +133,12 @@ public:
      */
     Tensor<T> forward(const Tensor<T>& input) const override {
         // Get the QKV for the given input
-        Tensor<T> queries = Tensor_NS::matmul(input, m_w_query);
-        Tensor<T> keys = Tensor_NS::matmul(input, m_w_key);
-        Tensor<T> values = Tensor_NS::matmul(input, m_w_value);
+        Tensor<T> queries = Tensor_Matmul_NS::matmul(input, m_w_query);
+        Tensor<T> keys = Tensor_Matmul_NS::matmul(input, m_w_key);
+        Tensor<T> values = Tensor_Matmul_NS::matmul(input, m_w_value);
         // Transpose keys for calculating attention scores
         keys.transpose();
-        Tensor<T> attn_scores = Tensor_NS::matmul(queries, keys);
+        Tensor<T> attn_scores = Tensor_Matmul_NS::matmul(queries, keys);
         // Apply masking to the attention scores
         attn_scores.apply_mask(CausalMaskType::UPPER);
         // Apply scaling
@@ -149,7 +150,7 @@ public:
             attn_scores.apply_dropout(c_dropout);
         }
         // Return the context
-        return Tensor_NS::matmul(attn_scores, values);
+        return Tensor_Matmul_NS::matmul(attn_scores, values);
     }
 
 };
@@ -358,9 +359,9 @@ public:
      */
     Tensor<T> forward(const Tensor<T>& input) const override {
         // Get the QKV for the given input
-        Tensor<T> queries = Tensor_NS::matmul(input, *m_w_query);
-        Tensor<T> keys = Tensor_NS::matmul(input, *m_w_key);
-        Tensor<T> values = Tensor_NS::matmul(input, *m_w_value);
+        Tensor<T> queries = Tensor_Matmul_NS::matmul(input, *m_w_query);
+        Tensor<T> keys = Tensor_Matmul_NS::matmul(input, *m_w_key);
+        Tensor<T> values = Tensor_Matmul_NS::matmul(input, *m_w_value);
         // Convert the QKV to std::shared_ptr without copying
         auto q_ptr = std::make_shared<Tensor<T>>(std::move(queries));
         auto k_ptr = std::make_shared<Tensor<T>>(std::move(keys));
@@ -379,7 +380,7 @@ public:
             RangeTensorSlice<T> k_slice(k_ptr, msc);
             RangeTensorSlice<T> v_slice(v_ptr, msc);
             // Calculate the attention scores, Q @ K.transpose
-            Tensor_NS::matmul(q_slice, 0, 1, k_slice, 1, 0, output);
+            Tensor_Matmul_NS::matmul(q_slice, 0, 1, k_slice, 1, 0, output);
             // Apply masking
             output.apply_mask(CausalMaskType::UPPER);
             // Divide each value by the embedding dim
@@ -389,7 +390,7 @@ public:
             // Apply dropout
             output.apply_dropout(c_dropout);
             // Calculate the context vector via attn_weights (output) @ values (v_slice)
-            Tensor_NS::matmul(output, v_slice, context_vec);
+            Tensor_Matmul_NS::matmul(output, v_slice, context_vec);
             // Transpose the context vector
             context_vec.transpose();
             // Store the AttentionHead id to avoid repeated calls
