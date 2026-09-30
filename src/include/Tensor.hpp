@@ -2463,39 +2463,71 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& des
         return dest;
     }
     // If lhs, rhs, and dest don't overlap and are contiguous, use the fastest possible, vectorized
-    // method to perform the operation
-    if (lhs.contiguous() && rhs.contiguous() && dest.contiguous()) {
+    // method to perform the operation. Ensure lhs --> dest <-- rhs are unique to respect
+    // __restrict__ rules
+    if (lhs.contiguous() && rhs.contiguous() && dest.contiguous() && dest.is_unique(lhs) && dest.is_unique(rhs)) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.offset(),
-                                                                rhs._data(), rhs.offset(),
-                                                                dest._data(), dest.offset(),
-                                                                dest.elements());
+                                                             rhs._data(), rhs.offset(),
+                                                             dest._data(), dest.offset(),
+                                                             dest.elements());
                 break;
             case SqueezedOpType::SUB:
                 TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.offset(),
-                                                                rhs._data(), rhs.offset(),
-                                                                dest._data(), dest.offset(),
-                                                                dest.elements());
+                                                             rhs._data(), rhs.offset(),
+                                                             dest._data(), dest.offset(),
+                                                             dest.elements());
                 break;
             case SqueezedOpType::MUL:
                 TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.offset(),
-                                                                rhs._data(), rhs.offset(),
-                                                                dest._data(), dest.offset(),
-                                                                dest.elements());
+                                                             rhs._data(), rhs.offset(),
+                                                             dest._data(), dest.offset(),
+                                                             dest.elements());
                 break;
             case SqueezedOpType::DIV:
                 TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.offset(),
-                                                                rhs._data(), rhs.offset(),
-                                                                dest._data(), dest.offset(),
-                                                                dest.elements());
+                                                             rhs._data(), rhs.offset(),
+                                                             dest._data(), dest.offset(),
+                                                             dest.elements());
+                break;
+        }
+        return dest;
+    }
+    // If lhs, rhs, and dest are all contiguous, but the is_unique condition is not met, use
+    // the non __restrict__ variant
+    else if (lhs.contiguous() && rhs.contiguous() && dest.contiguous()) {
+        switch (op) {
+            case SqueezedOpType::ADD:
+                TensorMath_NS::_safe_tensor_add_contiguous(lhs._data(), lhs.offset(),
+                                                           rhs._data(), rhs.offset(),
+                                                           dest._data(), dest.offset(),
+                                                           dest.elements());
+                break;
+            case SqueezedOpType::SUB:
+                TensorMath_NS::_safe_tensor_sub_contiguous(lhs._data(), lhs.offset(),
+                                                           rhs._data(), rhs.offset(),
+                                                           dest._data(), dest.offset(),
+                                                           dest.elements());
+                break;
+            case SqueezedOpType::MUL:
+                TensorMath_NS::_safe_tensor_mul_contiguous(lhs._data(), lhs.offset(),
+                                                           rhs._data(), rhs.offset(),
+                                                           dest._data(), dest.offset(),
+                                                           dest.elements());
+                break;
+            case SqueezedOpType::DIV:
+                TensorMath_NS::_safe_tensor_div_contiguous(lhs._data(), lhs.offset(),
+                                                           rhs._data(), rhs.offset(),
+                                                           dest._data(), dest.offset(),
+                                                           dest.elements());
                 break;
         }
         return dest;
     }
     // If the Tensors are not entirely contiguous, but are rank == 2 and they all have strides
     // of 1 for dim1, we can also speed up this op
-    else if (lhs.rank() == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
+    else if (lhs.rank() == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1) && (dest.is_unique(lhs) && dest.is_unique(rhs))) {
         // Check for the case where we have a rank == 2 Tensor with a contiguous, 
         // non-overlapping destination, where we can leverage vectorization
         switch (op) {
@@ -2522,6 +2554,37 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& des
                                                                 rhs._data(), rhs.offset(), rhs.dim_stride(0),
                                                                 dest._data(), dest.offset(), dest.dim_stride(0),
                                                                 dest.extent(0), dest.extent(1));
+                break;
+        }
+        return dest; 
+    }
+    else if (lhs.rank() == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
+        // Check for the case where we have a rank == 2 Tensor with a contiguous, 
+        // non-overlapping destination, where we can leverage vectorization
+        switch (op) {
+            case SqueezedOpType::ADD:
+                TensorMath_NS::_safe_2d_tensor_add_contiguous(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                              rhs._data(), rhs.offset(), rhs.dim_stride(0),
+                                                              dest._data(), dest.offset(), dest.dim_stride(0),
+                                                              dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::SUB:
+                TensorMath_NS::_safe_2d_tensor_sub_contiguous(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                              rhs._data(), rhs.offset(), rhs.dim_stride(0),
+                                                              dest._data(), dest.offset(), dest.dim_stride(0),
+                                                              dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::MUL:
+                TensorMath_NS::_safe_2d_tensor_mul_contiguous(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                              rhs._data(), rhs.offset(), rhs.dim_stride(0),
+                                                              dest._data(), dest.offset(), dest.dim_stride(0),
+                                                              dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::DIV:
+                TensorMath_NS::_safe_2d_tensor_div_contiguous(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                              rhs._data(), rhs.offset(), rhs.dim_stride(0),
+                                                              dest._data(), dest.offset(), dest.dim_stride(0),
+                                                              dest.extent(0), dest.extent(1));
                 break;
         }
         return dest; 
@@ -2700,39 +2763,71 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, Squeezed
         return dest;
     }
     // If lhs and dest don't overlap and are contiguous, use the fastest possible, vectorized
-    // method to perform the operation
-    if (lhs.contiguous() && dest.contiguous()) {
+    // method to perform the operation. Ensure lhs and dest are unique to respect
+    // __restrict__ rules
+    if (lhs.contiguous() && dest.contiguous() && dest.is_unique(lhs) ) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.offset(),
-                                                                rhs_val,
-                                                                dest._data(), dest.offset(),
-                                                                dest.elements());
+                                                             rhs_val,
+                                                             dest._data(), dest.offset(),
+                                                             dest.elements());
                 break;
             case SqueezedOpType::SUB:
                 TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.offset(),
-                                                                rhs_val,
-                                                                dest._data(), dest.offset(),
-                                                                dest.elements());
+                                                             rhs_val,
+                                                             dest._data(), dest.offset(),
+                                                             dest.elements());
                 break;
             case SqueezedOpType::MUL:
                 TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.offset(),
-                                                                rhs_val,
-                                                                dest._data(), dest.offset(),
-                                                                dest.elements());
+                                                             rhs_val,
+                                                             dest._data(), dest.offset(),
+                                                             dest.elements());
                 break;
             case SqueezedOpType::DIV:
                 TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.offset(),
-                                                                rhs_val,
-                                                                dest._data(), dest.offset(),
-                                                                dest.elements());
+                                                             rhs_val,
+                                                             dest._data(), dest.offset(),
+                                                             dest.elements());
+                break;
+        }
+        return dest;
+    }
+    // If lhs and dest are contiguous, but the is_unique condition is not met, use
+    // the non __restrict__ variant
+    else if (lhs.contiguous() && dest.contiguous()) {
+        switch (op) {
+            case SqueezedOpType::ADD:
+                TensorMath_NS::_safe_tensor_add_contiguous(lhs._data(), lhs.offset(),
+                                                           rhs_val,
+                                                           dest._data(), dest.offset(),
+                                                           dest.elements());
+                break;
+            case SqueezedOpType::SUB:
+                TensorMath_NS::_safe_tensor_sub_contiguous(lhs._data(), lhs.offset(),
+                                                           rhs_val,
+                                                           dest._data(), dest.offset(),
+                                                           dest.elements());
+                break;
+            case SqueezedOpType::MUL:
+                TensorMath_NS::_safe_tensor_mul_contiguous(lhs._data(), lhs.offset(),
+                                                           rhs_val,
+                                                           dest._data(), dest.offset(),
+                                                           dest.elements());
+                break;
+            case SqueezedOpType::DIV:
+                TensorMath_NS::_safe_tensor_div_contiguous(lhs._data(), lhs.offset(),
+                                                           rhs_val,
+                                                           dest._data(), dest.offset(),
+                                                           dest.elements());
                 break;
         }
         return dest;
     }
     // If the Tensors are not entirely contiguous, but are rank == 2 and they all have strides
     // of 1 for dim1, we can also speed up this op
-    else if (lhs.rank() == 2 && (lhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
+    else if (lhs.rank() == 2 && (lhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1) && dest.is_unique(lhs)) {
         // Check for the case where we have a rank == 2 Tensor with a contiguous, 
         // non-overlapping destination, where we can leverage vectorization
         switch (op) {
@@ -2759,6 +2854,37 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, Squeezed
                                                                 rhs_val,
                                                                 dest._data(), dest.offset(), dest.dim_stride(0),
                                                                 dest.extent(0), dest.extent(1));
+                break;
+        }
+        return dest; 
+    }
+    else if (lhs.rank() == 2 && (lhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
+        // Check for the case where we have a rank == 2 Tensor with a contiguous, 
+        // non-overlapping destination, where we can leverage vectorization
+        switch (op) {
+            case SqueezedOpType::ADD:
+                TensorMath_NS::_safe_2d_tensor_add_contiguous(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                              rhs_val,
+                                                              dest._data(), dest.offset(), dest.dim_stride(0),
+                                                              dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::SUB:
+                TensorMath_NS::_safe_2d_tensor_sub_contiguous(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                              rhs_val,
+                                                              dest._data(), dest.offset(), dest.dim_stride(0),
+                                                              dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::MUL:
+                TensorMath_NS::_safe_2d_tensor_mul_contiguous(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                              rhs_val,
+                                                              dest._data(), dest.offset(), dest.dim_stride(0),
+                                                              dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::DIV:
+                TensorMath_NS::_safe_2d_tensor_div_contiguous(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                              rhs_val,
+                                                              dest._data(), dest.offset(), dest.dim_stride(0),
+                                                              dest.extent(0), dest.extent(1));
                 break;
         }
         return dest; 
