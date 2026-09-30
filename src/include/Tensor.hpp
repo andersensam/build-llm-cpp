@@ -8,11 +8,17 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-29
+ * @version: 2026-09-30
  *
  * General Notes:
  *
- * TODO: Continue adding functionality 
+ * Tensor.hpp: The core Tensor library at the heart of most operations for build-llm-cpp.
+ * The Tensor inherits from AbstractTensor (interface for Tensor + TensorSlice).
+ * Tensor uses a storage class (Storage<T>) for interacting with the underlying heap-allocated
+ * memory block.
+ * 
+ * Most mathematical operations live inside TensorMath.hpp; however, Tensor.hpp handles
+ * cases where vectorization either can't happen or is overly complicated to implement.
  */
 
 #ifndef TENSOR_HPP
@@ -43,8 +49,10 @@
 #include <vector>
 
 /* Local dependencies */
+#include "AbstractTensor.hpp"
 #include "Log.hpp"
 #include "Numerics.hpp"
+#include "Storage.hpp"
 #include "TensorMath.hpp"
 
 namespace Tensor_NS {
@@ -61,6 +69,12 @@ inline constexpr bool TENSOR_ENABLE_ABSTRACT_TENSOR_REMAT = true;
 /* Use Logging functions */
 using Log::Log_Priority;
 using Log::log_message;
+
+/* Use the AbstractTensor interface */
+using AbstractTensor_NS::AbstractTensor;
+
+/* Use the Storage class */
+using Storage_NS::Storage;
 
 /**
  * Enum for controlling negative infinity masking for causal attention, only
@@ -210,222 +224,6 @@ requires std::is_arithmetic_v<T>
         }
     }
 }
-
-// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
-/**
- * Storage class, containing the raw data pointer used by Tensor and TensorSlice
- */
-template <typename T>
-requires std::is_arithmetic_v<T>
-struct Storage {
-    /**
-     * Number of elements in the memory block
-     */
-    size_t c_elements = 0;
-
-    /**
-     * Smart pointer to a block of memory
-     */
-    std::unique_ptr<T[]> m_data = nullptr;
-
-    /**
-     * Constructor for Storage, taking in the desired number of elements
-     * @param elements Number of elements desired in the memory block
-     */
-    explicit Storage(size_t elements) : c_elements(elements), m_data(std::make_unique<T[]>(c_elements)) {
-        // Clear out any possible garbage and set the block to zero
-        std::memset(m_data.get(), 0, sizeof(T) * c_elements);
-    }
-};
-// NOLINTEND(cppcoreguidelines-avoid-c-arrays)
-
-// NOLINTBEGIN(cppcoreguidelines-special-member-functions)
-/**
- * Abstract Tensor class, to implement both Tensor and the various
- * TensorSlice classes
- */
-template <typename T>
-requires std::is_arithmetic_v<T>
-class AbstractTensor {
-public:
-    /**
-     * Virtual destructor for AbstractTensor
-     */
-    virtual ~AbstractTensor() = default;
-
-    /**
-     * Get the rank of the Tensor
-     * @returns Returns the rank
-     */
-    virtual size_t rank() const = 0;
-
-    /**
-     * Get the dimensions of the Tensor
-     * @returns Returns a const reference to the vector containing the dimensions
-     */
-    virtual const std::vector<size_t>& shape() const = 0;
-
-    /**
-     * Get the stride used to advance inside the Tensor
-     * @returns Returns a const reference to the vector containing the stide of each dim
-     */
-    virtual const std::vector<size_t>& stride() const = 0;
-
-    /**
-     * Get the extent of a specified dim
-     * @param dim Dimension to query
-     * @returns Returns the extent of the dim
-     */
-    virtual size_t extent(size_t dim) const = 0;
-
-    /**
-     * Get the total number of elements in the Tensor
-     * @returns Returns the total number of elements
-     */
-    virtual size_t elements() const = 0;
-
-    /**
-     * Get a mutable reference to the value stored at the provided coordinates
-     * @param target Initializer list containing the desired coordinates
-     * @returns Returns a mutable reference to the desired value
-     */
-    virtual T& at(std::initializer_list<size_t> target) = 0;
-
-    /**
-     * Get a const reference to the value stored at the provided coordinates
-     * @param target Initializer list containing the desired coordinates
-     * @returns Returns a const reference to the desired value
-     */
-    virtual const T& at(std::initializer_list<size_t> target) const = 0;
-
-    /**
-     * Get a mutable reference to the value stored at the provided coordinates
-     * @param target Const reference to a vector containing the desired coordinates
-     * @returns Returns a mutable reference to the desired value
-     */
-    virtual T& at(const std::vector<size_t>& target) = 0;
-
-    /**
-     * Get a const reference to the value stored at the provided coordinates
-     * @param target Const reference to a vector containing the desired coordinates
-     * @returns Returns a const reference to the desired value
-     */
-    virtual const T& at(const std::vector<size_t>& target) const = 0;
-
-    /**
-     * Get a mutable reference to the value stored at the provided index
-     * @param target Index to fetch from
-     * @returns Returns a mutable reference to the desired value
-     */
-    virtual T& at(size_t target) = 0;
-
-    /**
-     * Get a const reference to the value stored at the provided index
-     * @param target Index to fetch from
-     * @returns Returns a const reference to the desired value
-     */
-    virtual const T& at(size_t target) const = 0;
-
-    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-    /**
-     * Transpose a Tensor along two dims
-     * @param dim0 First dim to swap
-     * @param dim1 Second dim to swap
-     */
-    virtual AbstractTensor<T>& transpose(size_t dim0, size_t dim1) = 0;
-    // NOLINTEND(bugprone-easily-swappable-parameters)
-
-    /**
-     * Determine whether two AbstractTensors (with specified dims) can matmul
-     * @param dim0 First dim
-     * @param dim1 Second dim
-     * @param target The other Tensor to check against
-     * @param target_dim0 The target's first dim
-     * @param target_dim1 The target's second dim
-     */
-    [[nodiscard]] std::expected<bool, std::string> _can_matmul(size_t dim0, size_t dim1, const AbstractTensor<T>& target,
-                                                               size_t target_dim0, size_t target_dim1) const {
-        // Ensure dim0 and dim1 are different
-        if (dim0 == dim1 || target_dim0 == target_dim1) {
-            return std::unexpected("AbstractTensor::_can_matmul: Caller / target dim0 and dim1 cannot be the same.\n");
-        }
-        // Ensure dim0 and dim1 are valid for the calling AbstractTensor
-        const auto& caller_dims = shape();
-        const auto& target_dims = target.shape();
-        // We know that shape().size() must be equual to rank()
-        size_t caller_rank = rank(), target_rank = target.rank();
-        if (dim0 >= caller_rank || dim1 >= caller_rank) {
-            return std::unexpected(
-                std::format(
-                    "AbstractTensor::_can_matmul: Invalid dims specified for caller AbstractTensor. Got {} and {} but have rank {}.\n",
-                    dim0, dim1, caller_rank
-                )
-            );
-        }
-        if (target_dim0 >= target_rank || target_dim1 >= target_rank) {
-            return std::unexpected(
-                std::format(
-                    "AbstractTensor::_can_matmul: Invalid dims specified for target AbstractTensor. Got {} and {} but have rank {}.\n",
-                    dim0, dim1, caller_rank
-                )
-            );
-        }
-        // Ensure the inner dims are the same size
-        if (caller_dims.at(dim1) != target_dims.at(target_dim0)) {
-            return std::unexpected(
-                std::format(
-                    "AbstractTensor::_can_matmul: Incompatible dims. Got [{}, {}] x [{}, {}], {} != {}.\n",
-                    caller_dims.at(dim0), caller_dims.at(dim1), target_dims.at(target_dim0), target_dims.at(target_dim1),
-                        caller_dims.at(dim1), target_dims.at(target_dim0)
-                )
-            );
-        }
-        return true;
-    }
-
-    /**
-     * Get a string containing information about the underlying Tensor
-     * @returns Returns a string with the Tensor's info
-     */
-    virtual std::string info() const = 0;
-
-    /**
-     * Check whether a Tensor's memory block is contiguous
-     * @returns True if contiguous
-     */
-    virtual bool contiguous() const = 0;
-
-    /**
-     * Get the offset for the start of the Storage memory block
-     * @returns Returns the size_t offset
-     */
-    virtual size_t offset() const = 0;
-
-    /**
-     * Get a pointer to the raw memory block underpinning a Tensor
-     * @returns Returns a pointer to the start of the Storage memory block
-     */
-    virtual T* _data() = 0;
-
-    /**
-     * Get a const pointer to the raw memory block underpinning a Tensor
-     * @returns Returns a pointer to the start of the Storage memory block
-     */
-    virtual const T* _data() const = 0;
-
-    /**
-     * Get a reference to the Storage object underpinning a Tensor
-     * @returns Returns a mutable reference to the Storage object
-     */
-    virtual Storage<T>& _storage() = 0;
-
-    /**
-     * Get a const reference to the Storage object underpinning a Tensor
-     * @returns Returns a const reference to the Storage object
-     */
-    virtual const Storage<T>& _storage() const = 0;
-};
-// NOLINTEND(cppcoreguidelines-special-member-functions)
 
 /* Forward delcataion for Tensor and the matmul functions */
 template <typename T> 
@@ -601,7 +399,7 @@ private:
     /**
      * Total number of elements stored in the Tensor
      */
-    size_t c_elements = 0;
+    size_t c_elements = 1;
 
     /**
      * Tensor rank, i.e. how many dimensions a Tensor represents, anywhere from 0..N, where rank 0 represents
@@ -1472,8 +1270,9 @@ public:
      */
     Tensor<T>& fill(const T& v) {
         // Set all elements of the Tensor to v
+        T* data = _data();
         for (size_t i = 0; i < c_elements; ++i) {
-            _data()[_get_offset(i)] = v;
+           data[_get_offset(i)] = v;
         }
         return *this;
     }
@@ -1488,9 +1287,10 @@ public:
         if (v.size() != c_elements) {
             std::invalid_argument(std::format("Tensor.set: Invalid number of value provided to set. Wanted {} but got {}\n.", c_elements, v.size()));
         }
+        T* data = _data();
         // Assuming we have enough values, read them into memory sequentially
         for (size_t i = 0; i < v.size(); ++i) {
-            _data()[_get_offset(i)] = v.begin()[i];
+            data[_get_offset(i)] = v.begin()[i];
         }
         return *this;
     }
@@ -1503,8 +1303,10 @@ public:
     Tensor<T>& apply(T (*f)(T)) {
         // Apply the function pointed to by f to all elements
         try {
+            T* data = _data();
             for (size_t i = 0; i < c_elements; ++i) {
-                _data()[_get_offset(i)] = (*f)(_data()[_get_offset(i)]);
+                size_t offset = _get_offset(i);
+                data[offset] = (*f)(data[offset]);
             }
         } catch (const std::exception& e) {
             throw std::invalid_argument(std::format("Tensor.apply: Exception when applying function to Tensor. Error: {}", e.what()));
@@ -1521,8 +1323,10 @@ public:
     Tensor<T>& apply(T (*f)(T, T), T param) {
         // Apply the function pointed to by f to all elements
         try {
+            T* data = _data();
             for (size_t i = 0; i < c_elements; ++i) {
-                _data()[_get_offset(i)] = (*f)(_data()[_get_offset(i)], param);
+                size_t offset = _get_offset(i);
+                data[offset] = (*f)(data[offset], param);
             }
         } catch (const std::exception& e) {
             throw std::invalid_argument(std::format("Tensor.apply: Exception when applying function to Tensor. Error: {}", e.what()));
@@ -1545,14 +1349,16 @@ public:
         // to check for int-like types and use std::uniform_int_distribution instead
         if constexpr (std::integral<T>) {
             std::uniform_int_distribution<T> distrib(range_min, range_max);
+            T* data = _data();
             for (size_t i = 0; i < c_elements; ++i) {
-                _data()[_get_offset(i)] = distrib(gen);
+                data[_get_offset(i)] = distrib(gen);
             }
         }
         else if constexpr (std::floating_point<T>) {
             std::uniform_real_distribution<T> distrib(range_min, range_max);
+            T* data = _data();
             for (size_t i = 0; i < c_elements; ++i) {
-                _data()[_get_offset(i)] = distrib(gen);
+                data[_get_offset(i)] = distrib(gen);
             }
         }
         else {
@@ -1570,9 +1376,10 @@ public:
         T result = 0;
         // Route to the proper overflow / underflow function based on type
         if constexpr (std::is_floating_point_v<T>) {
+            T* data = _data();
             // Traverse the Tensor from element 0..N
             for (size_t i = 0; i < c_elements; ++i) {
-                result += _data()[_get_offset(i)];
+                result += data[_get_offset(i)];
             }
             if (!std::isfinite(result)) {
                 throw std::overflow_error("Tensor.sum: Overflow / underflow detected.\n");
@@ -1580,9 +1387,10 @@ public:
             return result;
         }
         else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
+            T* data = _data();
             bool overflow = false;
             for (size_t i = 0; i < c_elements; ++i) {
-                overflow |= TensorMath_NS::_add_overflow_signed(result, _data()[_get_offset(i)], &result);
+                overflow |= TensorMath_NS::_add_overflow_signed(result, data[_get_offset(i)], &result);
             }
             if (overflow) {
                 throw std::overflow_error("Tensor.sum: Overflow / underflow detected.\n");
@@ -1590,9 +1398,10 @@ public:
             return result;
         }
         else {
+            T* data = _data();
             bool overflow = false;
             for (size_t i = 0; i < c_elements; ++i) {
-                overflow |= TensorMath_NS::_add_overflow_unsigned(result, _data()[_get_offset(i)], &result);
+                overflow |= TensorMath_NS::_add_overflow_unsigned(result, data[_get_offset(i)], &result);
             }
             if (overflow) {
                 throw std::overflow_error("Tensor.sum: Overflow / underflow detected.\n");
@@ -1669,8 +1478,9 @@ public:
             target_idxs.insert(distrib(gen));
         }
         // Traverse the indices in the set and zero them out
+        T* data = _data();
         for (const auto& idx : target_idxs) {
-            _data()[_get_offset(idx)] = 0;
+            data[_get_offset(idx)] = 0;
         }
         // Apply the scaling factor to the rest of the Tensor
         *this *= scale_factor;
@@ -1683,7 +1493,7 @@ public:
      */
     T max() const {
         // NOLINTNEXTLINE(bugprone-sizeof-expression)
-        return *(std::max_element(m_data.m_data.get() + c_offset, m_data.m_data.get() + c_offset + c_elements));
+        return *(std::max_element(_data() + c_offset, _data() + c_offset + c_elements));
     }
 
     /**
@@ -1692,7 +1502,7 @@ public:
      */
     T min() const {
         // NOLINTNEXTLINE(bugprone-sizeof-expression)
-        return *(std::min_element(m_data.m_data.get() + c_offset, m_data.m_data.get() + c_offset + c_elements));
+        return *(std::min_element(_data() + c_offset, _data() + c_offset + c_elements));
     }
 
     /** 
@@ -2076,7 +1886,7 @@ public:
         if (dim == 0) {
             for (size_t i = 0; i < rows(); ++i) {
                 T row_sum = sum(dim, i);
-                if (row_sum == 0 || std::isinf(row_sum) || std::isnan(row_sum)) {
+                if (row_sum == 0 || !std::isfinite(row_sum)) {
                     if constexpr (TENSOR_ENABLE_SOFTMAX_WARNINGS) {
                         log_message(Log_Priority::WARNING, "Tensor.softmax", std::format("row_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
                     }
@@ -2098,7 +1908,7 @@ public:
                 if constexpr (TENSOR_ENABLE_SOFTMAX_WARNINGS) {
                     log_message(Log_Priority::WARNING, "Tensor.softmax", std::format("col_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
                 }
-                if (col_sum == 0 || std::isinf(col_sum) || std::isnan(col_sum)) {
+                if (col_sum == 0 || !std::isfinite(col_sum)) {
                     for (size_t j = 0; j < rows(); ++j) {
                         at({j, i}) = fallback;
                     }

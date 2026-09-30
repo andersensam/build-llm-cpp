@@ -2,6 +2,34 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
+# Storage class, consumed by Tensor and TensorSlice
+cc_library(
+    name = "storage",
+    hdrs = glob(
+        [
+            "src/include/Storage.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = []
+)
+
+# AbstractTensor class, implemented by Tensor and TensorSlice
+cc_library(
+    name = "abstracttensor",
+    hdrs = glob(
+        [
+            "src/include/AbstractTensor.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":storage",
+    ]
+)
+
 # Dimension Info struct used by Tensor and TensorSlice
 cc_library(
     name = "diminfo",
@@ -73,8 +101,10 @@ cc_library(
     strip_include_prefix = "src",
     includes = [],
     deps = [
+        ":abstracttensor",
         ":llmlog",
         ":numerics",
+        ":storage",
         ":tensormath",
     ]
 )
@@ -90,10 +120,12 @@ cc_library(
     strip_include_prefix = "src",
     includes = [],
     deps = [
+        ":abstracttensor",
         ":diminfo",
         ":llmlog",
         ":numerics",
         ":sliceconfig",
+        ":storage",
         ":tensor",
     ]
 )

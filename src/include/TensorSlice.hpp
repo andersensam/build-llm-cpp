@@ -32,13 +32,21 @@
 #include <vector>
 
 /* Local dependencies */
+#include "AbstractTensor.hpp"
 #include "DimInfo.hpp"
 #include "Log.hpp"
 #include "Numerics.hpp"
 #include "SliceConfig.hpp"
+#include "Storage.hpp"
 #include "Tensor.hpp"
 
 namespace TensorSlice_NS {
+
+/* Use the AbstractTensor interface */
+using AbstractTensor_NS::AbstractTensor;
+
+/* Use DimInfo from DimInfo_NS */
+using DimInfo_NS::DimInfo;
 
 /* Use logging functions */
 using Log::log_message;
@@ -58,8 +66,8 @@ using SliceConfig_NS::SliceConfig;
 using SliceConfig_NS::VectorSliceConfig;
 using SliceConfig_NS::MatrixSliceConfig;
 
-/* Use DimInfo from DimInfo_NS */
-using DimInfo_NS::DimInfo;
+/* Use the Storage class */
+using Storage_NS::Storage;
 
 /**
  * ListTensorSlice, a TensorSlice built from a list of values, good for searching through
