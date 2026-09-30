@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-20
+ * @version: 2026-09-29
  *
  * General Notes:
  *
@@ -20,6 +20,7 @@
 
 /* Standard dependencies */
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <ctime>
 #include <iostream>

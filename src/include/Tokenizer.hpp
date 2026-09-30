@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-27
+ * @version: 2026-09-29
  *
  * General Notes:
  *
@@ -19,6 +19,8 @@
 #define TOKENIZER_HPP
 
 /* Standard dependencies */
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 #include <string>
 

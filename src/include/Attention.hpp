@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-14
+ * @version: 2026-09-29
  *
  * General Notes:
  *
@@ -20,6 +20,7 @@
 
 /* Standard dependencies */
 #include <cmath>
+#include <cstddef>
 #include <format>
 #include <memory>
 #include <stdexcept>

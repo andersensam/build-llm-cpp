@@ -2,6 +2,19 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
+# Dimension Info struct used by Tensor and TensorSlice
+cc_library(
+    name = "diminfo",
+    hdrs = glob(
+        [
+            "src/include/DimInfo.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = []
+)
+
 # Logging library present across nearly all of the individual libraries packages
 cc_library(
     name = "llmlog",
@@ -69,11 +82,6 @@ cc_library(
 # TensorSlice template library
 cc_library(
     name = "tensorslice",
-    srcs = glob(
-        [
-            "src/TensorSlice.cpp"
-        ]
-    ),
     hdrs = glob(
         [
             "src/include/TensorSlice.hpp"
@@ -82,10 +90,30 @@ cc_library(
     strip_include_prefix = "src",
     includes = [],
     deps = [
+        ":diminfo",
         ":llmlog",
-        ":tensor",
         ":numerics",
+        ":sliceconfig",
+        ":tensor",
     ]
+)
+
+# SliceConfig library, used for creating TensorSlices
+cc_library(
+    name = "sliceconfig",
+    srcs = glob(
+        [
+            "src/SliceConfig.cpp"
+        ]
+    ),
+    hdrs = glob(
+        [
+            "src/include/SliceConfig.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = []
 )
 
 # Abstract base class for any Tokenizer implementation

@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-03
+ * @version: 2026-09-29
  *
  * General Notes:
  *
@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstddef>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <functional>

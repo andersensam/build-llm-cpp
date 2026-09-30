@@ -19,6 +19,7 @@
 #define DATALOADER_HPP
 
 /* Standard dependencies */
+#include <cstddef>
 #include <format>
 #include <fstream>
 #include <iostream>

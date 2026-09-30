@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-28
+ * @version: 2026-09-29
  *
  * General Notes:
  *
@@ -23,6 +23,8 @@
 #include <array>
 #include <climits>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <cxxabi.h>
 #include <expected>
@@ -53,6 +55,8 @@ inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = true;
 inline constexpr size_t TENSOR_MAX_DEMANGLED_NAME_LEN = 32;
 /* Control logging for softmax warnings (NAN, inf, divide by 0) */
 inline constexpr bool TENSOR_ENABLE_SOFTMAX_WARNINGS = true;
+/* Control whether or not we prefer to rematerialize AbstractTensors that are not contiguous to speed up matmuls */
+inline constexpr bool TENSOR_ENABLE_ABSTRACT_TENSOR_REMAT = true;
 
 /* Use Logging functions */
 using Log::Log_Priority;
@@ -390,6 +394,36 @@ public:
      * @returns True if contiguous
      */
     virtual bool contiguous() const = 0;
+
+    /**
+     * Get the offset for the start of the Storage memory block
+     * @returns Returns the size_t offset
+     */
+    virtual size_t offset() const = 0;
+
+    /**
+     * Get a pointer to the raw memory block underpinning a Tensor
+     * @returns Returns a pointer to the start of the Storage memory block
+     */
+    virtual T* _data() = 0;
+
+    /**
+     * Get a const pointer to the raw memory block underpinning a Tensor
+     * @returns Returns a pointer to the start of the Storage memory block
+     */
+    virtual const T* _data() const = 0;
+
+    /**
+     * Get a reference to the Storage object underpinning a Tensor
+     * @returns Returns a mutable reference to the Storage object
+     */
+    virtual Storage<T>& _storage() = 0;
+
+    /**
+     * Get a const reference to the Storage object underpinning a Tensor
+     * @returns Returns a const reference to the Storage object
+     */
+    virtual const Storage<T>& _storage() const = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 
@@ -500,7 +534,7 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& r
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
+void _naive_matmul_impl(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
                                const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
                                Tensor<T>& destination);
 /**
@@ -513,8 +547,34 @@ inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, size_t lhs_dim0, si
  */
 template <typename T> 
 requires std::is_arithmetic_v<T>
-inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs, Tensor<T>& destination);
+void _naive_matmul_impl(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs, Tensor<T>& destination);
 // NOLINTEND(bugprone-easily-swappable-parameters)
+
+/**
+ * Apply a uniform basic math operation over a Tensor, reducing the amount of boilerplate
+ * code required for the various operators and friends
+ * @param lhs Const reference to a Tensor to serve as the lefthand side
+ * @param rhs Const reference to a Tensor to serve as the righthand side
+ * @param dest Reference to a Tensor to write the result to
+ * @param op Target operation to perform
+ * @returns Returns a reference to the destination Tensor
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+Tensor<T>& uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& dest, SqueezedOpType op);
+
+/**
+ * Apply a uniform basic math operation over a Tensor, reducing the amount of boilerplate
+ * code required for the various operators and friends
+ * @param lhs Const reference to a Tensor to serve as the lefthand side
+ * @param rhs_val Scalar value to perform the op with lhs
+ * @param dest Reference to a Tensor to write the result to
+ * @param op Target operation to perform
+ * @returns Returns a reference to the destination Tensor
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, SqueezedOpType op);
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 /**
@@ -565,8 +625,295 @@ private:
      * This will not be true if creating a TensorSlice
      */
     bool c_contiguous = true;
+    
+/* Public functions */
+public:
+    /**
+     * Use _can_matmul from the AbstractTensor base class
+     */
+    using AbstractTensor<T>::_can_matmul;
 
-/* Private functions */
+    /**
+     * Default constructor for Tensor, taking in an intializer list containing th dimensions
+     * for the resulting Tensor
+     * @param dims std::initializer_list<size_t> containing the desired dimensions
+     */
+    Tensor(std::initializer_list<size_t> dims) : c_rank(dims.size()), m_stride(dims.size()), m_dims(dims) {
+        // Handle the case where we have a rank-0 tensor (scalar value). Allocate space for the singular
+        // element and then return immediately
+        if (c_rank == 0) {
+            m_data = std::make_shared<Storage<T>>(1);
+            return;
+        }
+        // Store the target 1-D representation of the desired size of our Tensor
+        for (const size_t& ds : dims) {
+            if (ds == 0) {
+                throw std::invalid_argument(std::format("Tensor.Tensor: invalid dim ({}) provided to Tensor. Dims must be >= 1 or should be omitted.", ds));
+            }
+            c_elements *= ds;
+        }
+        // Allocate the block of memory for the Tensor
+        m_data = std::make_shared<Storage<T>>(c_elements);
+        // Calculate the stides needed to get between dims
+        if (c_rank == 1) {
+            m_stride.at(0) = 1;
+        }
+        else if (c_rank == 2) {
+            m_stride.at(0) = m_dims.at(1);
+            m_stride.at(1) = 1;
+        }
+        else {
+            m_stride.at(c_rank - 1) = 1;
+            for (size_t i = c_rank - 2; i > 0; --i) {
+                m_stride.at(i) = m_stride.at(i + 1) * m_dims.at(i);
+            }
+        }
+    }
+
+    /**
+     * Constructor for Tensor, taking in a reference to a vector containing the desired dimensions
+     * for the resulting Tensor
+     * @param dims std::vector<size_t> containing the desired dimensions
+     */
+    explicit Tensor(const std::vector<size_t>& dims) : c_rank(dims.size()), m_stride(dims.size()), m_dims(dims) {
+        // Handle the case where we have a rank-0 tensor (scalar value). Allocate space for the singular
+        // element and then return immediately
+        if (c_rank == 0) {
+            m_data = std::make_shared<Storage<T>>(1);
+            return;
+        }
+        // Store the target 1-D representation of the desired size of our Tensor
+        for (const size_t& ds : dims) {
+            if (ds == 0) {
+                throw std::invalid_argument(std::format("Tensor.Tensor: invalid dim ({}) provided to Tensor. Dims must be >= 1 or should be omitted.", ds));
+            }
+            c_elements *= ds;
+        }
+        // Allocate the block of memory for the Tensor
+        m_data = std::make_shared<Storage<T>>(c_elements);
+        // Calculate the stides needed to get between dims
+        if (c_rank == 1) {
+            m_stride.at(0) = 1;
+        }
+        else if (c_rank == 2) {
+            m_stride.at(0) = m_dims.at(1);
+            m_stride.at(1) = 1;
+        }
+        else {
+            m_stride.at(c_rank - 1) = 1;
+            for (size_t i = c_rank - 2; i > 0; --i) {
+                m_stride.at(i) = m_stride.at(i + 1) * m_dims.at(i);
+            }
+        }
+    }
+
+    /**
+     * Copy constructor for Tensor, creating a shallow copy, which just increases the reference
+     * count in the shared pointer to m_data
+     * @param target Tensor to make a copy of
+     */
+    Tensor(const Tensor<T>& target) : m_data(target.m_data), c_offset(target.c_offset), c_elements(target.c_elements), 
+                                      c_rank(target.c_rank), m_stride(target.m_stride), m_dims(target.m_dims), c_contiguous(target.c_contiguous) {
+        // Debug logging
+        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy constructor called");
+        }
+    }
+
+    /**
+     * Copy assignment operator, creating a shallow copy (without copying data block)
+     * @param target Tensor to make a copy of
+     * @returns Returns a reference to this Tensor
+     */
+    Tensor<T>& operator=(const Tensor<T>& target) {
+        // Ensure we aren't calling the assignment operator on ourself
+        if (this == &target) {
+            return *this;
+        }
+        // Copy data elements into the Tensor
+        m_data = target.m_data;
+        c_offset = target.c_offset;
+        c_elements = target.c_elements;
+        c_rank = target.c_rank;
+        m_stride = std::vector<size_t>(target.m_stride);
+        m_dims = std::vector<size_t>(target.m_dims);
+        c_contiguous = target.c_contiguous;
+        // Debug logging
+        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy assignment called");
+        }
+
+        return *this;
+    }
+
+    /**
+     * Move constructor for Tensor, taking the data from target
+     * @param target Tensor to move data out of
+     */
+    Tensor(Tensor<T>&& target) noexcept : m_data(std::move(target.m_data)), c_offset(target.c_offset), c_elements(target.c_elements),
+                                          c_rank(target.c_rank), m_stride(std::move(target.m_stride)), m_dims(std::move(target.m_dims)),
+                                          c_contiguous(target.c_contiguous) {
+        // Set target.m_data to nullptr
+        target.m_data = nullptr;
+        // Debug logging
+        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move constructor called");
+        }
+    }
+
+    /**
+     * Move assignment operator, takeing the data from the target and overwriting this Tensor
+     * @param target Tensor to move the data out of
+     * @returns Returns a reference to this Tensor
+     */
+    Tensor<T>& operator=(Tensor<T>&& target) noexcept {
+        // Ensure we aren't calling the assignment operator on ourself
+        if (this == &target) {
+            return *this;
+        }
+        // Copy trivial data elements into this Tensor
+        c_offset = target.c_offset;
+        c_elements = target.c_elements;
+        c_rank = target.c_rank;
+        c_contiguous = target.c_contiguous;
+        // Move eligible vectors
+        m_stride = std::move(target.m_stride);
+        m_dims = std::move(target.m_dims);
+        // Move the memory block
+        m_data = std::move(target.m_data);
+        // Set target.m_data to nullptr for good measure
+        target.m_data = nullptr;
+        // Debug logging
+        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move assignment operator called");
+        }
+
+        return *this;
+    }
+
+    /**
+     * Default destructor for Tensor
+     */
+    ~Tensor() override {
+        // Do nothing since all of our data elements are either trivial types or will be cleaned up
+        // automatically when they go out of scope
+    }
+
+    /**
+     * Get the number of elements in a Tensor
+     * @returns Returns size_t of the number of elements present in the Tensor
+     */
+    size_t elements() const override {
+        return c_elements;
+    }
+
+    /**
+     * Get the rank of a Tensor
+     * @returns Returns size_t of the Tensor's rank
+     */
+    size_t rank() const override {
+        return c_rank;
+    }
+
+    /**
+     * Get the dims of a Tensor
+     * @returns Returns a const ref to m_dims
+     */
+    const std::vector<size_t>& dims() const {
+        return m_dims;
+    }
+
+    /**
+     * Get the dimensions of the Tensor
+     * @returns Returns a const reference to the vector containing the dimensions
+     */
+    const std::vector<size_t>& shape() const override {
+        return m_dims;
+    }
+
+    /**
+     * Get the stride of a Tensor
+     * @returns Returns a const ref to m_stride
+     */
+    const std::vector<size_t>& stride() const override {
+        return m_stride;
+    }
+
+    /**
+     * Get the extent of a specified dim
+     * @param dim Dimension to query
+     * @returns Returns the extent of the dim
+     */
+    size_t extent(size_t dim) const override {
+        // Ensure the dim is valid
+        if (dim >= c_rank) {
+            throw std::invalid_argument("Tensor.extent: Invalid dim provided.\n");
+        }
+        return m_dims.at(dim);
+    }
+
+    /**
+     * Get the stride of a dim in a Tensor
+     * @param dim Dimension to check
+     * @returns Returns the stride of the specified dim
+     */
+    size_t dim_stride(size_t dim) const {
+        // Ensure the dim is valid
+        if (dim >= c_rank) {
+            throw std::invalid_argument("Tensor.dim_stride: Invalid dim provided.\n");
+        }
+        // m_stride always has size() == c_rank
+        return m_stride[dim];
+    }
+
+    /**
+     * Check whether a Tensor's memory block is contiguous
+     * @returns True if contiguous
+     */
+    bool contiguous() const override {
+        return c_contiguous;
+    }
+
+    /**
+     * Get the offset for the start of the Storage memory block
+     * @returns Returns the size_t offset
+     */
+    size_t offset() const override {
+        return c_offset;
+    }
+
+    /**
+     * Get a pointer to the raw memory block underpinning a Tensor
+     * @returns Returns a pointer to the start of the Storage memory block
+     */
+    T* _data() override {
+        return m_data->m_data.get();
+    }
+
+    /**
+     * Get a const pointer to the raw memory block underpinning a Tensor
+     * @returns Returns a pointer to the start of the Storage memory block
+     */
+    const T* _data() const override {
+        return m_data->m_data.get();
+    }
+
+    /**
+     * Get a reference to the Storage object underpinning a Tensor
+     * @returns Returns a mutable reference to the Storage object
+     */
+    Storage<T>& _storage() override {
+        return *m_data;
+    }
+
+    /**
+     * Get a const reference to the Storage object underpinning a Tensor
+     * @returns Returns a const reference to the Storage object
+     */
+    const Storage<T>& _storage() const override {
+        return *m_data;
+    }
+
     /**
      * Calculate the offset from a set of input cooridnates
      * @param c Coordinates to calculate the offset from
@@ -655,182 +1002,56 @@ private:
     }
 
     /**
-     * Get a pointer to the beginning of the data block underpinning m_data
-     * @returns Returns a const pointer to the start of the data block
+     * Clone a Tensor, creating a deep copy and a new memory block for the Storage object
+     * @returns Returns a new Tensor with the same data as the caller
      */
-    const T* _data() const {
-        return m_data->m_data.get();
-    }
-
-    /**
-     * Get a pointer to the beginning of the data block underpinning m_data
-     * @returns Returns a pointer to the start of the data block
-     */
-    T* _data() {
-        return m_data->m_data.get();
-    }
-
-/* Public functions */
-public:
-    /**
-     * Use _can_matmul from the AbstractTensor base class
-     */
-    using AbstractTensor<T>::_can_matmul;
-
-    /**
-     * Default constructor for Tensor, taking in an intializer list containing th dimensions
-     * for the resulting Tensor
-     * @param dims std::initializer_list<size_t> containing the desired dimensions
-     */
-    Tensor(std::initializer_list<size_t> dims) : c_rank(dims.size()), m_stride(dims.size()), m_dims(dims) {
-        // Handle the case where we have a rank-0 tensor (scalar value). Allocate space for the singular
-        // element and then return immediately
-        if (c_rank == 0) {
-            m_data = std::make_shared<Storage<T>>(1);
-            return;
-        }
-        // Store the target 1-D representation of the desired size of our Tensor
-        for (const size_t& ds : dims) {
-            if (ds == 0) {
-                throw std::invalid_argument(std::format("Tensor.Tensor: invalid dim ({}) provided to Tensor. Dims must be >= 1 or should be omitted.", ds));
-            }
-            c_elements *= ds;
-        }
-        // Allocate the block of memory for the Tensor
-        m_data = std::make_shared<Storage<T>>(c_elements);
-        // Calculate the stides needed to get between dims
-        if (c_rank == 1) {
-            m_stride.at(0) = 1;
-        }
-        else if (c_rank == 2) {
-            m_stride.at(0) = m_dims.at(1);
-            m_stride.at(1) = 1;
+    Tensor<T> clone() const {
+        // Allocate a new Tensor, copying the shape from this one
+        Tensor<T> target(m_dims);
+        // If the caller is contiguous, use memcpy to copy the underlying data all at once
+        if (c_contiguous) {
+            std::memcpy(target._data(), _data() + c_offset, c_elements * sizeof(T));
         }
         else {
-            m_stride.at(c_rank - 1) = 1;
-            for (size_t i = c_rank - 2; i > 0; --i) {
-                m_stride.at(i) = m_stride.at(i + 1) * m_dims.at(i);
+            T* target_data = target._data();
+            const T* self_data = _data();
+            for (size_t i = 0; i < c_elements; ++i) {
+                target_data[i] = self_data[_get_offset(i)];
             }
         }
+        return target;
     }
 
     /**
-     * Constructor for Tensor, taking in a reference to a vector containing the desired dimensions
-     * for the resulting Tensor
-     * @param dims std::vector<size_t> containing the desired dimensions
+     * Copy the contents of another Tensor into this Tensor
+     * @param target Tensor to copy from
+     * @returns Returns a reference to this Tensor
      */
-    explicit Tensor(const std::vector<size_t>& dims) : c_rank(dims.size()), m_stride(dims.size()), m_dims(dims) {
-        // Handle the case where we have a rank-0 tensor (scalar value). Allocate space for the singular
-        // element and then return immediately
-        if (c_rank == 0) {
-            m_data = std::make_shared<Storage<T>>(1);
-            return;
+    Tensor<T>& copy_from(const Tensor<T>& target) {
+        if (!_compatible(target)) {
+            throw std::invalid_argument("Tensor.copy_from: Invalid target Tensor provided to copy_from.\n");
         }
-        // Store the target 1-D representation of the desired size of our Tensor
-        for (const size_t& ds : dims) {
-            if (ds == 0) {
-                throw std::invalid_argument(std::format("Tensor.Tensor: invalid dim ({}) provided to Tensor. Dims must be >= 1 or should be omitted.", ds));
-            }
-            c_elements *= ds;
+        // Ensure we don't copy if we receive the same Tensor or Storage
+        if (this == &target || (_data() == target._data() && c_offset == target.c_offset && is_same_layout(target))) {
+            return *this;
         }
-        // Allocate the block of memory for the Tensor
-        m_data = std::make_shared<Storage<T>>(c_elements);
-        // Calculate the stides needed to get between dims
-        if (c_rank == 1) {
-            m_stride.at(0) = 1;
+        // Ensure the Tensors Storage blocks don't have unsafe aliasing
+        if (!is_safe_aliasing(target)) {
+            Tensor<T> temp_target = target.clone();
+            return copy_from(temp_target);
         }
-        else if (c_rank == 2) {
-            m_stride.at(0) = m_dims.at(1);
-            m_stride.at(1) = 1;
+        // If both are unique Tensors and contiguous, use memcpy
+        if ((c_contiguous && target.c_contiguous) && is_unique(target)) {
+            std::memcpy(_data() + c_offset, target._data() + target.c_offset, c_elements * sizeof(T));
         }
+        // Otherwise copy the elements one by one
         else {
-            m_stride.at(c_rank - 1) = 1;
-            for (size_t i = c_rank - 2; i > 0; --i) {
-                m_stride.at(i) = m_stride.at(i + 1) * m_dims.at(i);
+            T* self_data = _data();
+            const T* target_data = target._data();
+            for (size_t i = 0; i < c_elements; ++i) {
+                self_data[_get_offset(i)] = target_data[target._get_offset(i)];
             }
         }
-    }
-
-    /**
-     * Copy constructor for Tensor, creating a deep copy
-     * @param target Tensor to make a copy of
-     */
-    Tensor(const Tensor<T>& target) : m_data(target.m_data), c_offset(target.c_offset), c_elements(target.c_elements), 
-                                      c_rank(target.c_rank), m_stride(target.m_stride), m_dims(target.m_dims), c_contiguous(target.c_contiguous) {
-        // Debug logging
-        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
-            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy constructor called");
-        }
-    }
-
-    /**
-     * Copy assignment operator, creating a shallow copy (without copying data block)
-     * @param target Tensor to make a copy of
-     * @returns Returns a reference to this Tensor
-     */
-    Tensor<T>& operator=(const Tensor<T>& target) {
-        // Ensure we aren't calling the assignment operator on ourself
-        if (this == &target) {
-            return *this;
-        }
-        // Copy data elements into the Tensor
-        m_data = target.m_data;
-        c_offset = target.c_offset;
-        c_elements = target.c_elements;
-        c_rank = target.c_rank;
-        m_stride = std::vector<size_t>(target.m_stride);
-        m_dims = std::vector<size_t>(target.m_dims);
-        c_contiguous = target.c_contiguous;
-        // Debug logging
-        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
-            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy assignment called");
-        }
-
-        return *this;
-    }
-
-    /**
-     * Move constructor for Tensor, taking the data from target
-     * @param target Tensor to move data out of
-     */
-    Tensor(Tensor<T>&& target) noexcept : m_data(std::move(target.m_data)), c_offset(target.c_offset), c_elements(target.c_elements),
-                                          c_rank(target.c_rank), m_stride(std::move(target.m_stride)), m_dims(std::move(target.m_dims)),
-                                          c_contiguous(target.c_contiguous) {
-        // Set target.m_data to nullptr
-        target.m_data = nullptr;
-        // Debug logging
-        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
-            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move constructor called");
-        }
-    }
-
-    /**
-     * Move assignment operator, takeing the data from the target and overwriting this Tensor
-     * @param target Tensor to move the data out of
-     * @returns Returns a reference to this Tensor
-     */
-    Tensor<T>& operator=(Tensor<T>&& target) noexcept {
-        // Ensure we aren't calling the assignment operator on ourself
-        if (this == &target) {
-            return *this;
-        }
-        // Copy trivial data elements into this Tensor
-        c_offset = target.c_offset;
-        c_elements = target.c_elements;
-        c_rank = target.c_rank;
-        c_contiguous = target.c_contiguous;
-        // Move eligible vectors
-        m_stride = std::move(target.m_stride);
-        m_dims = std::move(target.m_dims);
-        // Move the memory block
-        m_data = std::move(target.m_data);
-        // Set target.m_data to nullptr for good measure
-        target.m_data = nullptr;
-        // Debug logging
-        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
-            log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move assignment operator called");
-        }
-
         return *this;
     }
 
@@ -877,489 +1098,175 @@ public:
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 
     /**
-     * Apply a uniform basic math operation over a Tensor, reducing the amount of boilerplate
-     * code required for the various operators and friends
-     * @param lhs Const reference to a Tensor to serve as the lefthand side
-     * @param rhs Const reference to a Tensor to serve as the righthand side
-     * @param dest Reference to a Tensor to write the result to
-     * @param op Target operation to perform
-     * @returns Returns a reference to the destination Tensor
+     * Check if two Tensors have the same rank, dims, and strides
+     * @param target Const ref to a Tensor to check against this one
+     * @returns True if dims and strides exactly match
      */
-    friend Tensor<T>& uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& dest, SqueezedOpType op) {
-        // Ensure the Tensors are compatible, including that the destination has the right shape
-        if (!lhs._compatible(rhs) || !lhs._compatible(dest)) {
-            throw std::invalid_argument("Tensor.uniform_op: Incompatible Tensor for uniform_op(lhs, rhs, dest, op).\n");
+    bool is_same_layout(const Tensor<T>& target) const {
+        // c_elements can reveal if any of the fields are not the same
+        if (c_elements != target.c_elements) { return false; }
+        // Ensure the rank is the same
+        if (c_rank != target.c_rank) { return false; }
+        // Check the dims and strides match, m_dims and m_stride always have size() == c_rank
+        for (size_t i = 0; i < c_rank; ++i) {
+            if (m_dims[i] != target.m_dims[i]) { return false; }
+            if (m_stride[i] != target.m_stride[i]) { return false; }
         }
-        // If lhs, rhs, and dest don't overlap and are contiguous, use the fastest possible, vectorized
-        // method to perform the operation
-        if ((lhs.c_contiguous && rhs.c_contiguous && dest.c_contiguous) && (dest.is_unique(lhs) && dest.is_unique(rhs)) {
-            switch (op) {
-                case SqueezedOpType::ADD:
-                    TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.c_offset,
-                                                                 rhs._data(), rhs.c_offset,
-                                                                 dest._data(), dest.c_offset,
-                                                                 dest.c_elements);
-                    break;
-                case SqueezedOpType::SUB:
-                    TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.c_offset,
-                                                                 rhs._data(), rhs.c_offset,
-                                                                 dest._data(), dest.c_offset,
-                                                                 dest.c_elements);
-                    break;
-                case SqueezedOpType::MUL:
-                    TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.c_offset,
-                                                                 rhs._data(), rhs.c_offset,
-                                                                 dest._data(), dest.c_offset,
-                                                                 dest.c_elements);
-                    break;
-                case SqueezedOpType::DIV:
-                    TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.c_offset,
-                                                                 rhs._data(), rhs.c_offset,
-                                                                 dest._data(), dest.c_offset,
-                                                                 dest.c_elements);
-                    break;
-            }
-            return dest;
-        }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (lhs.c_contiguous && rhs.c_contiguous && dest.c_contiguous) {
-            switch (op) {
-                case SqueezedOpType::ADD:
-                    TensorMath_NS::_safe_tensor_add_contiguous(lhs._data(), lhs.c_offset,
-                                                               rhs._data(), rhs.c_offset,
-                                                               dest._data(), dest.c_offset,
-                                                               dest.c_elements);
-                    break;
-                case SqueezedOpType::SUB:
-                    TensorMath_NS::_safe_tensor_sub_contiguous(lhs._data(), lhs.c_offset,
-                                                               rhs._data(), rhs.c_offset,
-                                                               dest._data(), dest.c_offset,
-                                                               dest.c_elements);
-                    break;
-                case SqueezedOpType::MUL:
-                    TensorMath_NS::_safe_tensor_mul_contiguous(lhs._data(), lhs.c_offset,
-                                                               rhs._data(), rhs.c_offset,
-                                                               dest._data(), dest.c_offset,
-                                                               dest.c_elements);
-                    break;
-                case SqueezedOpType::DIV:
-                    TensorMath_NS::_safe_tensor_div_contiguous(lhs._data(), lhs.c_offset,
-                                                               rhs._data(), rhs.c_offset,
-                                                               dest._data(), dest.c_offset,
-                                                               dest.c_elements);
-                    break;
-            }
-            return dest;
-        }
-        // If the Tensors are not entirely contiguous, but are rank == 2 and they all have strides
-        // of 1 for dim1, we can also speed up this op
-        else if (lhs.c_rank == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
-            switch (op) {
-                case SqueezedOpType::ADD:
-                    TensorMath_NS::_safe_2d_tensor_add_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                                  rhs._data(), rhs.c_offset, rhs.dim_stride(0),
-                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
-                                                                  dest.extent(0), dest.extent(1));
-                    break;
-                case SqueezedOpType::SUB:
-                    TensorMath_NS::_safe_2d_tensor_sub_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                                  rhs._data(), rhs.c_offset, rhs.dim_stride(0),
-                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
-                                                                  dest.extent(0), dest.extent(1));
-                    break;
-                case SqueezedOpType::MUL:
-                    TensorMath_NS::_safe_2d_tensor_mul_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                                  rhs._data(), rhs.c_offset, rhs.dim_stride(0),
-                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
-                                                                  dest.extent(0), dest.extent(1));
-                    break;
-                case SqueezedOpType::DIV:
-                    TensorMath_NS::_safe_2d_tensor_div_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                                  rhs._data(), rhs.c_offset, rhs.dim_stride(0),
-                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
-                                                                  dest.extent(0), dest.extent(1));
-                    break;
-            }
-            return dest;
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
-        else {
-            // _compatible ensures that the Tensors have the same shape and number of 
-            // elements, so iterate using _get_offset(size_t) to save boilerplate code
-            if constexpr (std::is_floating_point_v<T>) {
-                bool overflowed = false;
-                switch (op) {
-                    case SqueezedOpType::ADD:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            dest_val = lhs_val + rhs_val;
-                            overflowed |= !std::isfinite(dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::SUB:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            dest_val = lhs_val - rhs_val;
-                            overflowed |= !std::isfinite(dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::MUL:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            dest_val = lhs_val * rhs_val;
-                            overflowed |= !std::isfinite(dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::DIV:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            dest_val = lhs_val / rhs_val;
-                            overflowed |= !std::isfinite(dest_val);
-                        }
-                        break;
-                }
-                if (overflowed) {
-                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                }
-            }
-            else if constexpr (std::is_signed_v<T>) {
-                bool overflowed = false;
-                switch (op) {
-                    case SqueezedOpType::ADD:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::SUB:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::MUL:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::DIV:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            if (rhs_val == 0) {
-                                throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
-                            }
-                            if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
-                                throw std::overflow_error("Tensor.uniform_op: Division causes overflow / underflow.\n");
-                            }
-                            dest_val = lhs_val / rhs_val;
-                        }
-                        break;
-                }
-                if (overflowed) {
-                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                }
-            }
-            else {
-                bool overflowed = false;
-                switch (op) {
-                    case SqueezedOpType::ADD:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::SUB:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::MUL:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::DIV:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            const T rhs_val = rhs._data()[rhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            if (rhs_val == 0) {
-                                throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
-                            }
-                            dest_val = lhs_val / rhs_val;
-                        }
-                        break;
-                }
-                if (overflowed) {
-                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                }
-            }
-            return dest;
-        }
+        return true;
     }
 
     /**
-     * Apply a uniform basic math operation over a Tensor, reducing the amount of boilerplate
-     * code required for the various operators and friends
-     * @param lhs Const reference to a Tensor to serve as the lefthand side
-     * @param rhs_val Scalar value to perform the op with lhs
-     * @param dest Reference to a Tensor to write the result to
-     * @param op Target operation to perform
-     * @returns Returns a reference to the destination Tensor
+     * Check aliasing safety for two Tensors. We either want the Tensors to be unique
+     * per the is_unique call, or ensure the Tensors are exactly the same, with the same
+     * Storage, offset, shape, and stride
+     * @param target Const ref to a Tensor to check for safe aliasing
+     * @returns True if the Tensors are unique or have Storage config
      */
-    friend Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, SqueezedOpType op) {
-        // Ensure the Tensors are compatible, including that the destination has the right shape
-        if (!lhs._compatible(dest)) {
-            throw std::invalid_argument("Tensor.uniform_op: Incompatible Tensor for uniform_op(lhs, rhs_val, dest, op).\n");
+    bool is_safe_aliasing(const Tensor<T>& target) const {
+        // If we have two completely unique Tensors, return true
+        if (is_unique(target)) { return true; }
+        // Otherwise check that Storage, offset, and layout are the same
+        if ((_data() == target._data()) && (c_offset == target.c_offset) && is_same_layout(target)) {
+            return true;
         }
-        // If lhs, rhs, and dest don't overlap and are contiguous, use the fastest possible, vectorized
-        // method to perform the operation
-        if ((lhs.c_contiguous && dest.c_contiguous) && dest.is_unique(lhs)) {
-            switch (op) {
-                case SqueezedOpType::ADD:
-                    TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.c_offset,
-                                                                 rhs_val,
-                                                                 dest._data(), dest.c_offset,
-                                                                 dest.c_elements);
-                    break;
-                case SqueezedOpType::SUB:
-                    TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.c_offset,
-                                                                 rhs_val,
-                                                                 dest._data(), dest.c_offset,
-                                                                 dest.c_elements);
-                    break;
-                case SqueezedOpType::MUL:
-                    TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.c_offset,
-                                                                 rhs_val,
-                                                                 dest._data(), dest.c_offset,
-                                                                 dest.c_elements);
-                    break;
-                case SqueezedOpType::DIV:
-                    TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.c_offset,
-                                                                 rhs_val,
-                                                                 dest._data(), dest.c_offset,
-                                                                 dest.c_elements);
-                    break;
-            }
-            return dest;
+        return false;
+    }
+
+    /**
+     * Get a string representing information about a Tensor, including its dimenstions and underlying type
+     * @returns Returns an info string about the Tensor
+     */
+    std::string info() const override {
+        // Setup a base string to add information to
+        std::string result = "Tensor: [";
+        // Iterate over the dims and concatenate them to the result string
+        for (const auto& d : m_dims) {
+            result += std::format("{}, ", d);
         }
-        // If both Tensors are fully contiguous, use the fastest version possible
-        if (lhs.c_contiguous && dest.c_contiguous) {
-            switch (op) {
-                case SqueezedOpType::ADD:
-                    TensorMath_NS::_safe_tensor_add_contiguous(lhs._data(), lhs.c_offset,
-                                                               rhs_val,
-                                                               dest._data(), dest.c_offset,
-                                                               dest.c_elements);
-                    break;
-                case SqueezedOpType::SUB:
-                    TensorMath_NS::_safe_tensor_sub_contiguous(lhs._data(), lhs.c_offset,
-                                                               rhs_val,
-                                                               dest._data(), dest.c_offset,
-                                                               dest.c_elements);
-                    break;
-                case SqueezedOpType::MUL:
-                    TensorMath_NS::_safe_tensor_mul_contiguous(lhs._data(), lhs.c_offset,
-                                                               rhs_val,
-                                                               dest._data(), dest.c_offset,
-                                                               dest.c_elements);
-                    break;
-                case SqueezedOpType::DIV:
-                    TensorMath_NS::_safe_tensor_div_contiguous(lhs._data(), lhs.c_offset,
-                                                               rhs_val,
-                                                               dest._data(), dest.c_offset,
-                                                               dest.c_elements);
-                    break;
-            }
-            return dest;
+        // Remove the trailing ", " from the last dim
+        result.erase(result.size() - 2, 2);
+        // Allocate an empty buffer to store the name
+        std::array<char, TENSOR_MAX_DEMANGLED_NAME_LEN> demangled = {0};
+        // Ensure we don't go past the end of the buffer
+        size_t buflen = TENSOR_MAX_DEMANGLED_NAME_LEN;
+        int status = 0;
+        // Use the C++ ABI to demangle the type name
+        abi::__cxa_demangle(typeid(T).name(), demangled.data(), &buflen, &status);
+        if (status == 0) {
+            result += std::format("], dtype={}", demangled.data());
         }
-        // If the Tensors are not entirely contiguous, but are rank == 2 and they all have strides
-        // of 1 for dim1, we can also speed up this op
-        else if (lhs.c_rank == 2 && (lhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
-            switch (op) {
-                case SqueezedOpType::ADD:
-                    TensorMath_NS::_safe_2d_tensor_add_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                                  rhs_val,
-                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
-                                                                  dest.extent(0), dest.extent(1));
-                    break;
-                case SqueezedOpType::SUB:
-                    TensorMath_NS::_safe_2d_tensor_sub_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                                  rhs_val,
-                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
-                                                                  dest.extent(0), dest.extent(1));
-                    break;
-                case SqueezedOpType::MUL:
-                    TensorMath_NS::_safe_2d_tensor_mul_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                                  rhs_val,
-                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
-                                                                  dest.extent(0), dest.extent(1));
-                    break;
-                case SqueezedOpType::DIV:
-                    TensorMath_NS::_safe_2d_tensor_div_contiguous(lhs._data(), lhs.c_offset, lhs.dim_stride(0),
-                                                                  rhs_val,
-                                                                  dest._data(), dest.c_offset, dest.dim_stride(0),
-                                                                  dest.extent(0), dest.extent(1));
-                    break;
-            }
-            return dest;
-        }
-        // If we are dealing with either a non-contiguous Tensor or some other edge case,
-        // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
-        // if overflow / underflow occur
         else {
-            // _compatible ensures that the Tensors have the same shape and number of 
-            // elements, so iterate using _get_offset(size_t) to save boilerplate code
-            if constexpr (std::is_floating_point_v<T>) {
-                bool overflowed = false;
-                switch (op) {
-                    case SqueezedOpType::ADD:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            dest_val = lhs_val + rhs_val;
-                            overflowed |= !std::isfinite(dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::SUB:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            dest_val = lhs_val - rhs_val;
-                            overflowed |= !std::isfinite(dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::MUL:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            dest_val = lhs_val * rhs_val;
-                            overflowed |= !std::isfinite(dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::DIV:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            dest_val = lhs_val / rhs_val;
-                            overflowed |= !std::isfinite(dest_val);
-                        }
-                        break;
-                }
-                if (overflowed) {
-                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                }
-            }
-            else if constexpr (std::is_signed_v<T>) {
-                bool overflowed = false;
-                switch (op) {
-                    case SqueezedOpType::ADD:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::SUB:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::MUL:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::DIV:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            if (rhs_val == 0) {
-                                throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
-                            }
-                            if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
-                                throw std::overflow_error("Tensor.uniform_op: Division causes overflow / underflow.\n");
-                            }
-                            dest_val = lhs_val / rhs_val;
-                        }
-                        break;
-                }
-                if (overflowed) {
-                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                }
-            }
-            else {
-                bool overflowed = false;
-                switch (op) {
-                    case SqueezedOpType::ADD:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::SUB:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::MUL:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            overflowed |= TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val);
-                        }
-                        break;
-                    case SqueezedOpType::DIV:
-                        for (size_t i = 0; i < dest.c_elements; ++i) {
-                            const T lhs_val = lhs._data()[lhs._get_offset(i)];
-                            T& dest_val = dest._data()[dest._get_offset(i)];
-                            if (rhs_val == 0) {
-                                throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
-                            }
-                            dest_val = lhs_val / rhs_val;
-                        }
-                        break;
-                }
-                if (overflowed) {
-                    throw std::overflow_error(std::format("Tensor.uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
-                }
-            }
-            return dest;
+            result += std::format("], dtype={}", typeid(T).name());
         }
+        return result;
+    }
+
+    /**
+     * Get or set a value at a specific coordinate inside the Tensor
+     * @param target The coordinate (wrapped in std::vector) we want to fetch from the Tensor
+     * @returns Returns a reference to the value that can be updated
+     */
+    T& at(const std::vector<size_t>& target) override {
+        // Handle the case where we have a rank-0 tensor
+        if (c_rank == 0) {
+            return _data()[c_offset];
+        }
+        // Validate we have the correct number of elements in our coordinates
+        if (target.size() != c_rank) {
+            throw std::invalid_argument(std::format("Tensor.at: Invalid number of coordinates provided to at, expected {} but got {}.\n", c_rank, target.size()));
+        }
+        // Calculate the offset and return a reference
+        return _data()[_get_offset(target)];
+    }
+
+    /**
+     * Get or set a value at a specific coordinate inside the Tensor
+     * @param target The coordinate we want to fetch from the Tensor
+     * @returns Returns a reference to the value that can be updated
+     */
+    T& at(std::initializer_list<size_t> target) override {
+        // Handle the case where we have a rank-0 tensor
+        if (c_rank == 0) {
+            return _data()[c_offset];
+        }
+        // Validate we have the correct number of elements in our coordinates
+        if (target.size() != c_rank) {
+            throw std::invalid_argument(std::format("Tensor.at: Invalid number of coordinates provided to at, expected {} but got {}.\n", c_rank, target.size()));
+        }
+        // Calculate the offset and return a reference
+        return _data()[_get_offset(target)];
+    }
+
+    /**
+     * Get a value at a specific coordinate inside the Tensor
+     * @param target The coordinate (wrapped in std::vector) we want to fetch from the tensor
+     * @returns Returns the value at the coordinate
+     */
+    const T& at(const std::vector<size_t>& target) const override {
+        // Handle the case where we have a rank-0 tensor
+        if (c_rank == 0) {
+            return _data()[c_offset];
+        }
+        // Validate we have the correct number of elements in our coordinates
+        if (target.size() != c_rank) {
+            throw std::invalid_argument(std::format("Tensor.at: Invalid number of coordinates provided to at, expected {} but got {}.\n", c_rank, target.size()));
+        }
+        // Calculate the offset and return a reference
+        return _data()[_get_offset(target)];
+    }
+
+    /**
+     * Get a value at a specific coordinate inside the Tensor
+     * @param target The coordinate we want to fetch from the tensor
+     * @returns Returns the value at the coordinate
+     */
+    const T& at(std::initializer_list<size_t> target) const override {
+        // Handle the case where we have a rank-0 tensor
+        if (c_rank == 0) {
+            return _data()[c_offset];
+        }
+        // Validate we have the correct number of elements in our coordinates
+        if (target.size() != c_rank) {
+            throw std::invalid_argument(std::format("Tensor.at: Invalid number of coordinates provided to at, expected {} but got {}.\n", c_rank, target.size()));
+        }
+        // Calculate the offset and return a reference
+        return _data()[_get_offset(target)];
+    }
+
+    /**
+     * Get a mutable reference to the value stored at the provided index
+     * @param target Index to fetch from
+     * @returns Returns a mutable reference to the desired value
+     */
+    T& at(size_t target) override {
+        // Ensure the index exists
+        if (target >= c_elements) {
+            throw std::invalid_argument(
+                std::format(
+                    "Tensor.at: Index {} exceeds number of elements {} in Tensor.\n",
+                    target, c_elements
+                )
+            );
+        }
+        return _data()[target];
+    }
+
+    /**
+     * Get a const reference to the value stored at the provided index
+     * @param target Index to fetch from
+     * @returns Returns a const reference to the desired value
+     */
+    const T& at(size_t target) const override {
+        // Ensure the index exists
+        if (target >= c_elements) {
+            throw std::invalid_argument(
+                std::format(
+                    "Tensor.at: Index {} exceeds number of elements {} in Tensor.\n",
+                    target, c_elements
+                )
+            );
+        }
+        return _data()[target];
     }
 
     /**
@@ -1559,188 +1466,6 @@ public:
     }
 
     /**
-     * Default destructor for Tensor
-     */
-    ~Tensor() override {
-        // Do nothing since all of our data elements are either trivial types or will be cleaned up
-        // automatically when they go out of scope
-    }
-
-    /**
-     * Get the number of elements in a Tensor
-     * @returns Returns size_t of the number of elements present in the Tensor
-     */
-    size_t elements() const override {
-        return c_elements;
-    }
-
-    /**
-     * Get the rank of a Tensor
-     * @returns Returns size_t of the Tensor's rank
-     */
-    size_t rank() const override {
-        return c_rank;
-    }
-
-    /**
-     * Get the dims of a Tensor
-     * @returns Returns a const ref to m_dims
-     */
-    const std::vector<size_t>& dims() const {
-        return m_dims;
-    }
-
-    /**
-     * Get the dimensions of the Tensor
-     * @returns Returns a const reference to the vector containing the dimensions
-     */
-    const std::vector<size_t>& shape() const override {
-        return m_dims;
-    }
-
-    /**
-     * Get the stride of a Tensor
-     * @returns Returns a const ref to m_stride
-     */
-    const std::vector<size_t>& stride() const override {
-        return m_stride;
-    }
-
-    /**
-     * Get the extent of a specified dim
-     * @param dim Dimension to query
-     * @returns Returns the extent of the dim
-     */
-    size_t extent(size_t dim) const override {
-        // Ensure the dim is valid
-        if (dim >= c_rank) {
-            throw std::invalid_argument("Tensor.extent: Invalid dim provided.\n");
-        }
-        return m_dims.at(dim);
-    }
-
-    /**
-     * Get the stride of a dim in a Tensor
-     * @param dim Dimension to check
-     * @returns Returns the stride of the specified dim
-     */
-    size_t dim_stride(size_t dim) const {
-        // Ensure the dim is valid
-        if (dim >= c_rank) {
-            throw std::invalid_argument("Tensor.dim_stride: Invalid dim provided.\n");
-        }
-        return m_stride.at(dim);
-    }
-
-    /**
-     * Get or set a value at a specific coordinate inside the Tensor
-     * @param target The coordinate (wrapped in std::vector) we want to fetch from the Tensor
-     * @returns Returns a reference to the value that can be updated
-     */
-    T& at(const std::vector<size_t>& target) override {
-        // Handle the case where we have a rank-0 tensor
-        if (c_rank == 0) {
-            return _data()[c_offset];
-        }
-        // Validate we have the correct number of elements in our coordinates
-        if (target.size() != c_rank) {
-            throw std::invalid_argument(std::format("Tensor.at: Invalid number of coordinates provided to at, expected {} but got {}.\n", c_rank, target.size()));
-        }
-        // Calculate the offset and return a reference
-        return _data()[_get_offset(target)];
-    }
-
-    /**
-     * Get or set a value at a specific coordinate inside the Tensor
-     * @param target The coordinate we want to fetch from the Tensor
-     * @returns Returns a reference to the value that can be updated
-     */
-    T& at(std::initializer_list<size_t> target) override {
-        // Handle the case where we have a rank-0 tensor
-        if (c_rank == 0) {
-            return _data()[c_offset];
-        }
-        // Validate we have the correct number of elements in our coordinates
-        if (target.size() != c_rank) {
-            throw std::invalid_argument(std::format("Tensor.at: Invalid number of coordinates provided to at, expected {} but got {}.\n", c_rank, target.size()));
-        }
-        // Calculate the offset and return a reference
-        return _data()[_get_offset(target)];
-    }
-
-    /**
-     * Get a value at a specific coordinate inside the Tensor
-     * @param target The coordinate (wrapped in std::vector) we want to fetch from the tensor
-     * @returns Returns the value at the coordinate
-     */
-    const T& at(const std::vector<size_t>& target) const override {
-        // Handle the case where we have a rank-0 tensor
-        if (c_rank == 0) {
-            return _data()[c_offset];
-        }
-        // Validate we have the correct number of elements in our coordinates
-        if (target.size() != c_rank) {
-            throw std::invalid_argument(std::format("Tensor.at: Invalid number of coordinates provided to at, expected {} but got {}.\n", c_rank, target.size()));
-        }
-        // Calculate the offset and return a reference
-        return _data()[_get_offset(target)];
-    }
-
-    /**
-     * Get a value at a specific coordinate inside the Tensor
-     * @param target The coordinate we want to fetch from the tensor
-     * @returns Returns the value at the coordinate
-     */
-    const T& at(std::initializer_list<size_t> target) const override {
-        // Handle the case where we have a rank-0 tensor
-        if (c_rank == 0) {
-            return _data()[c_offset];
-        }
-        // Validate we have the correct number of elements in our coordinates
-        if (target.size() != c_rank) {
-            throw std::invalid_argument(std::format("Tensor.at: Invalid number of coordinates provided to at, expected {} but got {}.\n", c_rank, target.size()));
-        }
-        // Calculate the offset and return a reference
-        return _data()[_get_offset(target)];
-    }
-
-    /**
-     * Get a mutable reference to the value stored at the provided index
-     * @param target Index to fetch from
-     * @returns Returns a mutable reference to the desired value
-     */
-    T& at(size_t target) override {
-        // Ensure the index exists
-        if (target >= c_elements) {
-            throw std::invalid_argument(
-                std::format(
-                    "Tensor.at: Index {} exceeds number of elements {} in Tensor.\n",
-                    target, c_elements
-                )
-            );
-        }
-        return _data()[target];
-    }
-
-    /**
-     * Get a const reference to the value stored at the provided index
-     * @param target Index to fetch from
-     * @returns Returns a const reference to the desired value
-     */
-    const T& at(size_t target) const override {
-        // Ensure the index exists
-        if (target >= c_elements) {
-            throw std::invalid_argument(
-                std::format(
-                    "Tensor.at: Index {} exceeds number of elements {} in Tensor.\n",
-                    target, c_elements
-                )
-            );
-        }
-        return _data()[target];
-    }
-
-    /**
      * Fill a Tensor with a value
      * @param v Value to fill the Tensor with
      * @returns Returns a reference to this Tensor
@@ -1834,43 +1559,6 @@ public:
             throw std::domain_error("Tensor.random: Invalid type for use with random");
         }
         return *this;
-    }
-
-    /**
-     * Get a string representing information about a Tensor, including its dimenstions and underlying type
-     * @returns Returns an info string about the Tensor
-     */
-    std::string info() const override {
-        // Setup a base string to add information to
-        std::string result = "Tensor: [";
-        // Iterate over the dims and concatenate them to the result string
-        for (const auto& d : m_dims) {
-            result += std::format("{}, ", d);
-        }
-        // Remove the trailing ", " from the last dim
-        result.erase(result.size() - 2, 2);
-        // Allocate an empty buffer to store the name
-        std::array<char, TENSOR_MAX_DEMANGLED_NAME_LEN> demangled = {0};
-        // Ensure we don't go past the end of the buffer
-        size_t buflen = TENSOR_MAX_DEMANGLED_NAME_LEN;
-        int status = 0;
-        // Use the C++ ABI to demangle the type name
-        abi::__cxa_demangle(typeid(T).name(), demangled.data(), &buflen, &status);
-        if (status == 0) {
-            result += std::format("], dtype={}", demangled.data());
-        }
-        else {
-            result += std::format("], dtype={}", typeid(T).name());
-        }
-        return result;
-    }
-
-    /**
-     * Check whether a Tensor's memory block is contiguous
-     * @returns True if contiguous
-     */
-    bool contiguous() const override {
-        return c_contiguous;
     }
 
     /**
@@ -2743,115 +2431,470 @@ inline Tensor<T> matmul(const AbstractTensor<T>& lhs, const AbstractTensor<T>& r
     // Use RVO to return the result without copying
     return result;
 }
-
-/**
- * Naive matmul implementation
- * @param lhs Lefthand Tensor to matmul
- * @param lhs_dim0 The first dim of lhs for the matmul
- * @param lhs_dim1 The second dim of lhs for the matmul
- * @param lhs_coordinates Reference to a coordinate vector to handle dims of high-rank Tensors
- * @param rhs Righthand Tensor to matmul
- * @param rhs_dim0 The first dim of the rhs for the matmul
- * @param rhs_dim1 The second dim of the rhs for the matmul
- * @param rhs_coordinates Reference to a coordinate vector to handle dims of high-rank Tensors
- * @param destination Reference to the Tensor to put the output into
- * NOTE: We assume this will never be called directly so we skip the additional
- * safety checks you would otherwise need to do (handled in Tensor::matmul, etc.)
- */
-template <typename T> 
-requires std::is_arithmetic_v<T>
-inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1, std::vector<size_t>& lhs_coordinates,
-                               const AbstractTensor<T>& rhs, size_t rhs_dim0, size_t rhs_dim1, std::vector<size_t>& rhs_coordinates,
-                               Tensor<T>& destination) {
-    // Per the NOTE above, skip the regular safety checks and perform the operation
-    if constexpr (destination._can_overflow) {
-        // Create buffer for overflow / underflow checking
-        T mul_result = 0;
-        for (size_t i = 0; i < destination.extent(0); ++i) {
-            // Update the coordinate for i in lhs
-            lhs_coordinates.at(lhs_dim0) = i;
-            for (size_t j = 0; j < destination.extent(1); ++j) {
-                // Update the coordinate for j in rhs
-                rhs_coordinates.at(rhs_dim1) = j;
-                // Get a pointer to the result's [i, j]
-                T* result_i_j = &(destination.at({i, j}));
-                for (size_t k = 0; k < lhs.extent(lhs_dim1); ++k) {
-                    // Update the coordinate for k in lhs and rhs
-                    lhs_coordinates.at(lhs_dim1) = k;
-                    rhs_coordinates.at(rhs_dim0) = k;
-                    // First multiply [i, k] * [k, j]
-                    if (_mul_overflow(lhs.at(lhs_coordinates), rhs.at(rhs_coordinates), &mul_result)) {
-                        throw std::overflow_error("Tensor::_naive_matmul_impl: Multiplication results in overflow / underflow.\n");
-                    }
-                    if (_add_overflow(*result_i_j, rhs.at(rhs_coordinates), result_i_j)) {
-                        throw std::overflow_error("Tensor::_naive_matmul_impl: Addition results in overflow / underflow.\n");
-                    }
-                }
-            }
-        }
-    }
-    else {
-        // Use a naive loop to perform matmul
-        for (size_t i = 0; i < destination.extent(0); ++i) {
-            // Update the coordinate for i in lhs
-            lhs_coordinates.at(lhs_dim0) = i;
-            for (size_t j = 0; j < destination.extent(1); ++j) {
-                // Update the coordinate for j in rhs
-                rhs_coordinates.at(rhs_dim1) = j;
-                for (size_t k = 0; k < lhs.extent(lhs_dim1); ++k) {
-                    // Update the coordinate for k in lhs and rhs
-                    lhs_coordinates.at(lhs_dim1) = k;
-                    rhs_coordinates.at(rhs_dim0) = k;
-                    destination.at({i, j}) += lhs.at(lhs_coordinates) * rhs.at(rhs_coordinates);
-                }
-            }
-        }
-    }
-}
-
-/**
- * Naive matmul implementation for Tensors of rank == 2 only
- * @param lhs Lefthand Tensor to matmul
- * @param rhs Righthand Tensor to matmul
- * @param destination Reference to the Tensor to put the output into
- * NOTE: We assume this will never be called directly so we skip the additional
- * safety checks you would otherwise need to do (handled in Tensor::matmul, etc.)
- */
-template <typename T> 
-requires std::is_arithmetic_v<T>
-inline void _naive_matmul_impl(const AbstractTensor<T>& lhs, const AbstractTensor<T>& rhs, Tensor<T>& destination) {
-    // Per the NOTE above, skip the regular safety checks and perform the operation
-    if constexpr (destination._can_overflow) {
-        // Create buffer for overflow / underflow checking
-        T mul_result = 0;
-        for (size_t i = 0; i < destination.extent(0); ++i) {
-            for (size_t j = 0; j < destination.extent(1); ++j) {
-                // Get a pointer to the result's [i, j]
-                T* result_i_j = &(destination.at({i, j}));
-                for (size_t k = 0; k < lhs.extent(1); ++k) {
-                    // First multiply [i, k] * [k, j]
-                    if (_mul_overflow(lhs.at({i, k}), rhs.at({k, j}), &mul_result)) {
-                        throw std::overflow_error("Tensor::_naive_matmul_impl: Multiplication results in overflow / underflow.\n");
-                    }
-                    if (_add_overflow(*result_i_j, rhs.at({k, j}), result_i_j)) {
-                        throw std::overflow_error("Tensor::_naive_matmul_impl: Addition results in overflow / underflow.\n");
-                    }
-                }
-            }
-        }
-    }
-    else {
-        // Use a naive loop to perform matmul
-        for (size_t i = 0; i < destination.extent(0); ++i) {
-            for (size_t j = 0; j < destination.extent(1); ++j) {
-                for (size_t k = 0; k < lhs.extent(1); ++k) {
-                    destination.at({i, j}) += lhs.at({i, k}) * rhs.at({k, j});
-                }
-            }
-        }
-    }
-}
 // NOLINTEND(bugprone-easily-swappable-parameters)
+
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+/**
+ * Apply a uniform basic math operation over a Tensor, reducing the amount of boilerplate
+ * code required for the various operators and friends
+ * @param lhs Const reference to a Tensor to serve as the lefthand side
+ * @param rhs Const reference to a Tensor to serve as the righthand side
+ * @param dest Reference to a Tensor to write the result to
+ * @param op Target operation to perform
+ * @returns Returns a reference to the destination Tensor
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+Tensor<T>& uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& dest, SqueezedOpType op) {
+    // Ensure the Tensors are compatible, including that the destination has the right shape
+    if (!lhs._compatible(rhs) || !lhs._compatible(dest)) {
+        throw std::invalid_argument("Tensor::uniform_op: Incompatible Tensor for uniform_op(lhs, rhs, dest, op).\n");
+    }
+    // Check for unsafe aliasing early and clone dest if necessary, then calling
+    // uniform_op recursively to leverage a vectorized op path
+    if (!dest.is_safe_aliasing(lhs) || !dest.is_safe_aliasing(rhs)) {
+        // Clone the dest Tensor to ensure we have a fully contiguous,
+        // disjoint memory block in Storage, allowing us to properly
+        // vectorize the preferred code paths
+        Tensor<T> temp_dest = dest.clone();
+        uniform_op(lhs, rhs, temp_dest, op);
+        // Copy the result back into dest
+        dest.copy_from(temp_dest);
+        return dest;
+    }
+    // If lhs, rhs, and dest don't overlap and are contiguous, use the fastest possible, vectorized
+    // method to perform the operation
+    if (lhs.contiguous() && rhs.contiguous() && dest.contiguous()) {
+        switch (op) {
+            case SqueezedOpType::ADD:
+                TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.offset(),
+                                                                rhs._data(), rhs.offset(),
+                                                                dest._data(), dest.offset(),
+                                                                dest.elements());
+                break;
+            case SqueezedOpType::SUB:
+                TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.offset(),
+                                                                rhs._data(), rhs.offset(),
+                                                                dest._data(), dest.offset(),
+                                                                dest.elements());
+                break;
+            case SqueezedOpType::MUL:
+                TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.offset(),
+                                                                rhs._data(), rhs.offset(),
+                                                                dest._data(), dest.offset(),
+                                                                dest.elements());
+                break;
+            case SqueezedOpType::DIV:
+                TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.offset(),
+                                                                rhs._data(), rhs.offset(),
+                                                                dest._data(), dest.offset(),
+                                                                dest.elements());
+                break;
+        }
+        return dest;
+    }
+    // If the Tensors are not entirely contiguous, but are rank == 2 and they all have strides
+    // of 1 for dim1, we can also speed up this op
+    else if (lhs.rank() == 2 && (lhs.dim_stride(1) == 1 && rhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
+        // Check for the case where we have a rank == 2 Tensor with a contiguous, 
+        // non-overlapping destination, where we can leverage vectorization
+        switch (op) {
+            case SqueezedOpType::ADD:
+                TensorMath_NS::_safe_2d_tensor_add_contiguous_v(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                                rhs._data(), rhs.offset(), rhs.dim_stride(0),
+                                                                dest._data(), dest.offset(), dest.dim_stride(0),
+                                                                dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::SUB:
+                TensorMath_NS::_safe_2d_tensor_sub_contiguous_v(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                                rhs._data(), rhs.offset(), rhs.dim_stride(0),
+                                                                dest._data(), dest.offset(), dest.dim_stride(0),
+                                                                dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::MUL:
+                TensorMath_NS::_safe_2d_tensor_mul_contiguous_v(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                                rhs._data(), rhs.offset(), rhs.dim_stride(0),
+                                                                dest._data(), dest.offset(), dest.dim_stride(0),
+                                                                dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::DIV:
+                TensorMath_NS::_safe_2d_tensor_div_contiguous_v(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                                rhs._data(), rhs.offset(), rhs.dim_stride(0),
+                                                                dest._data(), dest.offset(), dest.dim_stride(0),
+                                                                dest.extent(0), dest.extent(1));
+                break;
+        }
+        return dest; 
+    }
+    // If we are dealing with either a non-contiguous Tensor or some other edge case,
+    // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
+    // if overflow / underflow occur
+    else {
+        // _compatible ensures that the Tensors have the same shape and number of 
+        // elements, so iterate using _get_offset(size_t) to save boilerplate code
+        bool overflowed = false;
+        // Grab the data pointers to avoid repeat calls
+        const T* lhs_data = lhs._data();
+        const T* rhs_data = rhs._data();
+        T* dest_data = dest._data();
+        if constexpr (std::is_floating_point_v<T>) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        dest_val = lhs_val + rhs_val;
+                        overflowed |= !std::isfinite(dest_val);
+                    }
+                    break;
+                case SqueezedOpType::SUB:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        dest_val = lhs_val - rhs_val;
+                        overflowed |= !std::isfinite(dest_val);
+                    }
+                    break;
+                case SqueezedOpType::MUL:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        dest_val = lhs_val * rhs_val;
+                        overflowed |= !std::isfinite(dest_val);
+                    }
+                    break;
+                case SqueezedOpType::DIV:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        dest_val = lhs_val / rhs_val;
+                        overflowed |= !std::isfinite(dest_val);
+                    }
+                    break;
+            }
+            if (overflowed) {
+                throw std::overflow_error(std::format("Tensor::uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+            }
+        }
+        else if constexpr (std::is_signed_v<T>) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::SUB:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::MUL:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::DIV:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        if (rhs_val == 0) {
+                            throw std::runtime_error("Tensor::uniform_op: Divide by zero detected.\n");
+                        }
+                        if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
+                            throw std::overflow_error("Tensor::uniform_op: Division causes overflow / underflow.\n");
+                        }
+                        dest_val = lhs_val / rhs_val;
+                    }
+                    break;
+            }
+            if (overflowed) {
+                throw std::overflow_error(std::format("Tensor::uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+            }
+        }
+        else {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::SUB:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::MUL:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::DIV:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        const T rhs_val = rhs_data[rhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        if (rhs_val == 0) {
+                            throw std::runtime_error("Tensor::uniform_op: Divide by zero detected.\n");
+                        }
+                        dest_val = lhs_val / rhs_val;
+                    }
+                    break;
+            }
+            if (overflowed) {
+                throw std::overflow_error(std::format("Tensor::uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+            }
+        }
+        return dest;
+    }
+}
+
+/**
+ * Apply a uniform basic math operation over a Tensor, reducing the amount of boilerplate
+ * code required for the various operators and friends
+ * @param lhs Const reference to a Tensor to serve as the lefthand side
+ * @param rhs_val Scalar value to perform the op with lhs
+ * @param dest Reference to a Tensor to write the result to
+ * @param op Target operation to perform
+ * @returns Returns a reference to the destination Tensor
+ */
+template <typename T> 
+requires std::is_arithmetic_v<T>
+Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, SqueezedOpType op) {
+    // Ensure the Tensors are compatible, including that the destination has the right shape
+    if (!lhs._compatible(dest)) {
+        throw std::invalid_argument("Tensor::uniform_op: Incompatible Tensor for uniform_op(lhs, rhs_val, dest, op).\n");
+    }
+    // Check for unsafe aliasing early and clone dest if necessary, then calling
+    // uniform_op recursively to leverage a vectorized op path
+    if (!dest.is_safe_aliasing(lhs)) {
+        // Clone the dest Tensor to ensure we have a fully contiguous,
+        // disjoint memory block in Storage, allowing us to properly
+        // vectorize the preferred code paths
+        Tensor<T> temp_dest = dest.clone();
+        uniform_op(lhs, rhs_val, temp_dest, op);
+        // Copy the result back into dest
+        dest.copy_from(temp_dest);
+        return dest;
+    }
+    // If lhs and dest don't overlap and are contiguous, use the fastest possible, vectorized
+    // method to perform the operation
+    if (lhs.contiguous() && dest.contiguous()) {
+        switch (op) {
+            case SqueezedOpType::ADD:
+                TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.offset(),
+                                                                rhs_val,
+                                                                dest._data(), dest.offset(),
+                                                                dest.elements());
+                break;
+            case SqueezedOpType::SUB:
+                TensorMath_NS::_safe_tensor_sub_contiguous_v(lhs._data(), lhs.offset(),
+                                                                rhs_val,
+                                                                dest._data(), dest.offset(),
+                                                                dest.elements());
+                break;
+            case SqueezedOpType::MUL:
+                TensorMath_NS::_safe_tensor_mul_contiguous_v(lhs._data(), lhs.offset(),
+                                                                rhs_val,
+                                                                dest._data(), dest.offset(),
+                                                                dest.elements());
+                break;
+            case SqueezedOpType::DIV:
+                TensorMath_NS::_safe_tensor_div_contiguous_v(lhs._data(), lhs.offset(),
+                                                                rhs_val,
+                                                                dest._data(), dest.offset(),
+                                                                dest.elements());
+                break;
+        }
+        return dest;
+    }
+    // If the Tensors are not entirely contiguous, but are rank == 2 and they all have strides
+    // of 1 for dim1, we can also speed up this op
+    else if (lhs.rank() == 2 && (lhs.dim_stride(1) == 1 && dest.dim_stride(1) == 1)) {
+        // Check for the case where we have a rank == 2 Tensor with a contiguous, 
+        // non-overlapping destination, where we can leverage vectorization
+        switch (op) {
+            case SqueezedOpType::ADD:
+                TensorMath_NS::_safe_2d_tensor_add_contiguous_v(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                                rhs_val,
+                                                                dest._data(), dest.offset(), dest.dim_stride(0),
+                                                                dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::SUB:
+                TensorMath_NS::_safe_2d_tensor_sub_contiguous_v(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                                rhs_val,
+                                                                dest._data(), dest.offset(), dest.dim_stride(0),
+                                                                dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::MUL:
+                TensorMath_NS::_safe_2d_tensor_mul_contiguous_v(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                                rhs_val,
+                                                                dest._data(), dest.offset(), dest.dim_stride(0),
+                                                                dest.extent(0), dest.extent(1));
+                break;
+            case SqueezedOpType::DIV:
+                TensorMath_NS::_safe_2d_tensor_div_contiguous_v(lhs._data(), lhs.offset(), lhs.dim_stride(0),
+                                                                rhs_val,
+                                                                dest._data(), dest.offset(), dest.dim_stride(0),
+                                                                dest.extent(0), dest.extent(1));
+                break;
+        }
+        return dest; 
+    }
+    // If we are dealing with either a non-contiguous Tensor or some other edge case,
+    // iterate via at(). Since this cannot be vectorized, throw exceptions immediately
+    // if overflow / underflow occur
+    else {
+        // _compatible ensures that the Tensors have the same shape and number of 
+        // elements, so iterate using _get_offset(size_t) to save boilerplate code
+        bool overflowed = false;
+        // Grab the data pointers to avoid repeat calls
+        const T* lhs_data = lhs._data();
+        T* dest_data = dest._data();
+        if constexpr (std::is_floating_point_v<T>) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        dest_val = lhs_val + rhs_val;
+                        overflowed |= !std::isfinite(dest_val);
+                    }
+                    break;
+                case SqueezedOpType::SUB:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        dest_val = lhs_val - rhs_val;
+                        overflowed |= !std::isfinite(dest_val);
+                    }
+                    break;
+                case SqueezedOpType::MUL:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        dest_val = lhs_val * rhs_val;
+                        overflowed |= !std::isfinite(dest_val);
+                    }
+                    break;
+                case SqueezedOpType::DIV:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        dest_val = lhs_val / rhs_val;
+                        overflowed |= !std::isfinite(dest_val);
+                    }
+                    break;
+            }
+            if (overflowed) {
+                throw std::overflow_error(std::format("Tensor::uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+            }
+        }
+        else if constexpr (std::is_signed_v<T>) {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_add_overflow_signed(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::SUB:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_sub_overflow_signed(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::MUL:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::DIV:
+                    if (rhs_val == 0) {
+                        throw std::runtime_error("Tensor::uniform_op: Divide by zero detected.\n");
+                    }
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        if (TensorMath_NS::_is_signed_div_overflow(lhs_val, rhs_val)) {
+                            throw std::overflow_error("Tensor::uniform_op: Division causes overflow / underflow.\n");
+                        }
+                        dest_val = lhs_val / rhs_val;
+                    }
+                    break;
+            }
+            if (overflowed) {
+                throw std::overflow_error(std::format("Tensor::uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+            }
+        }
+        else {
+            switch (op) {
+                case SqueezedOpType::ADD:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_add_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::SUB:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_sub_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::MUL:
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        overflowed |= TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_val, &dest_val);
+                    }
+                    break;
+                case SqueezedOpType::DIV:
+                    if (rhs_val == 0) {
+                        throw std::runtime_error("Tensor::uniform_op: Divide by zero detected.\n");
+                    }
+                    for (size_t i = 0; i < dest.elements(); ++i) {
+                        const T lhs_val = lhs_data[lhs._get_offset(i)];
+                        T& dest_val = dest_data[dest._get_offset(i)];
+                        dest_val = lhs_val / rhs_val;
+                    }
+                    break;
+            }
+            if (overflowed) {
+                throw std::overflow_error(std::format("Tensor::uniform_op: Overflow / underflow detected when performing {}", squeezed_op_to_string(op)));
+            }
+        }
+        return dest;
+    }
+}
+// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
 }; // namespace Tensor_NS
 

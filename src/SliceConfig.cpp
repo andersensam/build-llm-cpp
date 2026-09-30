@@ -8,20 +8,20 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-06
+ * @version: 2026-09-29
  *
  * General Notes:
  *
  * TODO: Continue adding functionality 
  */
 
-#include "include/TensorSlice.hpp"
+#include "include/SliceConfig.hpp"
 
-using TensorSlice_NS::SliceConfig;
-using TensorSlice_NS::VectorSliceConfig;
-using TensorSlice_NS::MatrixSliceConfig;
-using TensorSlice_NS::VectorSliceOrientation;
-using TensorSlice_NS::IndexType;
+using SliceConfig_NS::SliceConfig;
+using SliceConfig_NS::VectorSliceConfig;
+using SliceConfig_NS::MatrixSliceConfig;
+using SliceConfig_NS::VectorSliceOrientation;
+using SliceConfig_NS::IndexType;
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 
