@@ -182,7 +182,7 @@ void _naive_matmul_impl_v1(const AbstractTensor<T>& lhs,
                 for (size_t k = 0; k < lhs.extent(1); ++k) {
                     // First multiply [i, k] * [k, j]
                     overflow |= TensorMath_NS::_mul_overflow_signed(lhs.at({i, k}), rhs.at({k, j}), &mul_result);
-                    overflow |= TensorMath_NS::_add_overflow_signed(*result_i_j, rhs.at({k, j}), result_i_j);
+                    overflow |= TensorMath_NS::_add_overflow_signed(*result_i_j, mul_result, result_i_j);
                 }
             }
         }
@@ -201,7 +201,7 @@ void _naive_matmul_impl_v1(const AbstractTensor<T>& lhs,
                 for (size_t k = 0; k < lhs.extent(1); ++k) {
                     // First multiply [i, k] * [k, j]
                     overflow |= TensorMath_NS::_mul_overflow_unsigned(lhs.at({i, k}), rhs.at({k, j}), &mul_result);
-                    overflow |= TensorMath_NS::_add_overflow_unsigned(*result_i_j, rhs.at({k, j}), result_i_j);
+                    overflow |= TensorMath_NS::_add_overflow_unsigned(*result_i_j, mul_result, result_i_j);
                 }
             }
         }
