@@ -182,6 +182,13 @@ int main() {
         // Test calling remat on an already contiguous Tensor, which should throw a warning
         emb_converted.remat();
 
+        // Prepare a new Tensor to slice
+        Tensor<float> new_slice_base({2, 2, 2});
+        new_slice_base.set({1, 2, 3, 4, 5, 6, 7, 8});
+        Tensor<float> ns = new_slice_base.slice({0, 1}, {}, {{2, 0}});
+        log_message(Log_Priority::INFO, "main", "Created slice.");
+        log_message(Log_Priority::INFO, "main", std::format("Original Tensor: {}. Slice: {}", new_slice_base.info(), ns.to_string()));
+
     } catch (const std::exception& e) {
 
         std::cout << "Exception: " << e.what() << "\n";

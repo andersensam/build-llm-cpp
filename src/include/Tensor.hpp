@@ -523,8 +523,8 @@ public:
         for (size_t i = 0; i < c_rank; ++i) {
             target_offset += c.begin()[i] * m_stride.at(i);
         }
-        if (target_offset >= c_elements) {
-            throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds number of elements.", target_offset));
+        if (target_offset >= m_data->c_elements) {
+            throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end of Storage.", target_offset));
         }
         return target_offset + c_offset;
     }
@@ -541,8 +541,8 @@ public:
         for (size_t i = 0; i < c_rank; ++i) {
             target_offset += c.at(i) * m_stride.at(i);
         }
-        if (target_offset >= c_elements) {
-            throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds number of elements.", target_offset));
+        if (target_offset >= m_data->c_elements) {
+            throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end of Storage.", target_offset));
         }
         return target_offset + c_offset;
     }
@@ -569,6 +569,9 @@ public:
             size_t idx = current_idx % m_dims[i];
             current_offset += idx * m_stride[i];
             current_idx /= m_dims[i];
+        }
+        if (current_offset >= m_data->c_elements) {
+            throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end of Storage.", current_offset));
         }
         return current_offset;
     }
@@ -1430,6 +1433,7 @@ public:
             result += "[";
             for (size_t j = 0; j < cols(); ++j) {
                 // Add the value in the Matrix
+                std::cerr << std::format("Getting {}, {}\n", i, j);
                 result += std::format("{}", at({i, j}));
                 if (j + 1 < cols()) {
                     // Separate the values by tabs, for readability
@@ -1888,6 +1892,77 @@ public:
             }
         }
         return *this;
+    }
+
+    /**
+     * Create a slice of a Tensor, creating a lightweight wrapper around the shared Storage
+     * class. The resulting slice can perform all normal Tensor ops, though by virtue
+     * of selecting a subset of the dims, the slice will not be contiguous.
+     * Converting to a contiguous Tensor is possible via the remat() function
+     * @param dims List of dims to include in the Tensor slice
+     * @param filters Optional std::initializer_list<std::pair<size_t, size_t>> containing start and stops for each dim
+     * For a mixed setup where some dims should be filtered and others shouldn't, provide
+     * {0, 0} to include the entire extent of the dim
+     * @param other_dims Required when creating a slice of a higher rank Tensor. This should
+     * include base coordinates for the dims that aren't included in the slice
+     */
+    Tensor<T> slice(std::initializer_list<size_t> dims,
+                    std::initializer_list<std::pair<size_t, size_t>> filters,
+                    std::initializer_list<std::pair<size_t, size_t>> other_dims) const {
+
+        // Ensure that we have received at least 1 dim, but not more than this Tensor's rank
+        if (dims.size() == 0 || dims.size() > c_rank) {
+            throw std::invalid_argument(
+                std::format("Tensor.slice: Invalid number of dims provided {}. Tensor's rank: {}.", dims.size(), c_rank));
+        }
+        // Ensure the specified dims are valid
+        for (size_t dim : dims) {
+            if (dim >= c_rank) {
+                throw std::invalid_argument("Tensor.slice: Invalid dims provided.\n");
+            }
+        }
+        // Ensure that c_rank - dims.size() = other_dims.size()
+        if ((c_rank - dims.size()) != other_dims.size()) {
+            throw std::invalid_argument(
+                std::format(
+                    "Tensor.slice: Invalid other_dims provided. Expected {} but got {}.", c_rank - dims.size(), other_dims.size()
+                )
+            );
+        }
+        // Create a shallow copy of this Tensor
+        Tensor<T> result = *this;
+        // Handle the most simple case: no filters applied
+        if (filters.size() == 0) {
+            // If we have no filters and matching rank, this is a no-op, so return a copy of this Tensor
+            if (dims.size() == c_rank) {
+                return result;
+            }
+            result.c_rank = dims.size();
+            // Resize the m_dims and m_stride vectors to account for the new rank
+            result.m_dims.resize(result.c_rank);
+            result.m_stride.resize(result.c_rank);
+            // Reset the number of elements back to 1 and recalculate inside the loop
+            result.c_elements = 1;
+            // Since we have no filters, grab the extents and strides from this Tensor
+            for (size_t i = 0; i < result.c_rank; ++i) {
+                result.m_dims[i] = extent(dims.begin()[i]);
+                result.c_elements *= extent(dims.begin()[i]);
+                result.m_stride[i] = dim_stride(dims.begin()[i]);
+            }
+            // Since we have no filters and a different target rank, we must have other
+            // dims to consider. Create a vector and prepare a query to get the new
+            // offset for the slice
+            std::vector<size_t> offset_query(c_rank, 0);
+            for (size_t i = 0; i < other_dims.size(); ++i) {
+                auto [dim_num, dim_c] = other_dims.begin()[i];
+                offset_query.at(dim_num) = dim_c;
+            }
+            // Calculate the offset from this Tensor and persist into the target
+            result.c_offset = _get_offset(offset_query);
+        }
+        // Always check for contiguity before returning
+        result._update_contiguous();
+        return result;
     }
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
