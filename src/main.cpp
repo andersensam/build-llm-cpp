@@ -174,6 +174,11 @@ int main() {
         ListTensorSlice<float> qq(emb_ptr, query_vsc);
         log_message(Log_Priority::INFO, "main", std::format("ListTensorSlice: {}", qq.info()));
 
+        // Create a new Tensor and copy the contents from emb_tsc
+        Tensor<float> emb_converted(emb_tsc.shape());
+        emb_converted.copy_from(emb_tsc);
+        log_message(Log_Priority::INFO, "main", std::format("Converted RangeTensorSlice: {}", emb_converted.to_string()));
+
     } catch (const std::exception& e) {
 
         std::cout << "Exception: " << e.what() << "\n";

@@ -223,6 +223,13 @@ public:
      * @returns Returns a const reference to the Storage object
      */
     virtual const Storage<T>& _storage() const = 0;
+
+    /**
+     * Rematerialize an AbstractTensor, guaranteeing that it is contiguous
+     * with a stide of 1 in the final dim
+     * @returns Returns a reference to this Tensor
+     */
+    virtual AbstractTensor<T>& remat() = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

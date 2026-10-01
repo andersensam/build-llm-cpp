@@ -68,8 +68,6 @@ inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = true;
 inline constexpr size_t TENSOR_MAX_DEMANGLED_NAME_LEN = 32;
 /* Control logging for softmax warnings (NAN, inf, divide by 0) */
 inline constexpr bool TENSOR_ENABLE_SOFTMAX_WARNINGS = true;
-/* Control whether or not we prefer to rematerialize AbstractTensors that are not contiguous to speed up matmuls */
-inline constexpr bool TENSOR_ENABLE_ABSTRACT_TENSOR_REMAT = true;
 
 /* Use Logging functions */
 using Log::Log_Priority;
@@ -112,6 +110,7 @@ constexpr std::string_view squeezed_op_to_string(SqueezedOpType op) {
         case SqueezedOpType::MUL: return "MUL";
         case SqueezedOpType::DIV: return "DIV";
     }
+    return "UNKOWN OPERATION";
 }
 
 /* Forward declaration for Tensor */
@@ -485,6 +484,23 @@ public:
     }
 
     /**
+     * Rematerialize a Tensor, guaranteeing that it is contiguous
+     * with a stide of 1 in the final dim
+     * @returns Returns a new contiguous Tensor
+     */
+    Tensor<T>& remat() override {
+        // Create a new, destination Tensor with the same dims and elements
+        // By definition, this will create a contiguous Tensor with a new
+        // Storage allocation
+        Tensor<T> target(m_dims);
+        // Copy the contents of this Tensor into target
+        target.copy_from(*this);
+        // Steal the Storage shared pointer and let target go out of scope
+        m_data = std::move(target.m_data);
+        return *this;
+    }
+
+    /**
      * Calculate the offset from a set of input cooridnates
      * @param c Coordinates to calculate the offset from
      * @returns Returns a size_t representing the offset we want
@@ -551,19 +567,19 @@ public:
      * @param target The other Tensor to check against
      * @returns Returns true if the dims are compatible, false otherwise
      */
-    [[nodiscard]] bool _compatible(const Tensor<T>& target) const {
+    [[nodiscard]] bool _compatible(const AbstractTensor<T>& target) const {
         // If Tensor rank isn't the same, we quickly know the Tensors aren't compatible
-        if (c_rank != target.c_rank) {
+        if (c_rank != target.rank()) {
             return false;
         }
         // If the Tensors don't have the same number of elements, we also can easily
         // flag them as incompatible
-        if (c_elements != target.c_elements) {
+        if (c_elements != target.elements()) {
             return false;
         }
         // Iterate over the dimensions and validate each matches
         for (size_t i = 0; i < c_rank; ++i) {
-            if (m_dims.at(i) != target.m_dims.at(i)) {
+            if (m_dims[i] != target.extent(i)) {
                 return false;
             }
         }
@@ -625,6 +641,61 @@ public:
         return *this;
     }
 
+    /**
+     * Copy the contents of another AbstractTensor into this Tensor
+     * @param target AbstractTensor to copy from
+     * @returns Returns a reference to this Tensor
+     */
+    Tensor<T>& copy_from(const AbstractTensor<T>& target) {
+        if (!_compatible(target)) {
+            throw std::invalid_argument("Tensor.copy_from: Invalid target AbstractTensor provided to copy_from.\n");
+        }
+        // Ensure the AbstractTensor has rank <= 2
+        if (target.rank() > 2) {
+            throw std::invalid_argument("Tensor.copy_from: Target AbstractTensor must have rank <= 2.\n");
+        }
+        // Ensure we don't copy if we receive the same Tensor or Storage
+        if (this == &target || (_data() == target._data() && offset() == target.offset() && is_same_layout(target))) {
+            return *this;
+        }
+        // Ensure the Tensors Storage blocks don't have unsafe aliasing
+        if (!is_safe_aliasing(target)) {
+            // Clone this Tensor and call copy_from on it, ensuring we have safe aliasing
+            Tensor<T> temp_target = clone();
+            temp_target.copy_from(target);
+            // Once the copy is done, then move the result values into this Tensor
+            T* self_data = _data();
+            const T* target_data = temp_target._data();
+            for (size_t i = 0; i < c_elements; ++i) {
+                self_data[_get_offset(i)] = target_data[i];
+            }
+            return *this;
+        }
+        // If both are unique Tensors and contiguous, use memcpy
+        if ((c_contiguous && target.contiguous()) && is_unique(target)) {
+            std::memcpy(_data() + c_offset, target._data() + target.offset(), c_elements * sizeof(T));
+        }
+        // Otherwise copy the elements one by one
+        else {
+            if (c_rank == 0) {
+                at({}) = target.at({});
+            }
+            else if (c_rank == 1) {
+                for (size_t i = 0; i < extent(0); ++i) {
+                    at({i}) = target.at({i});
+                }
+            }
+            else {
+                for (size_t i = 0; i < extent(0); ++i) {
+                    for (size_t j = 0; j < extent(1); ++j) {
+                        at({i, j}) = target.at({i, j});
+                    }
+                }
+            }
+        }
+        return *this;
+    }
+
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
     /**
      * Check to see if a Tensor is the same as this Tensor, or if the memory blocks overlap
@@ -632,7 +703,7 @@ public:
      * @param target Tensor to validate uniqueness with
      * @returns Returns true if the Tensors are unique and do not have overlapping memory
      */
-    bool is_unique(const Tensor<T>& target) const {
+    bool is_unique(const AbstractTensor<T>& target) const {
         // Easiest check to make sure we aren't pointing at the same object
         if (this == &target) {
             return false;
@@ -643,15 +714,16 @@ public:
             return true;
         }
         // Determine whether or not the memory blocks overlap based on c_elements
-        auto get_memory_range = [](const Tensor<T>& t) {
-            uintptr_t start = reinterpret_cast<uintptr_t>(t._data() + t.c_offset);
-            size_t element_span = t.c_elements;
+        auto get_memory_range = [](const AbstractTensor<T>& t) {
+            uintptr_t start = reinterpret_cast<uintptr_t>(t._data() + t.offset());
+            size_t element_span = t.elements();
             // If non-contiguous, compute true span using dimension extents and strides
-            if (!t.c_contiguous && t.c_rank > 0) {
+            if (!t.contiguous() && t.rank() > 0) {
                 element_span = 0;
-                for (size_t i = 0; i < t.c_rank; ++i) {
+                const auto& strides = t.stride();
+                for (size_t i = 0; i < t.rank(); ++i) {
                     if (t.extent(i) > 0) {
-                        element_span += (t.extent(i) - 1) * t.dim_stride(i);
+                        element_span += (t.extent(i) - 1) * strides.at(i);
                     }
                 }
                 element_span += 1; // Include final element
@@ -669,18 +741,20 @@ public:
 
     /**
      * Check if two Tensors have the same rank, dims, and strides
-     * @param target Const ref to a Tensor to check against this one
+     * @param target Const ref to an AbstractTensor to check against this one
      * @returns True if dims and strides exactly match
      */
-    bool is_same_layout(const Tensor<T>& target) const {
+    bool is_same_layout(const AbstractTensor<T>& target) const {
         // c_elements can reveal if any of the fields are not the same
-        if (c_elements != target.c_elements) { return false; }
+        if (c_elements != target.elements()) { return false; }
         // Ensure the rank is the same
-        if (c_rank != target.c_rank) { return false; }
+        if (c_rank != target.rank()) { return false; }
+        // Get the stides for target
+        const auto& strides = target.stride();
         // Check the dims and strides match, m_dims and m_stride always have size() == c_rank
         for (size_t i = 0; i < c_rank; ++i) {
-            if (m_dims[i] != target.m_dims[i]) { return false; }
-            if (m_stride[i] != target.m_stride[i]) { return false; }
+            if (m_dims[i] != target.extent(i)) { return false; }
+            if (m_stride[i] != strides.at(i)) { return false; }
         }
         return true;
     }
@@ -692,11 +766,11 @@ public:
      * @param target Const ref to a Tensor to check for safe aliasing
      * @returns True if the Tensors are unique or have Storage config
      */
-    bool is_safe_aliasing(const Tensor<T>& target) const {
+    bool is_safe_aliasing(const AbstractTensor<T>& target) const {
         // If we have two completely unique Tensors, return true
         if (is_unique(target)) { return true; }
         // Otherwise check that Storage, offset, and layout are the same
-        if ((_data() == target._data()) && (c_offset == target.c_offset) && is_same_layout(target)) {
+        if ((_data() == target._data()) && (c_offset == target.offset()) && is_same_layout(target)) {
             return true;
         }
         return false;

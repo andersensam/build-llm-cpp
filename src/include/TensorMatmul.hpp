@@ -38,6 +38,9 @@
 
 namespace Tensor_Matmul_NS {
 
+/* Control whether or not we prefer to rematerialize AbstractTensors that are not contiguous to speed up matmuls */
+inline constexpr bool TENSORMATMUL_ENABLE_ABSTRACT_TENSOR_REMAT = true;
+
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
 using Tensor_NS::Tensor;

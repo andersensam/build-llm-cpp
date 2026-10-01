@@ -677,6 +677,15 @@ public:
     const Storage<T>& _storage() const override {
         return c_ptr->_storage();
     }
+
+    /**
+     * Rematerialize a Tensor, guaranteeing that it is contiguous
+     * with a stide of 1 in the final dim
+     * @returns Returns a new contiguous Tensor
+     */
+    Tensor<T>& remat() override {
+        throw std::runtime_error("ListTensorSlice: remat is unimplemented for ListTensorSlice.\n");
+    }
 };
 
 /**
@@ -1137,6 +1146,15 @@ public:
      */
     const Storage<T>& _storage() const override {
         return c_ptr->_storage();
+    }
+
+    /**
+     * Rematerialize a Tensor, guaranteeing that it is contiguous
+     * with a stide of 1 in the final dim
+     * @returns Returns a new contiguous Tensor
+     */
+    Tensor<T>& remat() override {
+        throw std::runtime_error("RangeTensorSlice: remat is unimplemented for RangeTensorSlice.\n");
     }
 };
 
