@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-08-03
+ * @version: 2026-09-30
  *
  * General Notes:
  *
@@ -115,9 +115,9 @@ BytePairEncodingTokenizer::BytePairEncodingTokenizer(const std::string& path) {
     if (!model) {
         throw std::invalid_argument("BytePairEncodingTokenizer.BytePairEncodingTokenizer: Invalid model file provided\n");
     }
-    // Create temporary uint32_t and size_t to convert to after reading
+    // Create temporary uint32_t and size_t (using uint64_t) to convert to after reading
     uint32_t u_val = 0;
-    size_t s_val = 0;
+    uint64_t s_val = 0;
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-avoid-goto)
     // Verify we have the correct magic number for a BytePairEncodingTokenizer model
     model.read(reinterpret_cast<char*>(&u_val), sizeof(uint32_t));
@@ -136,10 +136,10 @@ BytePairEncodingTokenizer::BytePairEncodingTokenizer(const std::string& path) {
         goto file_failed;
     }
     // Read in the expected number of elements
-    model.read(reinterpret_cast<char*>(&s_val), sizeof(size_t));
+    model.read(reinterpret_cast<char*>(&s_val), sizeof(uint64_t));
     if (model.fail()) goto file_failed;
     // Set the model's vocab size to what the model has
-    m_vocab_size = s_val;
+    m_vocab_size = static_cast<size_t>(s_val);
     // Validate we are about to start reading in the tokens
     model.read(reinterpret_cast<char*>(&u_val), sizeof(uint32_t));
     if (model.fail()) goto file_failed;
@@ -305,6 +305,8 @@ bool BytePairEncodingTokenizer::export_to_file(const std::string& path) const {
         log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.export_to_file", "Unable to open model file for writing");
         return false;
     }
+    // Convert size_t --> uint64_t since its size may be different between platforms (Linux and macOS)
+    uint64_t _vocab_size = static_cast<uint64_t>(m_vocab_size);
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-avoid-goto)
     // Write the magic number to indicate this is a BytePairEncodingTokenizer model
     model.write(reinterpret_cast<const char*>(&BPE_START_MAGIC_NUMBER), sizeof(uint32_t));
@@ -313,7 +315,7 @@ bool BytePairEncodingTokenizer::export_to_file(const std::string& path) const {
     model.write(reinterpret_cast<const char*>(&BPE_NUM_VOCAB_MAGIC_NUMBER), sizeof(uint32_t));
     if (model.fail()) goto file_failed;
     // Write the number of tokens
-    model.write(reinterpret_cast<const char*>(&m_vocab_size), sizeof(size_t));
+    model.write(reinterpret_cast<const char*>(&_vocab_size), sizeof(uint64_t));
     if (model.fail()) goto file_failed;
     // Write the start number for the tokens themselves
     model.write(reinterpret_cast<const char*>(&BPE_TOKEN_START_MAGIC_NUMBER), sizeof(uint32_t));
