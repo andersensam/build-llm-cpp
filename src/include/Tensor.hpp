@@ -68,6 +68,8 @@ inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = true;
 inline constexpr size_t TENSOR_MAX_DEMANGLED_NAME_LEN = 32;
 /* Control logging for softmax warnings (NAN, inf, divide by 0) */
 inline constexpr bool TENSOR_ENABLE_SOFTMAX_WARNINGS = true;
+/* Control logging about remat being called on already contiguous Tensors (with dim_stride == 1 in outer dim) */
+inline constexpr bool TENSOR_ENABLE_UNNECESSARY_REMAT_LOGGING = true;
 
 /* Use Logging functions */
 using Log::Log_Priority;
@@ -489,6 +491,15 @@ public:
      * @returns Returns a new contiguous Tensor
      */
     Tensor<T>& remat() override {
+        // If this Tensor already is contiguous and has stride == 1 in its
+        // final dim, then return without any op
+        if (c_contiguous && (dim_stride(c_rank - 1) == 1)) {
+            if constexpr (TENSOR_ENABLE_UNNECESSARY_REMAT_LOGGING) {
+                log_message(Log_Priority::WARNING, "Tensor.remat",
+                            "Remat called on a Tensor that is already contiguous and with outer dim stride == 1.");
+            }
+            return *this;
+        }
         // Create a new, destination Tensor with the same dims and elements
         // By definition, this will create a contiguous Tensor with a new
         // Storage allocation

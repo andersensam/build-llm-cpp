@@ -179,6 +179,9 @@ int main() {
         emb_converted.copy_from(emb_tsc);
         log_message(Log_Priority::INFO, "main", std::format("Converted RangeTensorSlice: {}", emb_converted.to_string()));
 
+        // Test calling remat on an already contiguous Tensor, which should throw a warning
+        emb_converted.remat();
+
     } catch (const std::exception& e) {
 
         std::cout << "Exception: " << e.what() << "\n";
