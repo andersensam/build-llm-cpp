@@ -262,3 +262,54 @@ cc_binary(
         ":tensorslice",
     ]
 )
+
+cc_test(
+    name = "tensor_test",
+    size = "small",
+    srcs = ["tests/Tensor_Test.cpp"],
+    copts = ["-Isrc/include"],
+    deps = [
+        ":tensor",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "tensormatmul_test",
+    size = "small",
+    srcs = ["tests/TensorMatmul_Test.cpp"],
+    copts = ["-Isrc/include"],
+    deps = [
+        ":tensor",
+        ":tensormatmul",
+        ":tensorslice",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "tensorslice_test",
+    size = "small",
+    srcs = ["tests/TensorSlice_Test.cpp"],
+    copts = ["-Isrc/include"],
+    deps = [
+        ":sliceconfig",
+        ":tensor",
+        ":tensorslice",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "attention_test",
+    size = "small",
+    srcs = ["tests/Attention_Test.cpp"],
+    copts = ["-Isrc/include"],
+    deps = [
+        ":attention",
+        ":tensor",
+        ":tensormatmul",
+        ":tensorslice",
+        "@googletest//:gtest_main",
+    ],
+)

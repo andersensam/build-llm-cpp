@@ -8,7 +8,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-18
+ * @version: 2026-09-30
  *
  * General Notes:
  *
@@ -32,7 +32,9 @@ namespace Numerics_NS {
  * and allowing for better vectorization
  */
 template <typename T>
-requires std::is_arithmetic_v<T>
+concept Arithmetic = std::is_arithmetic_v<T>;
+
+template <Arithmetic T>
 struct Accumulator;
 
 // Handle the integer (integral) types first
@@ -44,7 +46,12 @@ template <> struct Accumulator<int32_t> { using type = int64_t; };
 template <> struct Accumulator<uint32_t> { using type = uint32_t; };
 template <> struct Accumulator<int64_t> { using type = int64_t; };
 template <> struct Accumulator<uint64_t> { using type = uint64_t; };
-template <> struct Accumulator<size_t> { using type = size_t; };
+
+// Special handling for size_t as its implementation is different on
+// Linux and macOS
+template <Arithmetic T>
+requires (std::is_same_v<T, size_t> && !std::is_same_v<T, uint64_t> && !std::is_same_v<T, uint32_t>)
+struct Accumulator<T> { using type = size_t; };
 
 // Handle half precision float types, disabled for now
 //template <> struct Accumulator<float16_t> { using type = float; };

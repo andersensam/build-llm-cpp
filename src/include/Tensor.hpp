@@ -1055,7 +1055,7 @@ public:
     Tensor<T>& set(std::initializer_list<T> v) {
         // Ensure v has enough values to satisfy the number of elements in the Tensor
         if (v.size() != c_elements) {
-            std::invalid_argument(std::format("Tensor.set: Invalid number of value provided to set. Wanted {} but got {}\n.", c_elements, v.size()));
+            throw std::invalid_argument(std::format("Tensor.set: Invalid number of value provided to set. Wanted {} but got {}\n.", c_elements, v.size()));
         }
         T* data = _data();
         // Assuming we have enough values, read them into memory sequentially
@@ -1146,7 +1146,7 @@ public:
         T result = 0;
         // Route to the proper overflow / underflow function based on type
         if constexpr (std::is_floating_point_v<T>) {
-            T* data = _data();
+            const T* data = _data();
             // Traverse the Tensor from element 0..N
             for (size_t i = 0; i < c_elements; ++i) {
                 result += data[_get_offset(i)];
@@ -1157,7 +1157,7 @@ public:
             return result;
         }
         else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-            T* data = _data();
+            const T* data = _data();
             bool overflow = false;
             for (size_t i = 0; i < c_elements; ++i) {
                 overflow |= TensorMath_NS::_add_overflow_signed(result, data[_get_offset(i)], &result);
@@ -1168,7 +1168,7 @@ public:
             return result;
         }
         else {
-            T* data = _data();
+            const T* data = _data();
             bool overflow = false;
             for (size_t i = 0; i < c_elements; ++i) {
                 overflow |= TensorMath_NS::_add_overflow_unsigned(result, data[_get_offset(i)], &result);
@@ -1178,6 +1178,31 @@ public:
             }
             return result;
         }
+    }
+
+    /**
+     * Update the contiguity of a Tensor, necessary after updates
+     * such as transpose()
+     */
+    void _update_contiguous() {
+        // If we have a rank 0 or rank 1 Tensor, they are contiguous
+        // by definition. ListTensorSlice handles the corner case where
+        // that may not be true
+        if (c_rank <= 1) {
+            c_contiguous = true;
+            return;
+        }
+        size_t target_stride = 1;
+        // Iterate over the strides in reverse order, where we expect
+        // the final dim to have stride == 1
+        for (size_t i = c_rank; i-- > 0; ) {
+            if (m_stride[i] != target_stride) {
+                c_contiguous = false;
+                return;
+            }
+            target_stride *= m_dims[i];
+        }
+        c_contiguous = true;
     }
 
     /**
@@ -1198,6 +1223,7 @@ public:
         // Perform the swap and update the strides
         std::swap(m_stride.at(dim0), m_stride.at(dim1));
         std::swap(m_dims.at(dim0), m_dims.at(dim1));
+        _update_contiguous();
         return *this;
     }
 
@@ -1213,6 +1239,7 @@ public:
         // Perform the swap and update the strides
         std::swap(m_stride.at(0), m_stride.at(1));
         std::swap(m_dims.at(0), m_dims.at(1));
+        _update_contiguous();
         return *this;
     }
 
@@ -1387,7 +1414,7 @@ public:
                 throw std::invalid_argument("Tensor.sum: Invalid index provided to sum.\n");
             }
             if constexpr (std::is_floating_point_v<T>) {
-                for (size_t i = 0; i < cols(); ++i) {
+                for (size_t i = 0; i < rows(); ++i) {
                     result += at({i, idx});
                 }
                 if (!std::isfinite(result)) {
@@ -1396,7 +1423,7 @@ public:
             }
             else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
                 bool overflow = false;
-                for (size_t i = 0; i < cols(); ++i) {
+                for (size_t i = 0; i < rows(); ++i) {
                     overflow |= TensorMath_NS::_add_overflow_signed(result, at({i, idx}), &result);
                 }
                 if (overflow) {
@@ -1405,7 +1432,7 @@ public:
             }
             else {
                 bool overflow = false;
-                for (size_t i = 0; i < cols(); ++i) {
+                for (size_t i = 0; i < rows(); ++i) {
                     overflow |= TensorMath_NS::_add_overflow_unsigned(result, at({i, idx}), &result);
                 }
                 if (overflow) {
@@ -1500,7 +1527,7 @@ public:
                 for (size_t i = 0; i < target_dim_size; ++i) {
                     const T& squeezed_val = vals.at({i});
                     for (size_t j = 0; j < other_dim_size; ++j) {
-                        T& val = at({i, j});
+                        T& val = (dim == 0 ? at({i, j}) : at({j, i}));
                         if constexpr (std::is_floating_point_v<T>) {
                             val += squeezed_val;
                             if (!std::isfinite(val)) {
@@ -1524,7 +1551,7 @@ public:
                 for (size_t i = 0; i < target_dim_size; ++i) {
                     const T& squeezed_val = vals.at({i});
                     for (size_t j = 0; j < other_dim_size; ++j) {
-                        T& val = at({i, j});
+                        T& val = (dim == 0 ? at({i, j}) : at({j, i}));
                         if constexpr (std::is_floating_point_v<T>) {
                             val -= squeezed_val;
                             if (!std::isfinite(val)) {
@@ -1548,7 +1575,7 @@ public:
                 for (size_t i = 0; i < target_dim_size; ++i) {
                     const T& squeezed_val = vals.at({i});
                     for (size_t j = 0; j < other_dim_size; ++j) {
-                        T& val = at({i, j});
+                        T& val = (dim == 0 ? at({i, j}) : at({j, i}));
                         if constexpr (std::is_floating_point_v<T>) {
                             val *= squeezed_val;
                             if (!std::isfinite(val)) {
@@ -1575,7 +1602,7 @@ public:
                         throw std::invalid_argument("Tensor.squeezed_op: Divide by zero detected.\n");
                     }
                     for (size_t j = 0; j < other_dim_size; ++j) {
-                        T& val = at({i, j});
+                        T& val = (dim == 0 ? at({i, j}) : at({j, i}));
                         if constexpr (std::is_floating_point_v<T>) {
                             val /= squeezed_val;
                             if (!std::isfinite(val)) {
@@ -1648,10 +1675,10 @@ public:
         else {
             for (size_t i = 0; i < cols(); ++i) {
                 T col_sum = sum(dim, i);
-                if constexpr (TENSOR_ENABLE_SOFTMAX_WARNINGS) {
-                    log_message(Log_Priority::WARNING, "Tensor.softmax", std::format("col_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
-                }
                 if (col_sum == 0 || !std::isfinite(col_sum)) {
+                    if constexpr (TENSOR_ENABLE_SOFTMAX_WARNINGS) {
+                        log_message(Log_Priority::WARNING, "Tensor.softmax", std::format("col_sum is either 0, inf, or NAN, replacing with fallback ({}).", fallback));
+                    }
                     for (size_t j = 0; j < rows(); ++j) {
                         at({j, i}) = fallback;
                     }
