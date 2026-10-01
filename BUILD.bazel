@@ -272,6 +272,7 @@ cc_test(
         ":tensor",
         "@googletest//:gtest_main",
     ],
+    tags = ["no-clang-tidy"],
 )
 
 cc_test(
@@ -285,6 +286,7 @@ cc_test(
         ":tensorslice",
         "@googletest//:gtest_main",
     ],
+    tags = ["no-clang-tidy"],
 )
 
 cc_test(
@@ -298,6 +300,7 @@ cc_test(
         ":tensorslice",
         "@googletest//:gtest_main",
     ],
+    tags = ["no-clang-tidy"],
 )
 
 cc_test(
@@ -312,4 +315,5 @@ cc_test(
         ":tensorslice",
         "@googletest//:gtest_main",
     ],
+    tags = ["no-clang-tidy"],
 )
