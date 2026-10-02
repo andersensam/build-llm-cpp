@@ -317,3 +317,15 @@ cc_test(
     ],
     tags = ["no-clang-tidy"],
 )
+
+cc_test(
+    name = "bpe_test",
+    size = "small",
+    srcs = ["tests/BytePairEncoding_Test.cpp"],
+    copts = ["-Isrc/include"],
+    deps = [
+        ":bpe",
+        "@googletest//:gtest_main",
+    ],
+    tags = ["no-clang-tidy"],
+)

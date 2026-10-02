@@ -417,4 +417,256 @@ TEST(TensorTest, ApplyDropoutValidatesBoundsAndScalesSurvivingElements) {
   EXPECT_NEAR(t.sum(), 200.0f, 1e-3f);
 }
 
+// ============================================================================
+// Tensor::slice, Tensor::remat, 2D Strided Ops, and Corner Cases
+// ============================================================================
+
+TEST(TensorTest, TensorSlice2DRowAndColSlicesShareStorage) {
+  Tensor<int32_t> base({4, 5});
+  for (size_t i = 0; i < 4; ++i) {
+    for (size_t j = 0; j < 5; ++j) {
+      base.at({i, j}) = static_cast<int32_t>(i * 10 + j);
+    }
+  }
+
+  // Slice rows [1, 3) and cols [1, 4) -> shape [2, 3], stride {5, 1}, offset 6
+  Tensor<int32_t> sub = base.slice({0, 1}, {{1, 3}, {1, 4}}, {});
+  EXPECT_EQ(sub.rank(), 2U);
+  EXPECT_EQ(sub.shape(), std::vector<size_t>({2, 3}));
+  EXPECT_EQ(sub.stride(), std::vector<size_t>({5, 1}));
+  EXPECT_EQ(sub.offset(), 6U);
+  EXPECT_FALSE(sub.contiguous());
+
+  EXPECT_EQ(sub.at({0, 0}), 11);
+  EXPECT_EQ(sub.at({0, 2}), 13);
+  EXPECT_EQ(sub.at({1, 0}), 21);
+  EXPECT_EQ(sub.at({1, 2}), 23);
+  // Linear indexing on non-contiguous slice
+  EXPECT_EQ(sub.at(0), 11);
+  EXPECT_EQ(sub.at(2), 13);
+  EXPECT_EQ(sub.at(3), 21);
+  EXPECT_EQ(sub.at(5), 23);
+
+  // Mutating the slice mutates the underlying base Tensor
+  sub.at({1, 1}) = 777;
+  EXPECT_EQ(base.at({2, 2}), 777);
+}
+
+TEST(TensorTest, TensorSlice3DReduceTo2DAnd1D) {
+  Tensor<int32_t> t3({2, 3, 4});
+  for (size_t b = 0; b < 2; ++b) {
+    for (size_t r = 0; r < 3; ++r) {
+      for (size_t c = 0; c < 4; ++c) {
+        t3.at({b, r, c}) = static_cast<int32_t>(b * 100 + r * 10 + c);
+      }
+    }
+  }
+
+  // Fix dim 0 = 1, slice dim 1 in [1, 3) and dim 2 in [1, 4) -> 2D [2, 3]
+  Tensor<int32_t> s2d = t3.slice({1, 2}, {{1, 3}, {1, 4}}, {{0, 1}});
+  EXPECT_EQ(s2d.rank(), 2U);
+  EXPECT_EQ(s2d.shape(), std::vector<size_t>({2, 3}));
+  EXPECT_FALSE(s2d.contiguous());
+  EXPECT_EQ(s2d.at({0, 0}), 111);
+  EXPECT_EQ(s2d.at({0, 2}), 113);
+  EXPECT_EQ(s2d.at({1, 0}), 121);
+  EXPECT_EQ(s2d.at({1, 2}), 123);
+
+  // Fix dim 0 = 1, dim 1 = 2, slice dim 2 in [1, 3) -> 1D [2]
+  Tensor<int32_t> s1d = t3.slice({2}, {{1, 3}}, {{0, 1}, {1, 2}});
+  EXPECT_EQ(s1d.rank(), 1U);
+  EXPECT_EQ(s1d.shape(), std::vector<size_t>({2}));
+  EXPECT_EQ(s1d.at({0}), 121);
+  EXPECT_EQ(s1d.at({1}), 122);
+}
+
+TEST(TensorTest, TensorSliceNestedSubSliceAccumulatesOffset) {
+  Tensor<int32_t> base({6, 6});
+  for (size_t i = 0; i < 6; ++i) {
+    for (size_t j = 0; j < 6; ++j) {
+      base.at({i, j}) = static_cast<int32_t>(i * 10 + j);
+    }
+  }
+
+  // First slice: rows [1, 5), cols [1, 5) -> [4, 4] starting at (1, 1), offset = 7
+  Tensor<int32_t> s1 = base.slice({0, 1}, {{1, 5}, {1, 5}}, {});
+  EXPECT_EQ(s1.offset(), 7U);
+
+  // Nested slice of s1: rows [1, 3), cols [2, 4) -> [2, 2] starting at (2, 3) in base, offset = 15
+  Tensor<int32_t> s2 = s1.slice({0, 1}, {{1, 3}, {2, 4}}, {});
+  EXPECT_EQ(s2.shape(), std::vector<size_t>({2, 2}));
+  EXPECT_EQ(s2.offset(), 15U);
+  EXPECT_EQ(s2.at({0, 0}), 23);
+  EXPECT_EQ(s2.at({0, 1}), 24);
+  EXPECT_EQ(s2.at({1, 0}), 33);
+  EXPECT_EQ(s2.at({1, 1}), 34);
+}
+
+TEST(TensorTest, UniformOpOn2DRowContiguousSlicesExercises2DStridedKernels) {
+  // Create two [3, 6] tensors and take column slices [3, 2] with stride {6, 1}
+  // This exercises _safe_2d_tensor_{add,sub,mul,div}_contiguous_v and _contiguous
+  Tensor<float> base_a({3, 6});
+  Tensor<float> base_b({3, 6});
+  for (size_t i = 0; i < 3; ++i) {
+    for (size_t j = 0; j < 6; ++j) {
+      base_a.at({i, j}) = static_cast<float>((i + 1) * 10 + j);
+      base_b.at({i, j}) = static_cast<float>((i + 1) * 2);
+    }
+  }
+
+  Tensor<float> slice_a = base_a.slice({0, 1}, {{0, 0}, {1, 3}}, {});
+  Tensor<float> slice_b = base_b.slice({0, 1}, {{0, 0}, {2, 4}}, {});
+  ASSERT_FALSE(slice_a.contiguous());
+  ASSERT_EQ(slice_a.dim_stride(1), 1U);
+
+  Tensor<float> sum = slice_a + slice_b;
+  Tensor<float> diff = slice_a - slice_b;
+  Tensor<float> prod = slice_a * slice_b;
+  Tensor<float> quot = slice_a / slice_b;
+
+  for (size_t i = 0; i < 3; ++i) {
+    for (size_t j = 0; j < 2; ++j) {
+      EXPECT_FLOAT_EQ(sum.at({i, j}), slice_a.at({i, j}) + slice_b.at({i, j}));
+      EXPECT_FLOAT_EQ(diff.at({i, j}), slice_a.at({i, j}) - slice_b.at({i, j}));
+      EXPECT_FLOAT_EQ(prod.at({i, j}), slice_a.at({i, j}) * slice_b.at({i, j}));
+      EXPECT_FLOAT_EQ(quot.at({i, j}), slice_a.at({i, j}) / slice_b.at({i, j}));
+    }
+  }
+
+  // In-place self-aliasing on 2D strided slice (exercises non-__restrict__ _safe_2d_tensor_*_contiguous)
+  Tensor<int32_t> int_base({3, 4});
+  for (size_t i = 0; i < 12; ++i) {
+    int_base.at(i) = static_cast<int32_t>(i + 1);
+  }
+  Tensor<int32_t> int_slice = int_base.slice({0, 1}, {{0, 0}, {1, 3}}, {});
+  int_slice += int_slice;
+  EXPECT_EQ(int_slice.at({0, 0}), 4);   // (1+1) * 2
+  EXPECT_EQ(int_slice.at({2, 1}), 22);  // (10+1) * 2
+  EXPECT_EQ(int_base.at({0, 1}), 4);
+  EXPECT_EQ(int_base.at({2, 2}), 22);
+
+  // Scalar ops on 2D strided slice
+  int_slice *= 3;
+  EXPECT_EQ(int_slice.at({0, 0}), 12);
+  int_slice /= 2;
+  EXPECT_EQ(int_slice.at({0, 0}), 6);
+}
+
+TEST(TensorTest, RematMakesNonContiguousSliceAndTransposeContiguousAndUnique) {
+  Tensor<int32_t> base({3, 4});
+  for (size_t i = 0; i < 12; ++i) {
+    base.at(i) = static_cast<int32_t>(i + 1);
+  }
+
+  // Column slice: shape [3, 2], non-contiguous
+  Tensor<int32_t> col_slice = base.slice({0, 1}, {{0, 0}, {1, 3}}, {});
+  EXPECT_FALSE(col_slice.contiguous());
+  EXPECT_FALSE(col_slice.is_unique(base));
+
+  col_slice.remat();
+  EXPECT_TRUE(col_slice.contiguous());
+  EXPECT_EQ(col_slice.offset(), 0U);
+  EXPECT_EQ(col_slice.shape(), std::vector<size_t>({3, 2}));
+  EXPECT_EQ(col_slice.stride(), std::vector<size_t>({2, 1}));
+  EXPECT_TRUE(col_slice.is_unique(base));
+  EXPECT_EQ(col_slice.at({0, 0}), 2);
+  EXPECT_EQ(col_slice.at({0, 1}), 3);
+  EXPECT_EQ(col_slice.at({2, 0}), 10);
+  EXPECT_EQ(col_slice.at({2, 1}), 11);
+
+  // Mutating rematerialized tensor no longer affects base
+  col_slice.at({0, 0}) = 999;
+  EXPECT_EQ(base.at({0, 1}), 2);
+
+  // Transpose then remat
+  Tensor<int32_t> t({2, 3});
+  t.set({1, 2, 3, 4, 5, 6});
+  t.transpose();
+  EXPECT_FALSE(t.contiguous());
+  t.remat();
+  EXPECT_TRUE(t.contiguous());
+  EXPECT_EQ(t.shape(), std::vector<size_t>({3, 2}));
+  EXPECT_EQ(t.stride(), std::vector<size_t>({2, 1}));
+  EXPECT_EQ(t.at({0, 0}), 1);
+  EXPECT_EQ(t.at({0, 1}), 4);
+  EXPECT_EQ(t.at({2, 0}), 3);
+  EXPECT_EQ(t.at({2, 1}), 6);
+}
+
+TEST(TensorTest, ReductionsAndSoftmaxOnNonContiguousSlice) {
+  Tensor<float> base({3, 5});
+  base.set({
+    -100.0f, -2.0f, -4.0f, -6.0f, -100.0f,
+    -100.0f, -1.0f, -9.0f, -3.0f, -100.0f,
+    -100.0f, -8.0f, -5.0f, -7.0f, -100.0f
+  });
+
+  // Non-contiguous [3, 3] slice of middle 3 columns
+  Tensor<float> sub = base.slice({0, 1}, {{0, 0}, {1, 4}}, {});
+  ASSERT_FALSE(sub.contiguous());
+
+  EXPECT_FLOAT_EQ(sub.max(), -1.0f);
+  EXPECT_FLOAT_EQ(sub.min(), -9.0f);
+  EXPECT_FLOAT_EQ(sub.sum(), -45.0f);
+
+  Tensor<float> row_max = sub.max(0, true);
+  EXPECT_FLOAT_EQ(row_max.at({0}), -2.0f);
+  EXPECT_FLOAT_EQ(row_max.at({1}), -1.0f);
+  EXPECT_FLOAT_EQ(row_max.at({2}), -5.0f);
+
+  Tensor<float> col_max = sub.max(1, true);
+  EXPECT_FLOAT_EQ(col_max.at({0}), -1.0f);
+  EXPECT_FLOAT_EQ(col_max.at({1}), -4.0f);
+  EXPECT_FLOAT_EQ(col_max.at({2}), -3.0f);
+
+  sub.softmax(0);
+  for (size_t r = 0; r < 3; ++r) {
+    EXPECT_NEAR(sub.sum(0, r), 1.0f, 1e-5f);
+  }
+}
+
+TEST(TensorTest, InfoOnRank0ScalarDoesNotCorruptBracket) {
+  Tensor<float> scalar({});
+  scalar.at({}) = 1.0f;
+  std::string info_str = scalar.info();
+  // Should contain "Tensor: []" rather than erasing " [" into "Tensor:]"
+  EXPECT_NE(info_str.find("Tensor: []"), std::string::npos) << "Actual info(): " << info_str;
+}
+
+TEST(TensorTest, ApplyMaskUpperZeroesFutureTokensAboveDiagonalAndPreservesSelfAndPast) {
+  // In causal self-attention, token i can attend to j <= i (lower triangle + diagonal),
+  // and future tokens j > i (strictly upper triangle) are masked out.
+  Tensor<float> scores({3, 3});
+  scores.fill(1.0f);
+  scores.apply_mask(CausalMaskType::UPPER);
+
+  for (size_t i = 0; i < 3; ++i) {
+    for (size_t j = 0; j < 3; ++j) {
+      if (j <= i) {
+        EXPECT_FLOAT_EQ(scores.at({i, j}), 1.0f)
+            << "Past/current token (" << i << ", " << j << ") should not be zeroed";
+      } else {
+        EXPECT_FLOAT_EQ(scores.at({i, j}), 0.0f)
+            << "Future token (" << i << ", " << j << ") should be masked to 0";
+      }
+    }
+  }
+}
+
+TEST(TensorTest, SliceReorderingDimsWithoutFiltersTransposesOrThrows) {
+  Tensor<int32_t> t({2, 3});
+  t.set({1, 2, 3, 4, 5, 6});
+  // Passing dims = {1, 0} with empty filters requests axis 1 then axis 0;
+  // it must not silently return an un-transposed [2, 3] copy.
+  Tensor<int32_t> s = t.slice({1, 0}, {}, {});
+  EXPECT_EQ(s.shape(), std::vector<size_t>({3, 2}));
+}
+
+TEST(TensorTest, SliceWithOutOfBoundsOtherDimThrowsInsteadOfHeapOverflow) {
+  Tensor<float> t({3, 4});
+  t.fill(1.0f);
+  // Passing dim_num = 5 (>= rank 2) in other_dims must throw, not write out-of-bounds
+  EXPECT_THROW((void)t.slice({0}, {{0, 2}}, {{5, 0}}), std::invalid_argument);
+}
+
 } // namespace

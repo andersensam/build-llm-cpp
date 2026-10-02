@@ -92,4 +92,84 @@ TEST(AttentionTest, MultiHeadAttentionForwardProducesExpectedShapeAndFiniteValue
   }
 }
 
+TEST(AttentionTest, MultiHeadAttentionNonSquareEmbAndOutDimAndSingleToken) {
+  // emb_dim (24) != out_dim (16), seq_len = 1
+  MultiHeadAttention<float> mha(24, 16, 32, 0.0f, 4);
+  Tensor<float> single_token({1, 24});
+  single_token.random(-1.0f, 1.0f);
+
+  Tensor<float> out = mha.forward(single_token);
+  EXPECT_EQ(out.shape(), std::vector<size_t>({1, 16}));
+  for (size_t i = 0; i < out.elements(); ++i) {
+    EXPECT_TRUE(std::isfinite(out.at(i)));
+  }
+}
+
+TEST(AttentionTest, CausalAttentionDoesNotLeakFutureTokensIntoPastOutputs) {
+  // Fundamental autoregressive property: modifying token at position t_future (row 3)
+  // must NOT change the attention output at earlier token positions t < 3 (rows 0, 1, 2).
+  const size_t seq_len = 4;
+  const size_t emb_dim = 8;
+  const size_t out_dim = 8;
+
+  CausalAttention<float> ca(emb_dim, out_dim, 0.0f);
+
+  Tensor<float> input_a({seq_len, emb_dim});
+  for (size_t i = 0; i < seq_len; ++i) {
+    for (size_t j = 0; j < emb_dim; ++j) {
+      input_a.at({i, j}) = static_cast<float>((i + 1) * 0.1f + (j + 1) * 0.05f);
+    }
+  }
+
+  Tensor<float> input_b = input_a.clone();
+  // Perturb ONLY the last token (row 3)
+  for (size_t j = 0; j < emb_dim; ++j) {
+    input_b.at({3, j}) = 50.0f + static_cast<float>(j);
+  }
+
+  Tensor<float> out_a = ca.forward(input_a);
+  Tensor<float> out_b = ca.forward(input_b);
+
+  // Outputs for tokens 0, 1, 2 must be invariant to changes in token 3
+  for (size_t t = 0; t < 3; ++t) {
+    for (size_t d = 0; d < out_dim; ++d) {
+      EXPECT_NEAR(out_a.at({t, d}), out_b.at({t, d}), 1e-5f)
+          << "Future token 3 leaked into causal attention output at token " << t << ", dim " << d;
+    }
+  }
+}
+
+TEST(AttentionTest, MultiHeadAttentionDoesNotLeakFutureTokensIntoPastOutputs) {
+  const size_t seq_len = 4;
+  const size_t emb_dim = 16;
+  const size_t out_dim = 16;
+  const size_t num_heads = 4;
+
+  MultiHeadAttention<float> mha(emb_dim, out_dim, 32, 0.0f, num_heads);
+
+  Tensor<float> input_a({seq_len, emb_dim});
+  for (size_t i = 0; i < seq_len; ++i) {
+    for (size_t j = 0; j < emb_dim; ++j) {
+      input_a.at({i, j}) = static_cast<float>((i + 1) * 0.1f + (j + 1) * 0.05f);
+    }
+  }
+
+  Tensor<float> input_b = input_a.clone();
+  // Perturb ONLY the last token (row 3)
+  for (size_t j = 0; j < emb_dim; ++j) {
+    input_b.at({3, j}) = 50.0f + static_cast<float>(j);
+  }
+
+  Tensor<float> out_a = mha.forward(input_a);
+  Tensor<float> out_b = mha.forward(input_b);
+
+  // Outputs for tokens 0, 1, 2 must be invariant to changes in token 3
+  for (size_t t = 0; t < 3; ++t) {
+    for (size_t d = 0; d < out_dim; ++d) {
+      EXPECT_NEAR(out_a.at({t, d}), out_b.at({t, d}), 1e-5f)
+          << "Future token 3 leaked into MHA output at token " << t << ", dim " << d;
+    }
+  }
+}
+
 } // namespace

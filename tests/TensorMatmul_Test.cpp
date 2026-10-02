@@ -243,4 +243,65 @@ TEST(MatmulTest, IntegerAndFloatOverflowThrows) {
   EXPECT_THROW((void)matmul(f_lhs, f_rhs), std::overflow_error);
 }
 
+// ============================================================================
+// Corner Cases: Tensor::slice Views, Signed Min Overflow, Coordinate Validation
+// ============================================================================
+
+TEST(MatmulTest, MatmulWithNonContiguousTensorSliceViewsMatchesRemat) {
+  Tensor<float> q_full({4, 6});
+  Tensor<float> k_full({4, 6});
+  for (size_t i = 0; i < 4; ++i) {
+    for (size_t j = 0; j < 6; ++j) {
+      q_full.at({i, j}) = static_cast<float>(i + j + 1);
+      k_full.at({i, j}) = static_cast<float>((i + 1) * (j + 1));
+    }
+  }
+
+  // Non-contiguous column slices [4, 3] representing a single attention head
+  Tensor<float> q_slice = q_full.slice({0, 1}, {{0, 0}, {2, 5}}, {});
+  Tensor<float> k_slice = k_full.slice({0, 1}, {{0, 0}, {2, 5}}, {});
+  ASSERT_FALSE(q_slice.contiguous());
+  ASSERT_FALSE(k_slice.contiguous());
+
+  Tensor<float> scores_from_slices = matmul(q_slice, 0, 1, k_slice, 1, 0);
+
+  Tensor<float> q_contig = q_slice.clone();
+  Tensor<float> k_contig = k_slice.clone();
+  ASSERT_TRUE(q_contig.contiguous());
+  ASSERT_TRUE(k_contig.contiguous());
+
+  Tensor<float> scores_from_contig = matmul(q_contig, 0, 1, k_contig, 1, 0);
+  ASSERT_EQ(scores_from_slices.shape(), scores_from_contig.shape());
+  for (size_t i = 0; i < scores_from_slices.elements(); ++i) {
+    EXPECT_FLOAT_EQ(scores_from_slices.at(i), scores_from_contig.at(i));
+  }
+}
+
+TEST(MatmulTest, SignedIntMinTimesMinusOneThrowsOverflowWithoutUB) {
+  Tensor<int8_t> lhs({1, 1});
+  lhs.at({0, 0}) = std::numeric_limits<int8_t>::min(); // -128
+  Tensor<int8_t> rhs({1, 1});
+  rhs.at({0, 0}) = -1;
+  // -128 * -1 = +128 > INT8_MAX (127) -> must throw overflow_error
+  EXPECT_THROW((void)matmul(lhs, rhs), std::overflow_error);
+
+  Tensor<int32_t> lhs32({1, 1});
+  lhs32.at({0, 0}) = std::numeric_limits<int32_t>::min();
+  Tensor<int32_t> rhs32({1, 1});
+  rhs32.at({0, 0}) = -1;
+  EXPECT_THROW((void)matmul(lhs32, rhs32), std::overflow_error);
+}
+
+TEST(MatmulTest, Matmul3DInvalidCoordsThrows) {
+  Tensor<float> lhs({2, 3, 4});
+  Tensor<float> rhs({2, 4, 3});
+  lhs.fill(1.0f);
+  rhs.fill(1.0f);
+
+  // Wrong coordinate vector length
+  std::vector<size_t> short_coords = {0, 0};
+  std::vector<size_t> valid_coords = {0, 0, 0};
+  EXPECT_THROW((void)matmul(lhs, 1, 2, short_coords, rhs, 1, 2, valid_coords), std::invalid_argument);
+}
+
 } // namespace

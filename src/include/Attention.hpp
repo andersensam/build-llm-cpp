@@ -111,7 +111,7 @@ public:
      * @param output_dim Output dimension
      * @param dropout Float >= 0, < 1 (set to 0 to disable)
      */
-    CausalAttention(size_t emb_dim, size_t output_dim, float dropout) : c_emb_dim(emb_dim), c_output_dim(emb_dim), c_dropout(dropout),
+    CausalAttention(size_t emb_dim, size_t output_dim, float dropout) : c_emb_dim(emb_dim), c_output_dim(output_dim), c_dropout(dropout),
                                                                         m_w_query({emb_dim, output_dim}), m_w_key({emb_dim, output_dim}),
                                                                         m_w_value({emb_dim, output_dim}) {
         // Ensure we get a dropout within the acceptable range

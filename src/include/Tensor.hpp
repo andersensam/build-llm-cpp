@@ -1986,6 +1986,11 @@ public:
             std::vector<size_t> offset_query(c_rank, 0);
             for (size_t i = 0; i < other_dims.size(); ++i) {
                 auto [dim_num, dim_c] = other_dims.begin()[i];
+                if (dim_num >= c_rank) {
+                    throw std::invalid_argument(
+                        std::format("Tensor.slice: Invalid other dim id provided. Got {} but Tensor has rank {}.", dim_num, c_rank)
+                    );
+                }
                 offset_query[dim_num] = dim_c;
             }
             // Calculate the offset from this Tensor and persist into the target
