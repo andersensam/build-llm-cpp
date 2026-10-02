@@ -262,9 +262,9 @@ public:
         Tensor<T> keys = matmul(input, m_w_key);
         Tensor<T> values = matmul(input, m_w_value);
         // Create an output Tensor
-        Tensor<T> output({c_head_dim, c_head_dim});
+        Tensor<T> output({input.extent(0), input.extent(0)});
         // Create another Tensor for attn_weights @ values
-        Tensor<T> context_vec({c_head_dim, input.extent(0)});
+        Tensor<T> context_vec({input.extent(0), c_head_dim});
         // Create a Tensor for the final, concatenated context vector
         Tensor<T> result({input.extent(0), c_output_dim});
         // Iterate over the Attention Heads, unpacking their start and stops
@@ -287,8 +287,6 @@ public:
             output.apply_dropout(c_dropout);
             // Calculate the context vector via attn_weights (output) @ values (v_slice)
             matmul(output, v_slice, context_vec);
-            // Transpose the context vector
-            context_vec.transpose();
             // Copy the values into the final result Tensor
             for (size_t i = 0; i < input.extent(0); ++i) {
                 // Copy the second dim from the slice
@@ -296,8 +294,6 @@ public:
                     result.at({i, j}) = context_vec.at({i, j - (head_id * c_head_dim)});
                 }
             }
-            // Transpose the context vector back for the next iteration
-            context_vec.transpose();
         }
         // Return the concatenated context vector
         return result;

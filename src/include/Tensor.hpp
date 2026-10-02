@@ -491,6 +491,10 @@ public:
      * @returns Returns a new contiguous Tensor
      */
     Tensor<T>& remat() override {
+        // Don't try to remat rank-0 Tensors
+        if (c_rank == 0) {
+            return *this;
+        }
         // If this Tensor already is contiguous and has stride == 1 in its
         // final dim, then return without any op
         if (c_contiguous && (dim_stride(c_rank - 1) == 1)) {
@@ -508,6 +512,9 @@ public:
         target.copy_from(*this);
         // Steal the Storage shared pointer and let target go out of scope
         m_data = std::move(target.m_data);
+        m_stride = std::move(target.m_stride);
+        c_offset = target.c_offset;
+        c_contiguous = target.c_contiguous;
         return *this;
     }
 
@@ -518,15 +525,18 @@ public:
      */
     [[nodiscard]] size_t _get_offset(std::initializer_list<size_t> c) const {
         // Do some pointer arithmetic to calculate the exact address to retrieve from m_data
-        size_t target_offset = 0;
+        size_t target_offset = c_offset;
         // Ensure the coordinates are valid for our Tensor
         for (size_t i = 0; i < c_rank; ++i) {
+            if (c.begin()[i] >= extent(i)) {
+                throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end dim ({}).", c.begin()[i], extent(i)));
+            }
             target_offset += c.begin()[i] * m_stride.at(i);
         }
         if (target_offset >= m_data->c_elements) {
             throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end of Storage.", target_offset));
         }
-        return target_offset + c_offset;
+        return target_offset;
     }
 
     /**
@@ -536,15 +546,18 @@ public:
      */
     [[nodiscard]] size_t _get_offset(const std::vector<size_t>& c) const {
         // Do some pointer arithmetic to calculate the exact address to retrieve from m_data
-        size_t target_offset = 0;
+        size_t target_offset = c_offset;
         // Ensure the coordinates are valid for our Tensor
         for (size_t i = 0; i < c_rank; ++i) {
+            if (c[i] >= extent(i)) {
+                throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end dim ({}).", c[i], extent(i)));
+            }
             target_offset += c.at(i) * m_stride.at(i);
         }
         if (target_offset >= m_data->c_elements) {
             throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end of Storage.", target_offset));
         }
-        return target_offset + c_offset;
+        return target_offset;
     }
 
     /**
@@ -907,7 +920,7 @@ public:
                 )
             );
         }
-        return _data()[target];
+        return _data()[_get_offset(target)];
     }
 
     /**
@@ -925,7 +938,7 @@ public:
                 )
             );
         }
-        return _data()[target];
+        return _data()[_get_offset(target)];
     }
 
     /**
@@ -1279,7 +1292,7 @@ public:
         // If we have a rank 0 or rank 1 Tensor, they are contiguous
         // by definition. ListTensorSlice handles the corner case where
         // that may not be true
-        if (c_rank <= 1) {
+        if (c_rank == 0) {
             c_contiguous = true;
             return;
         }
@@ -1380,8 +1393,17 @@ public:
      * @returns Returns the maximum value
      */
     T max() const {
-        // NOLINTNEXTLINE(bugprone-sizeof-expression)
-        return *(std::max_element(_data() + c_offset, _data() + c_offset + c_elements));
+        if (c_contiguous) {
+            // NOLINTNEXTLINE(bugprone-sizeof-expression)
+            return *(std::max_element(_data() + c_offset, _data() + c_offset + c_elements));
+        }
+        T result = std::numeric_limits<T>::min();
+        const T* self_data = _data();
+        for (size_t i = 0; i < c_elements; ++i) {
+            T val = self_data[_get_offset(i)];
+            result = val > result ? val : result;
+        }
+        return result;
     }
 
     /**
@@ -1389,8 +1411,17 @@ public:
      * @returns Returns the minimum value
      */
     T min() const {
-        // NOLINTNEXTLINE(bugprone-sizeof-expression)
-        return *(std::min_element(_data() + c_offset, _data() + c_offset + c_elements));
+        if (c_contiguous) {
+            // NOLINTNEXTLINE(bugprone-sizeof-expression)
+            return *(std::min_element(_data() + c_offset, _data() + c_offset + c_elements));
+        }
+        T result = std::numeric_limits<T>::max();
+        const T* self_data = _data();
+        for (size_t i = 0; i < c_elements; ++i) {
+            T val = self_data[_get_offset(i)];
+            result = val < result ? val : result;
+        }
+        return result;
     }
 
     /**
@@ -1935,14 +1966,14 @@ public:
         // Resize the m_dims and m_stride vectors to account for the new rank
         result.m_dims.resize(result.c_rank);
         result.m_stride.resize(result.c_rank);
-        // Reset the number of elements back to 1 and recalculate inside the loop
-        result.c_elements = 1;
         // Handle the most simple case: no filters applied
         if (filters.size() == 0) {
             // If we have no filters and matching rank, this is a no-op, so return a copy of this Tensor
             if (dims.size() == c_rank) {
                 return result;
             }
+            // Reset the number of elements back to 1 and recalculate inside the loop
+            result.c_elements = 1;
             // Since we have no filters, grab the extents and strides from this Tensor
             for (size_t i = 0; i < result.c_rank; ++i) {
                 result.m_dims[i] = extent(dims.begin()[i]);
@@ -1967,6 +1998,8 @@ public:
                     std::format("Tensor.slice: Invalid filters provided. Expected {} but got {}.", dims.size(), filters.size())
                 );
             }
+            // Reset the number of elements back to 1 and recalculate inside the loop
+            result.c_elements = 1;
             // Create a vector to calculate the offset with filters and other dims
             std::vector<size_t> offset_query(c_rank, 0);
             // Iterate over the filters and construct the extents of each dim
