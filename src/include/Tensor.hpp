@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-30
+ * @version: 2026-10-01
  *
  * General Notes:
  *
@@ -816,6 +816,7 @@ public:
         else {
             result += std::format("], dtype={}", typeid(T).name());
         }
+        result += std::format(", contiguous={}", c_contiguous ? "true" : "false");
         return result;
     }
 
@@ -1433,7 +1434,6 @@ public:
             result += "[";
             for (size_t j = 0; j < cols(); ++j) {
                 // Add the value in the Matrix
-                std::cerr << std::format("Getting {}, {}\n", i, j);
                 result += std::format("{}", at({i, j}));
                 if (j + 1 < cols()) {
                     // Separate the values by tabs, for readability
@@ -1931,18 +1931,18 @@ public:
         }
         // Create a shallow copy of this Tensor
         Tensor<T> result = *this;
+        result.c_rank = dims.size();
+        // Resize the m_dims and m_stride vectors to account for the new rank
+        result.m_dims.resize(result.c_rank);
+        result.m_stride.resize(result.c_rank);
+        // Reset the number of elements back to 1 and recalculate inside the loop
+        result.c_elements = 1;
         // Handle the most simple case: no filters applied
         if (filters.size() == 0) {
             // If we have no filters and matching rank, this is a no-op, so return a copy of this Tensor
             if (dims.size() == c_rank) {
                 return result;
             }
-            result.c_rank = dims.size();
-            // Resize the m_dims and m_stride vectors to account for the new rank
-            result.m_dims.resize(result.c_rank);
-            result.m_stride.resize(result.c_rank);
-            // Reset the number of elements back to 1 and recalculate inside the loop
-            result.c_elements = 1;
             // Since we have no filters, grab the extents and strides from this Tensor
             for (size_t i = 0; i < result.c_rank; ++i) {
                 result.m_dims[i] = extent(dims.begin()[i]);
@@ -1955,7 +1955,46 @@ public:
             std::vector<size_t> offset_query(c_rank, 0);
             for (size_t i = 0; i < other_dims.size(); ++i) {
                 auto [dim_num, dim_c] = other_dims.begin()[i];
-                offset_query.at(dim_num) = dim_c;
+                offset_query[dim_num] = dim_c;
+            }
+            // Calculate the offset from this Tensor and persist into the target
+            result.c_offset = _get_offset(offset_query);
+        }
+        else {
+            // If we have filters, there must be one per dim specified in dims
+            if (dims.size() != filters.size()) {
+                throw std::invalid_argument(
+                    std::format("Tensor.slice: Invalid filters provided. Expected {} but got {}.", dims.size(), filters.size())
+                );
+            }
+            // Create a vector to calculate the offset with filters and other dims
+            std::vector<size_t> offset_query(c_rank, 0);
+            // Iterate over the filters and construct the extents of each dim
+            for (size_t i = 0; i < result.c_rank; ++i) {
+                // Grab the stride for the dim
+                result.m_stride[i] = dim_stride(dims.begin()[i]);
+                // Grab start and end from the std::pair inside filters
+                auto [start, end] = filters.begin()[i];
+                // If both are zero, pull in the full dim
+                if (start == 0 && end == 0) {
+                    result.m_dims[i] = extent(dims.begin()[i]);
+                }
+                else {
+                    // Ensure start is less than end and both are valid
+                    if (start >= end || start >= extent(dims.begin()[i]) || end > extent(dims.begin()[i])) {
+                        throw std::invalid_argument("Tensor.slice: Invalid start and end provided for dim filter.\n");
+                    }
+                    result.m_dims[i] = end - start;
+                }
+                // Increment the number of elements with our calculated extent
+                result.c_elements *= result.m_dims[i];
+                // Add the start coordinate for the dim to the offset query vector
+                offset_query[dims.begin()[i]] = start;
+            }
+            // If we have other dims, grab their coordinates and dim id
+            for (size_t i = 0; i < other_dims.size(); ++i) {
+                auto [dim_num, dim_c] = other_dims.begin()[i];
+                offset_query[dim_num] = dim_c;
             }
             // Calculate the offset from this Tensor and persist into the target
             result.c_offset = _get_offset(offset_query);

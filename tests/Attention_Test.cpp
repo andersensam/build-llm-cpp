@@ -11,7 +11,6 @@
 
 namespace {
 
-using Attention_NS::AttentionHead;
 using Attention_NS::CausalAttention;
 using Attention_NS::MultiHeadAttention;
 using Tensor_NS::Tensor;
@@ -54,15 +53,10 @@ TEST(AttentionTest, CausalAttentionForwardProducesExpectedShapeAndFiniteValues) 
 // ============================================================================
 
 TEST(AttentionTest, AttentionHeadShardsWeightMatricesCorrectly) {
-  auto wq = std::make_shared<Tensor<float>>(std::initializer_list<size_t>{16, 12});
-  auto wk = std::make_shared<Tensor<float>>(std::initializer_list<size_t>{16, 12});
-  auto wv = std::make_shared<Tensor<float>>(std::initializer_list<size_t>{16, 12});
+  Tensor<float> wq({12, 16});
 
-  AttentionHead<float> head(1, 4, 8, wq, wk, wv);
-  EXPECT_EQ(head.id(), 1U);
-  EXPECT_EQ(head.query().shape(), std::vector<size_t>({4, 16}));
-  EXPECT_EQ(head.key().shape(), std::vector<size_t>({4, 16}));
-  EXPECT_EQ(head.value().shape(), std::vector<size_t>({4, 16}));
+  Tensor<float> head = wq.slice({0, 1}, {{4, 8}, {0, 0}}, {});
+  EXPECT_EQ(head.shape(), std::vector<size_t>({4, 16}));
 }
 
 TEST(AttentionTest, MultiHeadAttentionConstructorValidation) {

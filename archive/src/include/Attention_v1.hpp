@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-01
+ * @version: 2026-09-29
  *
  * General Notes:
  *
@@ -39,7 +39,10 @@ namespace Attention_NS {
 
 using Tensor_NS::Tensor;
 using Tensor_NS::CausalMaskType;
-using Tensor_Matmul_NS::matmul;
+using TensorSlice_NS::ListTensorSlice;
+using TensorSlice_NS::RangeTensorSlice;
+using TensorSlice_NS::MatrixSliceConfig;
+using TensorSlice_NS::IndexType;
 
 // NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**
@@ -132,12 +135,12 @@ public:
      */
     Tensor<T> forward(const Tensor<T>& input) const override {
         // Get the QKV for the given input
-        Tensor<T> queries = matmul(input, m_w_query);
-        Tensor<T> keys = matmul(input, m_w_key);
-        Tensor<T> values = matmul(input, m_w_value);
+        Tensor<T> queries = Tensor_Matmul_NS::matmul(input, m_w_query);
+        Tensor<T> keys = Tensor_Matmul_NS::matmul(input, m_w_key);
+        Tensor<T> values = Tensor_Matmul_NS::matmul(input, m_w_value);
         // Transpose keys for calculating attention scores
         keys.transpose();
-        Tensor<T> attn_scores = matmul(queries, keys);
+        Tensor<T> attn_scores = Tensor_Matmul_NS::matmul(queries, keys);
         // Apply masking to the attention scores
         attn_scores.apply_mask(CausalMaskType::UPPER);
         // Apply scaling
@@ -149,9 +152,106 @@ public:
             attn_scores.apply_dropout(c_dropout);
         }
         // Return the context
-        return matmul(attn_scores, values);
+        return Tensor_Matmul_NS::matmul(attn_scores, values);
     }
 
+};
+
+/**
+ * Class for storing the TensorSlices associated with each head in
+ * Multi-Head Attention
+ */
+template <typename T>
+requires std::is_arithmetic_v<T>
+class AttentionHead {
+/* Private data elements */
+private:
+    /**
+     * The id of the Attention Head
+     */
+    size_t c_id = 0;
+
+    /**
+     * The MatrixSliceConfig used to build the Attention Head
+     */
+    MatrixSliceConfig c_msc;
+
+    /**
+     * Query Matrix TensorSlice
+     */
+    RangeTensorSlice<T> m_w_query;
+
+    /**
+     * Key Matrix TensorSlice
+     */
+    RangeTensorSlice<T> m_w_key;
+
+    /**
+     * Value Matrix TensorSlice
+     */
+    RangeTensorSlice<T> m_w_value;
+
+/* Public functions */
+public:
+    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
+    /**
+     * Constructor for AttentionHead
+     * @param id Id to assign to the attention head
+     * @param start_dim Dimension to start sharding
+     * @param end_dim Dimension to stop sharding
+     * @param query_ptr std::shared_ptr<Tensor<T>> for the query Matrix
+     * @param key_ptr std::shared_ptr<Tensor<T>> for the key Matrix
+     * @param value_ptr std::shared_ptr<Tensor<T>> for the value Matrix
+     */
+    AttentionHead(size_t id, size_t start_dim, size_t end_dim, std::shared_ptr<Tensor<T>> query_ptr, 
+                  std::shared_ptr<Tensor<T>> key_ptr, std::shared_ptr<Tensor<T>> value_ptr) :
+                  c_id(id), c_msc(1, IndexType::RANGE, std::vector<size_t>{start_dim, end_dim}, 0, {}, {}),
+                  m_w_query(std::move(query_ptr), c_msc), m_w_key(std::move(key_ptr), c_msc),
+                  m_w_value(std::move(value_ptr), c_msc) {
+        // Left blank since everything is initialized above
+    }
+    // NOLINTEND(bugprone-easily-swappable-parameters)
+
+    /**
+     * Get the id for an attention head
+     * @returns Returns the id
+     */
+    size_t id() const {
+        return c_id;
+    }
+
+    /**
+     * Get the MatrixSliceConfig used to create the Attention Head, used for calculating sharding
+     * for the QKV after the first matmul step
+     * @returns Returns a reference to the MatrixSliceConfig
+     */
+    const MatrixSliceConfig& slice_config() const {
+        return c_msc;
+    }
+
+    /**
+     * Get the query TensorSlice
+     * @returns Returns a reference to the TensorSlice
+     */
+    const RangeTensorSlice<T>& query() const {
+        return m_w_query;
+    }
+
+    /**
+     * Get the key TensorSlice
+     * @returns Returns a reference to the TensorSlice
+     */
+    const RangeTensorSlice<T>& key() const {
+        return m_w_key;
+    }
+
+    /**
+     * Get the value TensorSlice
+     * @returns Returns a reference to the TensorSlice
+     */
+    const RangeTensorSlice<T>& value() const {
+        return m_w_value;
+    }
 };
 
 /**
@@ -195,22 +295,22 @@ private:
     /**
      * Query weights
      */
-    Tensor<T> m_w_query;
+    std::shared_ptr<Tensor<T>> m_w_query;
 
     /**
      * Key weights
      */
-    Tensor<T> m_w_key;
+    std::shared_ptr<Tensor<T>> m_w_key;
 
     /**
      * Value weights
      */
-    Tensor<T> m_w_value;
+    std::shared_ptr<Tensor<T>> m_w_value;
 
     /**
-     * Start and stop dims for each attention head
+     * Vector of TensorSlices, containing query, key, and value for each attention head
      */
-    std::vector<std::pair<size_t, size_t>> c_heads = std::vector<std::pair<size_t, size_t>>();
+    std::vector<AttentionHead<T>> c_heads = std::vector<AttentionHead<T>>();
 
 /* Public functions */
 public:
@@ -225,8 +325,7 @@ public:
      */
     MultiHeadAttention(size_t emb_dim, size_t output_dim, size_t context_len, float dropout, size_t num_heads) :
                        c_emb_dim(emb_dim), c_output_dim(output_dim), c_dropout(dropout), c_context_len(context_len),
-                       c_num_heads(num_heads), c_head_dim(c_output_dim / c_num_heads), m_w_query({c_emb_dim, c_output_dim}),
-                       m_w_key({c_emb_dim, c_output_dim}), m_w_value({c_emb_dim, c_output_dim}) {
+                       c_num_heads(num_heads), c_head_dim(c_output_dim / c_num_heads) {
         // Ensure we get a dropout within the acceptable range
         if (dropout < 0 || dropout >= 1) {
             throw std::invalid_argument("MultiHeadAttention.MultiHeadAttention: Dropout must be >= 0, < 1.\n");
@@ -235,22 +334,26 @@ public:
         if (c_output_dim % c_num_heads != 0) {
             throw std::invalid_argument("MultiHeadAttention.MultiHeadAttention: Output dim must be divisible by number of heads.\n");
         }
+        // Initialize the query, key, and value matrices
+        m_w_query = std::make_shared<Tensor<T>>(std::initializer_list<size_t>{c_emb_dim, c_output_dim});
+        m_w_key = std::make_shared<Tensor<T>>(std::initializer_list<size_t>{c_emb_dim, c_output_dim});
+        m_w_value = std::make_shared<Tensor<T>>(std::initializer_list<size_t>{c_emb_dim, c_output_dim});
         // Initialize the three matrices with random values
-        m_w_query.random(-2, 2);
-        m_w_key.random(-2, 2);
-        m_w_value.random(-2, 2);
+        m_w_query->random(-2, 2);
+        m_w_key->random(-2, 2);
+        m_w_value->random(-2, 2);
         // Reserve space for the number of attention heads
         c_heads.reserve(c_num_heads);
         // Shard query, key, and value over the number of attention heads
         for (size_t i = 0; i < c_num_heads; ++i) {
+            // id = i
             // start_dim = i * c_head_dim
             // end_dim = (i + 1) * c_head_him
-            c_heads.emplace_back(i * c_head_dim, (i + 1) * c_head_dim);
+            c_heads.emplace_back(i, i * c_head_dim, (i + 1) * c_head_dim, m_w_query, m_w_key, m_w_value);
         }
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)
 
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     /**
      * Calculate the context for a given input
      * @param input Const ref to an input Matrix
@@ -258,25 +361,28 @@ public:
      */
     Tensor<T> forward(const Tensor<T>& input) const override {
         // Get the QKV for the given input
-        Tensor<T> queries = matmul(input, m_w_query);
-        Tensor<T> keys = matmul(input, m_w_key);
-        Tensor<T> values = matmul(input, m_w_value);
+        Tensor<T> queries = Tensor_Matmul_NS::matmul(input, *m_w_query);
+        Tensor<T> keys = Tensor_Matmul_NS::matmul(input, *m_w_key);
+        Tensor<T> values = Tensor_Matmul_NS::matmul(input, *m_w_value);
+        // Convert the QKV to std::shared_ptr without copying
+        auto q_ptr = std::make_shared<Tensor<T>>(std::move(queries));
+        auto k_ptr = std::make_shared<Tensor<T>>(std::move(keys));
+        auto v_ptr = std::make_shared<Tensor<T>>(std::move(values));
         // Create an output Tensor
         Tensor<T> output({c_head_dim, c_head_dim});
         // Create another Tensor for attn_weights @ values
         Tensor<T> context_vec({c_head_dim, input.extent(0)});
         // Create a Tensor for the final, concatenated context vector
         Tensor<T> result({input.extent(0), c_output_dim});
-        // Iterate over the Attention Heads, unpacking their start and stops
-        for (size_t head_id = 0 ; head_id < c_heads.size(); ++head_id) {
-            // Get the start and stop for the head
-            const auto [start, end] = c_heads[head_id];
-            // Create Tensor slices for QKV based on the sharding inside the AttentionHead
-            Tensor<T> q_slice = queries.slice({0, 1}, {{0, 0}, {start, end}}, {});
-            Tensor<T> k_slice = keys.slice({0, 1}, {{0, 0}, {start, end}}, {});
-            Tensor<T> v_slice = values.slice({0, 1}, {{0, 0}, {start, end}}, {});
+        // Iterate over the Attention Heads
+        for (const AttentionHead<T>& head : c_heads) {
+            // Create TensorSlices for QKV based on the sharding inside the AttentionHead
+            const MatrixSliceConfig& msc = head.slice_config();
+            RangeTensorSlice<T> q_slice(q_ptr, msc);
+            RangeTensorSlice<T> k_slice(k_ptr, msc);
+            RangeTensorSlice<T> v_slice(v_ptr, msc);
             // Calculate the attention scores, Q @ K.transpose
-            matmul(q_slice, 0, 1, k_slice, 1, 0, output);
+            Tensor_Matmul_NS::matmul(q_slice, 0, 1, k_slice, 1, 0, output);
             // Apply masking
             output.apply_mask(CausalMaskType::UPPER);
             // Divide each value by the embedding dim
@@ -286,9 +392,11 @@ public:
             // Apply dropout
             output.apply_dropout(c_dropout);
             // Calculate the context vector via attn_weights (output) @ values (v_slice)
-            matmul(output, v_slice, context_vec);
+            Tensor_Matmul_NS::matmul(output, v_slice, context_vec);
             // Transpose the context vector
             context_vec.transpose();
+            // Store the AttentionHead id to avoid repeated calls
+            size_t head_id = head.id();
             // Copy the values into the final result Tensor
             for (size_t i = 0; i < input.extent(0); ++i) {
                 // Copy the second dim from the slice
@@ -302,7 +410,6 @@ public:
         // Return the concatenated context vector
         return result;
     }
-    // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 };
 
 }; // namespace Attention_NS

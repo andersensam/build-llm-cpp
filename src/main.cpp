@@ -164,6 +164,11 @@ int main() {
         Tensor<float> mm_res = matmul(emb_tsc, 0, 1, emb_tsc, 1, 0);
         log_message(Log_Priority::INFO, "main", std::format("Slice Matrix: {}", mm_res.to_string()));
 
+        // Test the same matmul with Tensor
+        Tensor<float> emb_tsc2 = emb_ptr->slice({0, 1}, {{0, 10}, {0, 10}}, {});
+        Tensor<float> mm_res2 = matmul(emb_tsc2, 0, 1, emb_tsc2, 1, 0);
+        log_message(Log_Priority::INFO, "main", std::format("Slice Matrix (new Tensor slice): {}", mm_res2.to_string()));
+
         // Create MultiHeadAttention instance
         MultiHeadAttention<float> mha(emb_dim, emb_dim, 1024, 0.1, 8);
         // Run the forward pass
@@ -188,6 +193,13 @@ int main() {
         Tensor<float> ns = new_slice_base.slice({0, 1}, {}, {{2, 0}});
         log_message(Log_Priority::INFO, "main", "Created slice.");
         log_message(Log_Priority::INFO, "main", std::format("Original Tensor: {}. Slice: {}", new_slice_base.info(), ns.to_string()));
+
+        // Prepare a Tensor to slice with a dim filter
+        Tensor<float> new_slice_range({3, 3});
+        new_slice_range.set({0, 1, 2, 3, 4, 5, 6, 7, 8});
+        Tensor<float> nsr = new_slice_range.slice({0, 1}, {{0, 2}, {0, 2}}, {});
+        log_message(Log_Priority::INFO, "main", "Created range slice.");
+        log_message(Log_Priority::INFO, "main", std::format("Original Tensor: {}. Slice: {}", new_slice_range.to_string(), nsr.to_string()));
 
     } catch (const std::exception& e) {
 
