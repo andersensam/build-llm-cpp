@@ -1397,7 +1397,7 @@ public:
             // NOLINTNEXTLINE(bugprone-sizeof-expression)
             return *(std::max_element(_data() + c_offset, _data() + c_offset + c_elements));
         }
-        T result = std::numeric_limits<T>::min();
+        T result = std::numeric_limits<T>::lowest();
         const T* self_data = _data();
         for (size_t i = 0; i < c_elements; ++i) {
             T val = self_data[_get_offset(i)];
