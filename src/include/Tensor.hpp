@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-01
+ * @version: 2026-10-05
  *
  * General Notes:
  *
@@ -815,7 +815,9 @@ public:
             result += std::format("{}, ", d);
         }
         // Remove the trailing ", " from the last dim
-        result.erase(result.size() - 2, 2);
+        if (c_rank > 0) {
+            result.erase(result.size() - 2, 2);
+        }
         // Allocate an empty buffer to store the name
         std::array<char, TENSOR_MAX_DEMANGLED_NAME_LEN> demangled = {0};
         // Ensure we don't go past the end of the buffer
@@ -1834,14 +1836,14 @@ public:
         fill(0);
         if (mask_type == CausalMaskType::UPPER) {
             for (size_t i = 0; i < rows(); ++i) {
-                for (size_t j = i; j < cols(); ++j) {
+                for (size_t j = i + 1; j < cols(); ++j) {
                     at({i, j}) = static_cast<T>(1);
                 }
             }
         }
         else {
-            for (size_t i = 0; i < rows(); ++i) {
-                for (size_t j = 0; j <= i; ++j) {
+            for (size_t i = 1; i < rows(); ++i) {
+                for (size_t j = 0; j < i - 1; ++j) {
                     at({i, j}) = static_cast<T>(1);
                 }
             }
@@ -1853,7 +1855,7 @@ public:
      * Apply masking to a Tensor along the diagonal, zeroing out values. This operation is
      * the same as creating a mask Tensor with tri or ninf_tri and using * or *=
      * We use the apply_mask op to save the allocation associated with creating a new Tensor
-     * @param mask_type UPPER or LOWER (if UPPER, everything below diagonal is 0 and vice-verse)
+     * @param mask_type UPPER or LOWER (if UPPER, everything above diagonal is 0 and vice-verse)
      * @returns Returns a reference to this Tensor
      */
     Tensor<T>& apply_mask(const CausalMaskType mask_type) {
@@ -1869,14 +1871,14 @@ public:
         // This is the inverse op of tri and ninf_ti
         if (mask_type == CausalMaskType::UPPER) {
             for (size_t i = 0; i < rows(); ++i) {
-                for (size_t j = 0; j <= i; ++j) {
+                for (size_t j = i + 1; j < cols(); ++j) {
                     at({i, j}) = 0;
                 }
             }
         }
         else {
-            for (size_t i = 0; i < rows(); ++i) {
-                for (size_t j = i; j < cols(); ++j) {
+            for (size_t i = 1; i < rows(); ++i) {
+                for (size_t j = 0; j < i - 1; ++j) {
                     at({i, j}) = 0;
                 }
             }
@@ -1910,14 +1912,14 @@ public:
         // Apply the mask
         if (mask_type == CausalMaskType::UPPER) {
             for (size_t i = 0; i < rows(); ++i) {
-                for (size_t j = i; j < cols(); ++j) {
+                for (size_t j = i + 1; j < cols(); ++j) {
                     at({i, j}) = ninf;
                 }
             }
         }
         else {
-            for (size_t i = 0; i < rows(); ++i) {
-                for (size_t j = 0; j <= i; ++j) {
+            for (size_t i = 1; i < rows(); ++i) {
+                for (size_t j = 0; j < i - 1; ++j) {
                     at({i, j}) = ninf;
                 }
             }
@@ -1952,6 +1954,14 @@ public:
                 throw std::invalid_argument("Tensor.slice: Invalid dims provided.\n");
             }
         }
+        // Ensure dims doesn't have any duplicates
+        size_t prev_dim = dims.begin()[0];
+        for (size_t i = 1; i < dims.size(); ++i) {
+            if (dims.begin()[i] == prev_dim) {
+                throw std::invalid_argument("Tensor.slice: Duplicate dim detected.\n");
+            }
+            prev_dim = dims.begin()[i];
+        }
         // Ensure that c_rank - dims.size() = other_dims.size()
         if ((c_rank - dims.size()) != other_dims.size()) {
             throw std::invalid_argument(
@@ -1959,6 +1969,12 @@ public:
                     "Tensor.slice: Invalid other_dims provided. Expected {} but got {}.", c_rank - dims.size(), other_dims.size()
                 )
             );
+        }
+        // Ensure other_dims are valid
+        for (auto [dim, idx] : other_dims) {
+            if (dim >= c_rank) {
+                throw std::invalid_argument("Tensor.slice: Invalid other_dim specified.\n");
+            }
         }
         // Create a shallow copy of this Tensor
         Tensor<T> result = *this;
@@ -1968,10 +1984,6 @@ public:
         result.m_stride.resize(result.c_rank);
         // Handle the most simple case: no filters applied
         if (filters.size() == 0) {
-            // If we have no filters and matching rank, this is a no-op, so return a copy of this Tensor
-            if (dims.size() == c_rank) {
-                return result;
-            }
             // Reset the number of elements back to 1 and recalculate inside the loop
             result.c_elements = 1;
             // Since we have no filters, grab the extents and strides from this Tensor
@@ -1991,7 +2003,14 @@ public:
                         std::format("Tensor.slice: Invalid other dim id provided. Got {} but Tensor has rank {}.", dim_num, c_rank)
                     );
                 }
-                offset_query[dim_num] = dim_c;
+                // Ensure we don't have any duplicates in other_dims
+                size_t& offset_query_val = offset_query[dim_num];
+                if (offset_query_val != 0) {
+                    throw std::invalid_argument(
+                        std::format("Tensor.slice: Duplicate other_dim detected: {}.", dim_num)
+                    );
+                }
+                offset_query_val = dim_c;
             }
             // Calculate the offset from this Tensor and persist into the target
             result.c_offset = _get_offset(offset_query);

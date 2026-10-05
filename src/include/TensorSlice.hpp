@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-30
+ * @version: 2026-10-05
  *
  * General Notes:
  *
@@ -94,6 +94,12 @@ private:
      * regular Tensor<T> shared pointer
      */
     bool _is_writable = false;
+
+    /**
+     * Track whether or not the ListTensorSlice has been transposed. Use this to flip
+     * coordinates instead of moving around the internal data of the slice
+     */
+    bool _transposed = false;
 
     /**
      * Map of the slice axis indices to their underlying values. If, for example, we create a 1-D TensorSlice from a
@@ -298,22 +304,28 @@ private:
             if (rank() != 2) {
                 throw std::invalid_argument("ListTensorSlice._calculate_idx: Two coordinates cannot be passed to a rank 1 TensorSlice.\n");
             }
+            // If we have applied a transpose to this ListTensorSlice, flip the coordinates
+            size_t c0 = c.begin()[0];
+            size_t c1 = c.begin()[1];
+            if (_transposed) {
+                std::swap(c0, c1);
+            }
             // Determine the rank of the Tensor
             if (c_tensor_rank == 2) {
                 const auto& dim0_rules = m_other_dims.at(0);
                 // Check to see which dim is rewritten to 0
                 if (dim0_rules.rewrite_to == 0) {
                     if (!m_dim1_map.empty()) {
-                        return (tensor_stride.at(0) * m_dim0_map.at(c.begin()[0])) + m_dim1_map.at(c.begin()[1]);
+                        return (tensor_stride.at(0) * m_dim0_map.at(c0)) + m_dim1_map.at(c1);
                     }
-                    return (tensor_stride.at(0) * m_dim0_map.at(c.begin()[0])) + c.begin()[1];
+                    return (tensor_stride.at(0) * m_dim0_map.at(c0)) + c1;
                 }
                 // Otherwise flip the mapping
                 if (!m_dim1_map.empty()) {
-                    return (tensor_stride.at(0) * m_dim1_map.at(c.begin()[0])) + m_dim0_map.at(c.begin()[1]);
+                    return (tensor_stride.at(0) * m_dim1_map.at(c0)) + m_dim0_map.at(c1);
                 }
                 //return c_ptr->at({c.begin()[0], m_dim0_map.at(c.begin()[1])});
-                return (tensor_stride.at(0) * c.begin()[0]) + m_dim0_map.at(c.begin()[1]);
+                return (tensor_stride.at(0) * c0) + m_dim0_map.at(c1);
             }
             // Deal with a high-rank Tensor
             size_t target_idx = 0;
@@ -323,15 +335,15 @@ private:
                 const auto& dim_rule = m_other_dims.at(i);
                 if (dim_rule.requires_rewrite) {
                     if (dim_rule.rewrite_to == 0) {
-                        target_idx += tensor_stride.at(i) * m_dim0_map.at(c.begin()[0]);
+                        target_idx += tensor_stride.at(i) * m_dim0_map.at(c0);
                     }
                     // If not rewrite_to == 0, then must be == 1
                     else {
                         if (!m_dim1_map.empty()) {
-                            target_idx += tensor_stride.at(i) * m_dim1_map.at(c.begin()[1]);
+                            target_idx += tensor_stride.at(i) * m_dim1_map.at(c1);
                         }
                         else {
-                            target_idx += tensor_stride.at(i) * c.begin()[1];
+                            target_idx += tensor_stride.at(i) * c1;
                         }
                     }
                 }
@@ -528,8 +540,16 @@ public:
         if (dim0 >= 2 || dim1 >= 2) {
             throw std::invalid_argument("ListTensorSlice.transpose: Invalid dims provided.\n");
         }
-        // Swap the maps
-        std::swap(m_dim0_map, m_dim1_map);
+        // If we have a 1-D TensorSlice, only swap the dims and then return
+        std::swap(m_slice_dims.at(0), m_slice_dims.at(1));
+        if (_transposed) {
+            _transposed = false;
+        }
+        else {
+            _transposed = true;
+        }
+        return *this;
+        // Swap the maps if they are not blank
         // Swap the slice dims
         std::swap(m_slice_dims.at(0), m_slice_dims.at(1));
         // Swap the strides
