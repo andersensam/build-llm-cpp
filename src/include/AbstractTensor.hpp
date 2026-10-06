@@ -225,7 +225,7 @@ public:
     virtual const Storage<T>& _storage() const = 0;
 
     /**
-     * Rematerialize an AbstractTensor, guaranteeing that it is contiguous
+     *  Make an AbstractTensor contiguous
      * with a stide of 1 in the final dim
      * @returns Returns a reference to this Tensor
      */

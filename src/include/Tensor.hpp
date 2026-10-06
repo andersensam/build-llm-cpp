@@ -522,8 +522,7 @@ public:
     }
 
     /**
-     * Rematerialize a Tensor, guaranteeing that it is contiguous
-     * with a stide of 1 in the final dim
+     * Make a Tensor contiguous, with a stide of 1 in the final dim
      * @returns Returns a new contiguous Tensor
      */
     Tensor<T>& contiguous() override {
@@ -536,7 +535,7 @@ public:
         if (c_contiguous && (dim_stride(c_rank - 1) == 1)) {
             if constexpr (TENSOR_ENABLE_UNNECESSARY_CONTIGUOUS_LOGGING) {
                 log_message(Log_Priority::WARNING, "Tensor.contiguous",
-                            "Remat called on a Tensor that is already contiguous and with outer dim stride == 1.");
+                            ".contiguous() called on a Tensor that is already contiguous and with outer dim stride == 1.");
             }
             return *this;
         }

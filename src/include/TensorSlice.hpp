@@ -685,8 +685,7 @@ public:
     }
 
     /**
-     * Rematerialize a Tensor, guaranteeing that it is contiguous
-     * with a stide of 1 in the final dim
+     * Make a Tensor contiguous with a stide of 1 in the final dim
      * @returns Returns a new contiguous Tensor
      */
     Tensor<T>& contiguous() override {

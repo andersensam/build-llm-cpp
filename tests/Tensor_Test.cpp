@@ -552,7 +552,7 @@ TEST(TensorTest, UniformOpOn2DRowContiguousSlicesExercises2DStridedKernels) {
   EXPECT_EQ(int_slice.at({0, 0}), 6);
 }
 
-TEST(TensorTest, RematMakesNonContiguousSliceAndTransposeContiguousAndUnique) {
+TEST(TensorTest, ContiguousMakesNonContiguousSliceAndTransposeContiguousAndUnique) {
   Tensor<int32_t> base({3, 4});
   for (size_t i = 0; i < 12; ++i) {
     base.at(i) = static_cast<int32_t>(i + 1);

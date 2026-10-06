@@ -245,7 +245,7 @@ TEST(MatmulTest, IntegerAndFloatOverflowThrows) {
 // Corner Cases: Tensor::slice Views, Signed Min Overflow, Coordinate Validation
 // ============================================================================
 
-TEST(MatmulTest, MatmulWithNonContiguousTensorSliceViewsMatchesRemat) {
+TEST(MatmulTest, MatmulWithNonContiguousTensorSliceViewsMatchesContiguous) {
   Tensor<float> q_full({4, 6});
   Tensor<float> k_full({4, 6});
   for (size_t i = 0; i < 4; ++i) {
