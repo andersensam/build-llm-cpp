@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-01
+ * @version: 2026-10-05
  *
  * General Notes:
  *
@@ -138,12 +138,21 @@ public:
         // Transpose keys for calculating attention scores
         keys.transpose();
         Tensor<T> attn_scores = matmul(queries, keys);
-        // Apply masking to the attention scores
-        attn_scores.apply_mask(CausalMaskType::UPPER);
-        // Apply scaling
-        attn_scores /= static_cast<T>(std::sqrt(c_emb_dim));
-        // Apply softmax
-        attn_scores.softmax(0);
+        // Handle masking, softmax, etc. if we are using a float dtype
+        if constexpr (std::is_floating_point_v<T>) {
+            // Apply masking
+            attn_scores.ninf_tri(CausalMaskType::UPPER);
+            // Divide each value by the embedding dim, using unsafe_uniform_op to still vectorize
+            // without checking for INF of NaN
+            Tensor_NS::unsafe_uniform_op(attn_scores, std::sqrtf(static_cast<T>(c_emb_dim)), attn_scores, Tensor_NS::SqueezedOpType::DIV);
+            // Apply softmax on dim 0
+            attn_scores.softmax(0);
+        }
+        else {
+            // Apply masking
+            attn_scores.apply_mask(CausalMaskType::UPPER);
+            // TODO: Implement non-floating point activation function
+        }
         // Apply dropout if enabled
         if (c_dropout > 0) {
             attn_scores.apply_dropout(c_dropout);
@@ -277,12 +286,21 @@ public:
             Tensor<T> v_slice = values.slice({0, 1}, {{0, 0}, {start, end}}, {});
             // Calculate the attention scores, Q @ K.transpose
             matmul(q_slice, 0, 1, k_slice, 1, 0, output);
-            // Apply masking
-            output.apply_mask(CausalMaskType::UPPER);
-            // Divide each value by the embedding dim
-            output /= std::sqrtf(static_cast<T>(c_emb_dim));
-            // Apply softmax on dim 0
-            output.softmax(0);
+            // Handle masking, softmax, etc. if we are using a float dtype
+            if constexpr (std::is_floating_point_v<T>) {
+                // Apply masking
+                output.ninf_tri(CausalMaskType::UPPER);
+                // Divide each value by the embedding dim, using unsafe_uniform_op to still vectorize
+                // without checking for INF of NaN
+                Tensor_NS::unsafe_uniform_op(output, std::sqrtf(static_cast<T>(c_emb_dim)), output, Tensor_NS::SqueezedOpType::DIV);
+                // Apply softmax on dim 0
+                output.softmax(0);
+            }
+            else {
+                // Apply masking
+                output.apply_mask(CausalMaskType::UPPER);
+                // TODO: Implement non-floating point activation function
+            }
             // Apply dropout
             output.apply_dropout(c_dropout);
             // Calculate the context vector via attn_weights (output) @ values (v_slice)

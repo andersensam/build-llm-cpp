@@ -2418,6 +2418,890 @@ inline void _safe_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset,
 }
 // NOLINTEND(bugprone-easily-swappable-parameters, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
+/* The following function do NOT check for INF for NaN and should only be used where these checks are not desired (ninf_tri, for example) */
+
+// NOLINTBEGIN(bugprone-easily-swappable-parameters, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Add the contents of two Tensors together, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param rhs_dim0_stride Stride of the rhs outer dim
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: This version of add should only be used when we are sure that lhs_ptr, rhs_ptr, and
+ * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
+ * This method should be used when we are adding two TensorSlices with variable strides.
+ */
+inline void _unsafe_float_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                     const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                     size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        const size_t rhs_row = rhs_offset + (rhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] + rhs_ptr[rhs_row + j];
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Add a scalar value to each element in a Tensor, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs Scalar value to add to each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: This version of add should only be used when we are sure that lhs_ptr and result_ptr
+ * absolutely do NOT overlap. Inner dim stride must equal 1.
+ * This method should be used when adding a scalar to a TensorSlice with variable strides.
+ */
+inline void _unsafe_float_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                     const T rhs,
+                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                     size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] + rhs;
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Add the contents of two Tensors together, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param rhs_dim0_stride Stride of the rhs outer dim
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
+ * Memory blocks may overlap safely.
+ */
+inline void _unsafe_float_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                   const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                   size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        const size_t rhs_row = rhs_offset + (rhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] + rhs_ptr[rhs_row + j];
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Add a scalar value to each element in a Tensor, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs Scalar value to add to each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
+ * Memory blocks may overlap safely.
+ */
+inline void _unsafe_float_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                   const T rhs,
+                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                   size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] + rhs;
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Add the contents of two 1D Tensors together, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous. Also note that this version
+ * of add should only be used when we are sure that lhs_ptr, rhs_ptr, and result_ptr
+ * absolutely do NOT overlap.
+ */
+inline void _unsafe_float_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                                  const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        // When we have fully contiguous blocks of memory, traverse linearly with a single loop
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs_ptr[rhs_offset + i];
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Add a scalar value to a 1D Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs Value to add to each index
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous. This version
+ * should only be used when lhs_ptr and result_ptr do NOT overlap.
+ */
+inline void _unsafe_float_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                                  const T rhs,
+                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs;
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Add the contents of two 1D Tensors together, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous.
+ */
+inline void _unsafe_float_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                                const T* rhs_ptr, size_t rhs_offset,
+                                                T* result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs_ptr[rhs_offset + i];
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Add a scalar value to a 1D Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs Value to add to each index
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous.
+ */
+inline void _unsafe_float_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                                const T rhs,
+                                                T* result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs;
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Subtract the contents of two Tensors, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param rhs_dim0_stride Stride of the rhs outer dim
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: This version of sub should only be used when we are sure that lhs_ptr, rhs_ptr, and
+ * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
+ * This method should be used when we are subtracting two TensorSlices with variable strides.
+ */
+inline void _unsafe_float_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                     const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                     size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        const size_t rhs_row = rhs_offset + (rhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] - rhs_ptr[rhs_row + j];
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Subtract a scalar value from each element in a Tensor, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs Scalar value to subtract from each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: This version of sub should only be used when we are sure that lhs_ptr and result_ptr
+ * absolutely do NOT overlap. Inner dim stride must equal 1.
+ * This method should be used when subtracting a scalar from a TensorSlice with variable strides.
+ */
+inline void _unsafe_float_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                     const T rhs,
+                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                     size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] - rhs;
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Subtract the contents of two Tensors, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param rhs_dim0_stride Stride of the rhs outer dim
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
+ * Memory blocks may overlap safely.
+ */
+inline void _unsafe_float_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                   const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                   size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        const size_t rhs_row = rhs_offset + (rhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] - rhs_ptr[rhs_row + j];
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Subtract a scalar value from each element in a Tensor, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs Scalar value to subtract from each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
+ * Memory blocks may overlap safely.
+ */
+inline void _unsafe_float_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                   const T rhs,
+                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                   size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] - rhs;
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Subtract the contents of two 1D Tensors, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous. Also note that this version
+ * of sub should only be used when we are sure that lhs_ptr, rhs_ptr, and result_ptr
+ * absolutely do NOT overlap.
+ */
+inline void _unsafe_float_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                                  const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs_ptr[rhs_offset + i];
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Subtract a scalar value from a 1D Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs Scalar value to subtract from each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous. This version
+ * should only be used when lhs_ptr and result_ptr do NOT overlap.
+ */
+inline void _unsafe_float_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                                  const T rhs,
+                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs;
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Subtract the contents of two 1D Tensors, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous.
+ */
+inline void _unsafe_float_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                                const T* rhs_ptr, size_t rhs_offset,
+                                                T* result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs_ptr[rhs_offset + i];
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Subtract a scalar value from a 1D Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs Scalar value to subtract from each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous.
+ */
+inline void _unsafe_float_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                                const T rhs,
+                                                T* result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs;
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Multiply the contents of two Tensors together, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param rhs_dim0_stride Stride of the rhs outer dim
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: This version of mul should only be used when we are sure that lhs_ptr, rhs_ptr, and
+ * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
+ * This method should be used when we are multiplying two TensorSlices with variable strides.
+ */
+inline void _unsafe_float_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                     const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                     size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        const size_t rhs_row = rhs_offset + (rhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] * rhs_ptr[rhs_row + j];
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Multiply each element in a Tensor by a scalar value, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs Scalar value to multiply with each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: This version of mul should only be used when we are sure that lhs_ptr and result_ptr
+ * absolutely do NOT overlap. Inner dim stride must equal 1.
+ * This method should be used when multiplying a TensorSlice by a scalar value with variable strides.
+ */
+inline void _unsafe_float_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                     const T rhs,
+                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                     size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] * rhs;
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Multiply the contents of two Tensors together, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param rhs_dim0_stride Stride of the rhs outer dim
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
+ * Memory blocks may overlap safely.
+ */
+inline void _unsafe_float_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                   const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                   size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        const size_t rhs_row = rhs_offset + (rhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] * rhs_ptr[rhs_row + j];
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Multiply each element in a Tensor by a scalar value, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs Scalar value to multiply with each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
+ * Memory blocks may overlap safely.
+ */
+inline void _unsafe_float_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                   const T rhs,
+                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                   size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] * rhs;
+        }
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Multiply the contents of two 1D Tensors together, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous. Also note that this version
+ * of mul should only be used when we are sure that lhs_ptr, rhs_ptr, and result_ptr
+ * absolutely do NOT overlap.
+ */
+inline void _unsafe_float_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                                  const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs_ptr[rhs_offset + i];
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Multiply each element in a 1D Tensor by a scalar value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs Scalar value to multiply with each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous. This version
+ * should only be used when lhs_ptr and result_ptr do NOT overlap.
+ */
+inline void _unsafe_float_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                                  const T rhs,
+                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs;
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Multiply the contents of two 1D Tensors together, storing in the data block of another Tensor
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous.
+ */
+inline void _unsafe_float_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                                const T* rhs_ptr, size_t rhs_offset,
+                                                T* result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs_ptr[rhs_offset + i];
+    }
+}
+
+template <typename T>
+requires std::is_floating_point_v<T>
+/**
+ * Multiply each element in a 1D Tensor by a scalar value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param rhs Scalar value to multiply with each value in lhs
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
+ * if we are using a TensorSlice, that its memory is contiguous.
+ */
+inline void _unsafe_float_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                                const T rhs,
+                                                T* result_ptr, size_t result_offset, size_t elements) {
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs;
+    }
+}
+
+/**
+ * Divide the contents of two 2D Tensors element-wise, storing in the data block of another Tensor.
+ * @param lhs_ptr Pointer to raw data underlying the numerator Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the numerator Tensor
+ * @param lhs_dim0_stride Stride of the numerator outer dim
+ * @param rhs_ptr Pointer to raw data underlying the denominator Tensor
+ * @param rhs_offset Offset to the beginning of the data block for the denominator Tensor
+ * @param rhs_dim0_stride Stride of the denominator outer dim
+ * @param result_ptr Pointer to raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block for the result Tensor
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: This version of div should only be used when we are sure that lhs_ptr, rhs_ptr, and
+ * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+inline void _unsafe_float_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                     const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                     size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        const size_t rhs_row = rhs_offset + (rhs_dim0_stride * i);
+
+        if (std::any_of(rhs_ptr + rhs_row, rhs_ptr + rhs_row + dim1_extent, [](T val) { return val == 0; })) {
+            throw std::runtime_error("TensorMath::_unsafe_float_2d_tensor_div_contiguous_v: Divide by zero detected.\n");
+        }
+
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] / rhs_ptr[rhs_row + j];
+        }
+    }
+}
+
+/**
+ * Divide a 2D Tensor element-wise by a scalar value, storing in the data block of another Tensor.
+ * @param lhs_ptr Pointer to raw data underlying the numerator Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the numerator Tensor
+ * @param lhs_dim0_stride Stride of the numerator outer dim
+ * @param rhs Scalar denominator value to divide each element in lhs by
+ * @param result_ptr Pointer to raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block for the result Tensor
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for both Tensors
+ * @param dim1_extent Inner dim size for both Tensors
+ * NOTE: This version of div should only be used when we are sure that lhs_ptr and
+ * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+inline void _unsafe_float_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                     const T rhs,
+                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                     size_t dim0_extent, size_t dim1_extent) {
+    if (rhs == 0) {
+        throw std::runtime_error("TensorMath::_unsafe_float_2d_tensor_div_contiguous_v: Divide by zero detected.\n");
+    }
+
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] / rhs;
+        }
+    }
+}
+
+/**
+ * Divide the contents of two 2D Tensors element-wise, storing in the data block of another Tensor.
+ * @param lhs_ptr Pointer to raw data underlying the numerator Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the numerator Tensor
+ * @param lhs_dim0_stride Stride of the numerator outer dim
+ * @param rhs_ptr Pointer to raw data underlying the denominator Tensor
+ * @param rhs_offset Offset to the beginning of the data block for the denominator Tensor
+ * @param rhs_dim0_stride Stride of the denominator outer dim
+ * @param result_ptr Pointer to raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block for the result Tensor
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for all three Tensors
+ * @param dim1_extent Inner dim size for all three Tensors
+ * NOTE: Inner dim stride must equal 1. Memory blocks may overlap safely.
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+inline void _unsafe_float_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                   const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                   size_t dim0_extent, size_t dim1_extent) {
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+        const size_t rhs_row = rhs_offset + (rhs_dim0_stride * i);
+
+        if (std::any_of(rhs_ptr + rhs_row, rhs_ptr + rhs_row + dim1_extent, [](T val) { return val == 0; })) {
+            throw std::runtime_error("TensorMath::_unsafe_float_2d_tensor_div_contiguous: Divide by zero detected.\n");
+        }
+
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] / rhs_ptr[rhs_row + j];
+        }
+    }
+}
+
+/**
+ * Divide a 2D Tensor element-wise by a scalar value, storing in the data block of another Tensor.
+ * @param lhs_ptr Pointer to raw data underlying the numerator Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the numerator Tensor
+ * @param lhs_dim0_stride Stride of the numerator outer dim
+ * @param rhs Scalar denominator value to divide each element in lhs by
+ * @param result_ptr Pointer to raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block for the result Tensor
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Outer dim size for both Tensors
+ * @param dim1_extent Inner dim size for both Tensors
+ * NOTE: Inner dim stride must equal 1. Memory blocks may overlap safely.
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+inline void _unsafe_float_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                                   const T rhs,
+                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                                   size_t dim0_extent, size_t dim1_extent) {
+    if (rhs == 0) {
+        throw std::runtime_error("TensorMath::_unsafe_float_2d_tensor_div_contiguous: Divide by zero detected.\n");
+    }
+
+    for (size_t i = 0; i < dim0_extent; ++i) {
+        const size_t result_row = result_offset + (result_dim0_stride * i);
+        const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+
+        for (size_t j = 0; j < dim1_extent; ++j) {
+            result_ptr[result_row + j] = lhs_ptr[lhs_row + j] / rhs;
+        }
+    }
+}
+
+/**
+ * Divide the contents of two 1D Tensors element-wise, storing in the data block of another Tensor.
+ * @param lhs_ptr Pointer to raw data underlying the numerator Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the numerator Tensor
+ * @param rhs_ptr Pointer to raw data underlying the denominator Tensor
+ * @param rhs_offset Offset to the beginning of the data block for the denominator Tensor
+ * @param result_ptr Pointer to raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block for the result Tensor
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks. This version of div should
+ * only be used when lhs_ptr, rhs_ptr, and result_ptr absolutely do NOT overlap.
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+inline void _unsafe_float_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                                  const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+    if (std::any_of(rhs_ptr + rhs_offset, rhs_ptr + rhs_offset + elements, [](T val) { return val == 0; })) {
+        throw std::runtime_error("TensorMath::_unsafe_float_tensor_div_contiguous_v: Divide by zero detected.\n");
+    }
+
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] / rhs_ptr[rhs_offset + i];
+    }
+}
+
+/**
+ * Divide a 1D Tensor element-wise by a scalar value, storing in the data block of another Tensor.
+ * @param lhs_ptr Pointer to raw data underlying the numerator Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the numerator Tensor
+ * @param rhs Scalar denominator value to divide each element in lhs by
+ * @param result_ptr Pointer to raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block for the result Tensor
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks. This version of div should
+ * only be used when lhs_ptr and result_ptr absolutely do NOT overlap.
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+inline void _unsafe_float_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                                  const T rhs,
+                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+    if (rhs == 0) {
+        throw std::runtime_error("TensorMath::_unsafe_float_tensor_div_contiguous_v: Divide by zero detected.\n");
+    }
+
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] / rhs;
+    }
+}
+
+/**
+ * Divide the contents of two 1D Tensors element-wise, storing in the data block of another Tensor.
+ * @param lhs_ptr Pointer to raw data underlying the numerator Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the numerator Tensor
+ * @param rhs_ptr Pointer to raw data underlying the denominator Tensor
+ * @param rhs_offset Offset to the beginning of the data block for the denominator Tensor
+ * @param result_ptr Pointer to raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block for the result Tensor
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks. Memory blocks may overlap safely.
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+inline void _unsafe_float_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                                const T* rhs_ptr, size_t rhs_offset,
+                                                T* result_ptr, size_t result_offset, size_t elements) {
+    if (std::any_of(rhs_ptr + rhs_offset, rhs_ptr + rhs_offset + elements, [](T val) { return val == 0; })) {
+        throw std::runtime_error("TensorMath::_unsafe_float_tensor_div_contiguous: Divide by zero detected.\n");
+    }
+
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] / rhs_ptr[rhs_offset + i];
+    }
+}
+
+/**
+ * Divide a 1D Tensor element-wise by a scalar value, storing in the data block of another Tensor.
+ * @param lhs_ptr Pointer to raw data underlying the numerator Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the numerator Tensor
+ * @param rhs Scalar denominator value to divide each element in lhs by
+ * @param result_ptr Pointer to raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block for the result Tensor
+ * @param elements Number of elements to traverse
+ * NOTE: This can only be used with contiguous memory blocks. Memory blocks may overlap safely.
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+inline void _unsafe_float_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                                const T rhs,
+                                                T* result_ptr, size_t result_offset, size_t elements) {
+    if (rhs == 0) {
+        throw std::runtime_error("TensorMath::_unsafe_float_tensor_div_contiguous: Divide by zero detected.\n");
+    }
+
+    for (size_t i = 0; i < elements; ++i) {
+        result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] / rhs;
+    }
+}
+// NOLINTEND(bugprone-easily-swappable-parameters, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+
 }; // namespace TensorMath_NS
 
 #endif

@@ -322,10 +322,10 @@ private:
                 }
                 // Otherwise flip the mapping
                 if (!m_dim1_map.empty()) {
-                    return (tensor_stride.at(0) * m_dim1_map.at(c0)) + m_dim0_map.at(c1);
+                    return (tensor_stride.at(0) * m_dim1_map.at(c1)) + m_dim0_map.at(c0);
                 }
                 //return c_ptr->at({c.begin()[0], m_dim0_map.at(c.begin()[1])});
-                return (tensor_stride.at(0) * c0) + m_dim0_map.at(c1);
+                return (tensor_stride.at(0) * c1) + m_dim0_map.at(c0);
             }
             // Deal with a high-rank Tensor
             size_t target_idx = 0;
@@ -401,6 +401,7 @@ public:
         return m_stride;
     }
 
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     /**
      * Get the extent of a specified dim
      * @param dim Dimension to query
@@ -411,8 +412,12 @@ public:
         if (dim >= 2) {
             throw std::invalid_argument("ListTensorSlice.extent: Invalid dim provided.\n");
         }
+        if (rank() == 1) {
+            return m_slice_dims[0] > 1 ? m_slice_dims[0] : m_slice_dims[1];
+        }
         return m_slice_dims.at(dim);
     }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
     /**
      * Get the total number of elements in the TensorSlice

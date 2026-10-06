@@ -343,7 +343,7 @@ TEST(TensorTest, TriangularAndCausalMasks) {
   upper.tri(CausalMaskType::UPPER);
   for (size_t i = 0; i < 3; ++i) {
     for (size_t j = 0; j < 3; ++j) {
-      if (j >= i) {
+      if (j > i) {
         EXPECT_FLOAT_EQ(upper.at({i, j}), 1.0f);
       } else {
         EXPECT_FLOAT_EQ(upper.at({i, j}), 0.0f);
@@ -355,7 +355,7 @@ TEST(TensorTest, TriangularAndCausalMasks) {
   lower.tri(CausalMaskType::LOWER);
   for (size_t i = 0; i < 3; ++i) {
     for (size_t j = 0; j < 3; ++j) {
-      if (j <= i) {
+      if (j < i) {
         EXPECT_FLOAT_EQ(lower.at({i, j}), 1.0f);
       } else {
         EXPECT_FLOAT_EQ(lower.at({i, j}), 0.0f);
@@ -368,7 +368,7 @@ TEST(TensorTest, TriangularAndCausalMasks) {
   ninf.ninf_tri(CausalMaskType::UPPER);
   for (size_t i = 0; i < 3; ++i) {
     for (size_t j = 0; j < 3; ++j) {
-      if (j >= i) {
+      if (j > i) {
         EXPECT_TRUE(std::isinf(ninf.at({i, j})) && ninf.at({i, j}) < 0);
       } else {
         EXPECT_FLOAT_EQ(ninf.at({i, j}), 1.0f);
