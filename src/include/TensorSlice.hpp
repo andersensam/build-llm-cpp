@@ -324,7 +324,6 @@ private:
                 if (!m_dim1_map.empty()) {
                     return (tensor_stride.at(0) * m_dim1_map.at(c1)) + m_dim0_map.at(c0);
                 }
-                //return c_ptr->at({c.begin()[0], m_dim0_map.at(c.begin()[1])});
                 return (tensor_stride.at(0) * c1) + m_dim0_map.at(c0);
             }
             // Deal with a high-rank Tensor
@@ -542,7 +541,7 @@ public:
             throw std::logic_error("ListTensorSlice.transpose: Transpose cannot be called on a 1-D TensorSlice.\n");
         }
         // Ensure dim0 and dim1 are valid
-        if (dim0 >= 2 || dim1 >= 2) {
+        if (dim0 >= 2 || dim1 >= 2 || dim0 == dim1) {
             throw std::invalid_argument("ListTensorSlice.transpose: Invalid dims provided.\n");
         }
         // If we have a 1-D TensorSlice, only swap the dims and then return
@@ -552,24 +551,6 @@ public:
         }
         else {
             _transposed = true;
-        }
-        return *this;
-        // Swap the maps if they are not blank
-        // Swap the slice dims
-        std::swap(m_slice_dims.at(0), m_slice_dims.at(1));
-        // Swap the strides
-        std::swap(m_stride.at(0), m_stride.at(1));
-        // Iterate over the DimInfo objects and rewrite the mappings
-        for (size_t i = 0; i < c_tensor_rank; ++i) {
-            DimInfo& d = m_other_dims.at(i);
-            if (d.requires_rewrite) {
-                if (d.rewrite_to == 0) {
-                    d.rewrite_to = 1;
-                }
-                else {
-                    d.rewrite_to = 0;
-                }
-            }
         }
         return *this;
     }

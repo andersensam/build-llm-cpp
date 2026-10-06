@@ -144,7 +144,7 @@ public:
             attn_scores.ninf_tri(CausalMaskType::UPPER);
             // Divide each value by the embedding dim, using unsafe_uniform_op to still vectorize
             // without checking for INF of NaN
-            Tensor_NS::unsafe_uniform_op(attn_scores, std::sqrtf(static_cast<T>(c_emb_dim)), attn_scores, Tensor_NS::SqueezedOpType::DIV);
+            Tensor_NS::unsafe_uniform_op(attn_scores, std::sqrtf(static_cast<T>(c_output_dim)), attn_scores, Tensor_NS::SqueezedOpType::DIV);
             // Apply softmax on dim 0
             attn_scores.softmax(0);
         }
@@ -292,7 +292,7 @@ public:
                 output.ninf_tri(CausalMaskType::UPPER);
                 // Divide each value by the embedding dim, using unsafe_uniform_op to still vectorize
                 // without checking for INF of NaN
-                Tensor_NS::unsafe_uniform_op(output, std::sqrtf(static_cast<T>(c_emb_dim)), output, Tensor_NS::SqueezedOpType::DIV);
+                Tensor_NS::unsafe_uniform_op(output, std::sqrtf(static_cast<T>(c_head_dim)), output, Tensor_NS::SqueezedOpType::DIV);
                 // Apply softmax on dim 0
                 output.softmax(0);
             }
@@ -302,7 +302,9 @@ public:
                 // TODO: Implement non-floating point activation function
             }
             // Apply dropout
-            output.apply_dropout(c_dropout);
+            if (c_dropout > 0) {
+                output.apply_dropout(c_dropout);
+            }
             // Calculate the context vector via attn_weights (output) @ values (v_slice)
             matmul(output, v_slice, context_vec);
             // Copy the values into the final result Tensor
