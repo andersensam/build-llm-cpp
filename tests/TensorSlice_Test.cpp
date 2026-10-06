@@ -18,7 +18,6 @@ using SliceConfig_NS::VectorSliceConfig;
 using SliceConfig_NS::VectorSliceOrientation;
 using Tensor_NS::Tensor;
 using TensorSlice_NS::ListTensorSlice;
-using TensorSlice_NS::RangeTensorSlice;
 
 // ============================================================================
 // SliceConfig Validation
@@ -57,57 +56,6 @@ TEST(SliceTest, SliceConfigValidation) {
     MatrixSliceConfig(0, IndexType::RANGE, {1, 2}, 1, {}, {}),
     std::invalid_argument
   );
-}
-
-// ============================================================================
-// RangeTensorSlice Tests
-// ============================================================================
-
-TEST(SliceTest, RangeTensorSliceReadWriteAndMaterialize) {
-  auto base = std::make_shared<Tensor<int32_t>>(std::initializer_list<size_t>{4, 4});
-  for (size_t i = 0; i < 4; ++i) {
-    for (size_t j = 0; j < 4; ++j) {
-      base->at({i, j}) = static_cast<int32_t>(i * 10 + j);
-    }
-  }
-
-  // Slice rows [1, 3) and cols [1, 4) -> 2x3 submatrix
-  MatrixSliceConfig msc(0, IndexType::RANGE, {1, 3}, 1, {1, 4}, {});
-  RangeTensorSlice<int32_t> slice(base, msc);
-
-  EXPECT_EQ(slice.rank(), 2U);
-  EXPECT_EQ(slice.shape(), std::vector<size_t>({2, 3}));
-  EXPECT_EQ(slice.elements(), 6U);
-  // RangeTensorSlice is non-contiguous (validates commit bd3dd51 fix)
-  EXPECT_FALSE(slice.contiguous());
-
-  EXPECT_EQ(slice.at({0, 0}), 11);
-  EXPECT_EQ(slice.at({0, 2}), 13);
-  EXPECT_EQ(slice.at({1, 0}), 21);
-  EXPECT_EQ(slice.at({1, 2}), 23);
-
-  // Mutate through slice and verify underlying Tensor is updated
-  slice.at({0, 1}) = 999;
-  EXPECT_EQ(base->at({1, 2}), 999);
-
-  // Materialize to standalone contiguous Tensor
-  Tensor<int32_t> mat = slice.to_tensor();
-  EXPECT_EQ(mat.shape(), std::vector<size_t>({2, 3}));
-  EXPECT_TRUE(mat.contiguous());
-  EXPECT_EQ(mat.at({0, 1}), 999);
-  EXPECT_EQ(mat.at({1, 2}), 23);
-}
-
-TEST(SliceTest, ConstRangeTensorSliceDisallowsWrite) {
-  auto base = std::make_shared<Tensor<int32_t>>(std::initializer_list<size_t>{3, 3});
-  base->fill(7);
-  std::shared_ptr<const Tensor<int32_t>> const_base = base;
-
-  MatrixSliceConfig msc(0, IndexType::RANGE, {0, 2}, 1, {}, {});
-  RangeTensorSlice<int32_t> const_slice(const_base, msc);
-
-  EXPECT_EQ(std::as_const(const_slice).at({0, 0}), 7);
-  EXPECT_THROW(const_slice.at({0, 0}) = 42, std::runtime_error);
 }
 
 // ============================================================================
@@ -153,40 +101,6 @@ TEST(SliceTest, ListTensorSlice1DVectorAnd2DGather) {
 // Corner Cases: Transpose, 3D Slices, AbstractTensor copy_from, Axis Ordering
 // ============================================================================
 
-TEST(SliceTest, RangeTensorSliceTranspose2DAnd3D) {
-  auto base2d = std::make_shared<Tensor<int32_t>>(std::initializer_list<size_t>{4, 5});
-  for (size_t i = 0; i < 4; ++i) {
-    for (size_t j = 0; j < 5; ++j) {
-      base2d->at({i, j}) = static_cast<int32_t>(i * 10 + j);
-    }
-  }
-
-  MatrixSliceConfig msc(0, IndexType::RANGE, {1, 3}, 1, {1, 4}, {});
-  RangeTensorSlice<int32_t> r_slice(base2d, msc);
-  EXPECT_EQ(r_slice.shape(), std::vector<size_t>({2, 3}));
-  r_slice.transpose(0, 1);
-  EXPECT_EQ(r_slice.shape(), std::vector<size_t>({3, 2}));
-  EXPECT_EQ(r_slice.at({0, 0}), 11);
-  EXPECT_EQ(r_slice.at({0, 1}), 21);
-  EXPECT_EQ(r_slice.at({2, 0}), 13);
-  EXPECT_EQ(r_slice.at({2, 1}), 23);
-
-  // 3D RangeTensorSlice on batch 1
-  auto base3d = std::make_shared<Tensor<int32_t>>(std::initializer_list<size_t>{2, 4, 3});
-  for (size_t b = 0; b < 2; ++b) {
-    for (size_t r = 0; r < 4; ++r) {
-      for (size_t c = 0; c < 3; ++c) {
-        base3d->at({b, r, c}) = static_cast<int32_t>(b * 100 + r * 10 + c);
-      }
-    }
-  }
-  MatrixSliceConfig msc3d(1, IndexType::RANGE, {1, 3}, 2, {}, {{0, 1}});
-  RangeTensorSlice<int32_t> r_slice3d(base3d, msc3d);
-  EXPECT_EQ(r_slice3d.shape(), std::vector<size_t>({2, 3}));
-  EXPECT_EQ(r_slice3d.at({0, 0}), 110);
-  EXPECT_EQ(r_slice3d.at({1, 2}), 122);
-}
-
 TEST(SliceTest, ListTensorSlice3DWithOtherDims) {
   auto base3d = std::make_shared<Tensor<int32_t>>(std::initializer_list<size_t>{2, 5, 3});
   for (size_t b = 0; b < 2; ++b) {
@@ -212,13 +126,6 @@ TEST(SliceTest, TensorCopyFrom2DRangeAndListTensorSlices) {
       base->at({i, j}) = static_cast<int32_t>((i + 1) * 10 + j);
     }
   }
-
-  MatrixSliceConfig r_cfg(0, IndexType::RANGE, {1, 3}, 1, {}, {});
-  RangeTensorSlice<int32_t> r_slice(base, r_cfg);
-  Tensor<int32_t> dest_r({2, 3});
-  dest_r.copy_from(static_cast<const Tensor_NS::AbstractTensor<int32_t>&>(r_slice));
-  EXPECT_EQ(dest_r.at({0, 0}), 20);
-  EXPECT_EQ(dest_r.at({1, 2}), 32);
 
   MatrixSliceConfig l_cfg(0, IndexType::LIST, {3, 0}, 1, {}, {});
   ListTensorSlice<int32_t> l_slice(base, l_cfg);

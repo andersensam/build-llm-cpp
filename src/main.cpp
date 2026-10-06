@@ -50,7 +50,6 @@ int main() {
     using TensorSlice_NS::VectorSliceOrientation;
     using TensorSlice_NS::IndexType;
     using TensorSlice_NS::ListTensorSlice;
-    using TensorSlice_NS::RangeTensorSlice;
 
     using DataLoader_NS::DataLoader;
 
@@ -157,13 +156,6 @@ int main() {
         CausalAttention<float> head(emb_dim, emb_dim, 0.1);
         Tensor<float> ca_result = head.forward(query_result);
 
-        // Test matmul with TensorSlice
-        MatrixSliceConfig emb_msc(0, IndexType::RANGE, std::vector<size_t>{0, 10}, 1, {0, 10}, {});
-        RangeTensorSlice<float> emb_tsc(emb_ptr, emb_msc);
-        //Tensor<float> mm_res = emb_tsc.matmul_self(true);
-        Tensor<float> mm_res = matmul(emb_tsc, 0, 1, emb_tsc, 1, 0);
-        log_message(Log_Priority::INFO, "main", std::format("Slice Matrix: {}", mm_res.to_string()));
-
         // Test the same matmul with Tensor
         Tensor<float> emb_tsc2 = emb_ptr->slice({0, 1}, {{0, 10}, {0, 10}}, {});
         Tensor<float> mm_res2 = matmul(emb_tsc2, 0, 1, emb_tsc2, 1, 0);
@@ -179,13 +171,8 @@ int main() {
         ListTensorSlice<float> qq(emb_ptr, query_vsc);
         log_message(Log_Priority::INFO, "main", std::format("ListTensorSlice: {}", qq.info()));
 
-        // Create a new Tensor and copy the contents from emb_tsc
-        Tensor<float> emb_converted(emb_tsc.shape());
-        emb_converted.copy_from(emb_tsc);
-        log_message(Log_Priority::INFO, "main", std::format("Converted RangeTensorSlice: {}", emb_converted.to_string()));
-
         // Test calling remat on an already contiguous Tensor, which should throw a warning
-        emb_converted.remat();
+        mm_res2.remat();
 
         // Prepare a new Tensor to slice
         Tensor<float> new_slice_base({2, 2, 2});

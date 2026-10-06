@@ -19,7 +19,6 @@ using SliceConfig_NS::MatrixSliceConfig;
 using Tensor_Matmul_NS::matmul;
 using Tensor_NS::Tensor;
 using TensorSlice_NS::ListTensorSlice;
-using TensorSlice_NS::RangeTensorSlice;
 
 // ============================================================================
 // Basic 2D Matrix Multiplication Across Numeric Types
@@ -161,7 +160,7 @@ TEST(MatmulTest, MatmulWith3DBatchCoordinateSlice) {
 }
 
 // ============================================================================
-// Matmul with RangeTensorSlice and ListTensorSlice
+// Matmul with a Tensor slice and ListTensorSlice
 // ============================================================================
 
 TEST(MatmulTest, MatmulWithRangeAndListTensorSlices) {
@@ -174,8 +173,7 @@ TEST(MatmulTest, MatmulWithRangeAndListTensorSlices) {
   // Range slice: rows [1, 3) -> 2x3 matrix:
   // [0, 3, 1]
   // [2, 1, 0]
-  MatrixSliceConfig r_cfg(0, IndexType::RANGE, {1, 3}, 1, {}, {});
-  RangeTensorSlice<float> r_slice(base, r_cfg);
+  Tensor<float> r_slice = base->slice({0, 1}, {{1, 3}, {0, 0}}, {});
 
   // List slice: rows {0, 3} -> 2x3 matrix:
   // [1, 0, 2]

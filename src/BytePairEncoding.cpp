@@ -531,13 +531,11 @@ std::vector<uint32_t> BytePairEncoding_NS::create_tokens(const std::vector<std::
     for ( ; ; ) {
         // Create a map, tracking packed uint32_t and frequency, plus locations
         std::unordered_map<uint32_t, BytePositionInfo> token_occurrences;
-        // Also track the frequency of the packed uint32_t
-        std::unordered_map<uint32_t, size_t> token_frequency;
         // Create a reusuable span for viewing the contents of the vector
         std::span<const uint32_t> uv_span{uv};
         // Start at the beginning of the vector but end one element early as we can't
         // merge something past the end of the vector
-        for (size_t i = 0; i < uv.size() - 1; ++i) {
+        for (size_t i = 0; i + 1 < uv.size() - 1; ++i) {
             // Merge together eligible bytes / byte sequences
             // Check that a particular uint32_t isn't already full
             size_t pos_0_bytes = get_num_packed_bytes(uv.at(i));
@@ -554,15 +552,14 @@ std::vector<uint32_t> BytePairEncoding_NS::create_tokens(const std::vector<std::
                 // and create the BytePositionInfo object
                 if (token_occurrences.count(packed) == 0) {
                     token_occurrences.try_emplace(packed, packed, i, i + 1);
-                    // Also create a key in token_frequency and set to 1
-                    token_frequency[packed] = 1;
                 }
                 else {
                     auto& bpi = token_occurrences.at(packed);
-                    // Add the current position to the list inside of BytePositionInfo
-                    bpi.add_position(i, i + 1);
-                    // Increment the number of occurences
-                    token_frequency[packed] += 1;
+                    // Only track non-overlapping instances of the same token
+                    if (bpi.get_positions().back().second < 1) {
+                        // Add the current position to the list inside of BytePositionInfo
+                        bpi.add_position(i, i + 1);
+                    }
                 }
             }
         }
@@ -573,12 +570,12 @@ std::vector<uint32_t> BytePairEncoding_NS::create_tokens(const std::vector<std::
         }
         // Once we've merged all bytes possible and tracked their positions, find the most popular
         // token, merge its occurences and remove its fragments from the uv vector
-        auto most_frequent_token = std::max_element(token_frequency.begin(), token_frequency.end(),
-                                                    [](const auto& v1, const auto& v2) {
-                                                        return v1.second < v2.second;
+        auto most_frequent_token = std::max_element(token_occurrences.begin(),
+                                                    token_occurrences.end(),
+                                                    [] (const auto& v1, const auto& v2) {
+                                                        return v1.second.get_frequency() < v2.second.get_frequency();
                                                     });
-        // Positions should be std::vector<std::pair<size_t, size_t>>
-        const auto& positions = token_occurrences.at(most_frequent_token->first).get_positions();
+        const auto& positions = most_frequent_token->second.get_positions();
         // Iterate over the positions in reverse order, changing the first position to be the
         // new merged token, then erasing the second. We do this in reverse so that the positions
         // are still valid as we go forward
