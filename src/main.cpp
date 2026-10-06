@@ -198,6 +198,27 @@ int main() {
         // Run the forward pass for the layer
         Tensor<float> ll0_result = ll0.forward(ll0_slice0);
         log_message(Log_Priority::INFO, "main", std::format("Layer output: {}", ll0_result.info()));
+
+        // Test new matmul with int16_t
+        Tensor<int16_t> int16_t0({256, 512});
+        Tensor<int16_t> int16_t1({512, 256});
+        Tensor<int16_t> int16_mm_result({256, 256});
+        Tensor_Matmul_NS::matmul(int16_t0, int16_t1, int16_mm_result);
+        log_message(Log_Priority::INFO, "main", std::format("MM output: {}", int16_mm_result.info()));
+
+        // Test new matmul with int64_t
+        Tensor<int64_t> int64_t0({256, 512});
+        Tensor<int64_t> int64_t1({512, 256});
+        Tensor<int64_t> int64_mm_result({256, 256});
+        Tensor_Matmul_NS::matmul(int64_t0, int64_t1, int64_mm_result);
+        log_message(Log_Priority::INFO, "main", std::format("MM output: {}", int64_mm_result.info()));
+
+        // Test new matmul with uint16_t
+        Tensor<uint16_t> uint16_t0({256, 512});
+        Tensor<uint16_t> uint16_t1({512, 256});
+        Tensor<uint16_t> uint16_mm_result({256, 256});
+        Tensor_Matmul_NS::matmul(uint16_t0, uint16_t1, uint16_mm_result);
+        log_message(Log_Priority::INFO, "main", std::format("MM output: {}", uint16_mm_result.info()));
         
 
     } catch (const std::exception& e) {

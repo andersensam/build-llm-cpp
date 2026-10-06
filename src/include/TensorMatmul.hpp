@@ -41,17 +41,23 @@
 
 namespace Tensor_Matmul_NS {
 
-/* Control whether or not we prefer to make AbstractTensors that are not contiguous into Tensors to speed up matmuls */
-inline constexpr bool TENSORMATMUL_ENABLE_ABSTRACT_TENSOR_CONTIGUOUS = true;
-
-/* Control whether or not to allow running .contiguous() on the destination Tensor for matmuls */
-inline constexpr bool TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS = true;
-
 /* Control whether or not we want to enable the naive matmul v2 path */
 inline constexpr bool TENSORMATMUL_ENABLE_NAIVE_MATMUL_V2 = true;
 
 /* Control whether to log warnings about falling back to naive matmul v1 */
 inline constexpr bool TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING = true;
+
+/* Control whether or not we prefer to make AbstractTensors that are not contiguous into Tensors to speed up matmuls */
+inline constexpr bool TENSORMATMUL_PREFER_ABSTRACT_TENSOR_CONTIGUOUS = true;
+
+/* Control whether or not to prefer executing .contiguous() on copied input Tensors instead of falling back to v1 */
+inline constexpr bool TENSORMATMUL_NAIVE_MATMUL_V2_PREFER_COPY_CONTIGUOUS = true;
+
+/* Control whether or not to log the above (copy Tensor inputs) */
+inline constexpr bool TENSORMATMUL_NAIVE_MATMUL_V2_LOG_COPY_CONTIGUOUS = true;
+
+/* Control whether or not to allow running .contiguous() on the destination Tensor for matmuls */
+inline constexpr bool TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS = true;
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
@@ -252,8 +258,8 @@ void _naive_matmul_impl_v1(const AbstractTensor<T>& lhs,
  * @param dim0_extent Number of rows in the destination Tensor
  * @param dim1_extent Number of columns in the destination Tensor
  * @param inner_dim_extent Inner dim of lhs and rhs
- * NOTE: This version of add should only be used when we are sure that lhs_ptr, rhs_ptr, and
- * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
+ * NOTE: This version of matmul should only be used when we are sure that lhs_ptr, rhs_ptr, and
+ * result_ptr absolutely do NOT overlap. dim1 must have stride == 1
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
@@ -293,7 +299,195 @@ void _naive_matmul_impl_v2_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, s
     }
     // Handle the integer types, checking for accumulator availability
     else {
-        // Implement later
+        // Track overflow
+        bool overflow = false;
+        // Check for accumulator avaibility
+        using accumulator_t = typename Numerics_NS::Accumulator<T>::type;
+        if constexpr (!std::is_same_v<T, accumulator_t> && std::is_signed_v<T>) {
+            constexpr accumulator_t MIN_VAL = static_cast<accumulator_t>(std::numeric_limits<T>::min());
+            constexpr accumulator_t MAX_VAL = static_cast<accumulator_t>(std::numeric_limits<T>::max());
+            for (size_t i = 0; i < dim0_extent; ++i) {
+                const size_t result_row = result_offset + (result_dim0_stride * i);
+                const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+                // Loop over the inner dim to prevent cache misses
+                for (size_t k = 0; k < inner_dim_extent; ++k) {
+                    const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
+                    // Broadcast lhs[i, k] for the operation
+                    const accumulator_t lhs_val = static_cast<accumulator_t>(lhs_ptr[lhs_row + k]);
+                    // Loop over dim1 and perform the core op
+                    for (size_t j = 0; j < dim1_extent; ++j) {
+                        accumulator_t result = lhs_val * static_cast<accumulator_t>(rhs_ptr[rhs_row + j]);
+                        accumulator_t result_i_j = static_cast<accumulator_t>(result_ptr[result_row + j]) + result;
+                        overflow |= (result_i_j > MAX_VAL || result < MIN_VAL);
+                        result_ptr[result_row + j] = static_cast<T>(result_i_j);
+                    }
+                }
+            }
+        }
+        // Handle signed types without accumulators
+        else if constexpr (std::is_signed_v<T>) {
+            for (size_t i = 0; i < dim0_extent; ++i) {
+                const size_t result_row = result_offset + (result_dim0_stride * i);
+                const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+                // Loop over the inner dim to prevent cache misses
+                for (size_t k = 0; k < inner_dim_extent; ++k) {
+                    const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
+                    // Broadcast lhs[i, k] for the operation
+                    const T lhs_val = lhs_ptr[lhs_row + k];
+                    // Loop over dim1 and perform the core op
+                    for (size_t j = 0; j < dim1_extent; ++j) {
+                        T partial = 0;
+                        overflow |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_ptr[rhs_row + j], &partial);
+                        overflow |= TensorMath_NS::_add_overflow_signed(result_ptr[result_row + j], partial, &(result_ptr[result_row + j]));
+                    }
+                }
+            }
+        }
+        // Handle unsigned types
+        else {
+            for (size_t i = 0; i < dim0_extent; ++i) {
+                const size_t result_row = result_offset + (result_dim0_stride * i);
+                const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+                // Loop over the inner dim to prevent cache misses
+                for (size_t k = 0; k < inner_dim_extent; ++k) {
+                    const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
+                    // Broadcast lhs[i, k] for the operation
+                    const T lhs_val = lhs_ptr[lhs_row + k];
+                    // Loop over dim1 and perform the core op
+                    for (size_t j = 0; j < dim1_extent; ++j) {
+                        T partial = 0;
+                        overflow |= TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_ptr[rhs_row + j], &partial);
+                        overflow |= TensorMath_NS::_add_overflow_unsigned(result_ptr[result_row + j], partial, &(result_ptr[result_row + j]));
+                    }
+                }
+            }
+        }
+        if (overflow) {
+            throw std::overflow_error("TensorMatmul::_naive_matmul_impl_v2_v: Overflow / underflow detected.\n");
+        }
+    }
+}
+
+/**
+ * Vectorized naive matmul implementation, without strict aliasing rules
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param rhs_dim0_stride Stride of the rhs outer dim
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Number of rows in the destination Tensor
+ * @param dim1_extent Number of columns in the destination Tensor
+ * @param inner_dim_extent Inner dim of lhs and rhs
+ * NOTE: dim1 must have stride == 1
+ */
+template <typename T>
+requires std::is_arithmetic_v<T>
+void _naive_matmul_impl_v2(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                           const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                           T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                           size_t dim0_extent, size_t dim1_extent, size_t inner_dim_extent) {
+    // Handle floating point types first
+    if constexpr (std::is_floating_point_v<T>) {
+        // Loop over dim0
+        for (size_t i = 0; i < dim0_extent; ++i) {
+            const size_t result_row = result_offset + (result_dim0_stride * i);
+            const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+            // Loop over the inner dim to prevent cache misses
+            for (size_t k = 0; k < inner_dim_extent; ++k) {
+                const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
+                // Broadcast lhs[i, k] for the operation
+                const T lhs_val = lhs_ptr[lhs_row + k];
+                // Loop over dim1 and perform the core op
+                for (size_t j = 0; j < dim1_extent; ++j) {
+                    result_ptr[result_row + j] += lhs_val * rhs_ptr[rhs_row + j];
+                }
+            }
+        }
+        // Check for INF and NaN in the result Tensor
+        bool overflow = false;
+        for (size_t i = 0; i < dim0_extent; ++i) {
+            const size_t result_row = result_offset + (result_dim0_stride * i);
+            for (size_t j = 0; j < dim1_extent; ++j) {
+                T result = result_ptr[result_row + j];
+                overflow |= !std::isfinite(result);
+            }
+        }
+        if (overflow) {
+            throw std::overflow_error("TensorMatmul::_naive_matmul_impl_v2: Overflow / underflow detected.\n");
+        }
+    }
+    // Handle the integer types, checking for accumulator availability
+    else {
+        // Track overflow
+        bool overflow = false;
+        // Check for accumulator avaibility
+        using accumulator_t = typename Numerics_NS::Accumulator<T>::type;
+        if constexpr (!std::is_same_v<T, accumulator_t> && std::is_signed_v<T>) {
+            constexpr accumulator_t MIN_VAL = static_cast<accumulator_t>(std::numeric_limits<T>::min());
+            constexpr accumulator_t MAX_VAL = static_cast<accumulator_t>(std::numeric_limits<T>::max());
+            for (size_t i = 0; i < dim0_extent; ++i) {
+                const size_t result_row = result_offset + (result_dim0_stride * i);
+                const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+                // Loop over the inner dim to prevent cache misses
+                for (size_t k = 0; k < inner_dim_extent; ++k) {
+                    const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
+                    // Broadcast lhs[i, k] for the operation
+                    const accumulator_t lhs_val = static_cast<accumulator_t>(lhs_ptr[lhs_row + k]);
+                    // Loop over dim1 and perform the core op
+                    for (size_t j = 0; j < dim1_extent; ++j) {
+                        accumulator_t result = lhs_val * static_cast<accumulator_t>(rhs_ptr[rhs_row + j]);
+                        accumulator_t result_i_j = static_cast<accumulator_t>(result_ptr[result_row + j]) + result;
+                        overflow |= (result_i_j > MAX_VAL || result < MIN_VAL);
+                        result_ptr[result_row + j] = static_cast<T>(result_i_j);
+                    }
+                }
+            }
+        }
+        // Handle signed types without accumulators
+        else if constexpr (std::is_signed_v<T>) {
+            for (size_t i = 0; i < dim0_extent; ++i) {
+                const size_t result_row = result_offset + (result_dim0_stride * i);
+                const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+                // Loop over the inner dim to prevent cache misses
+                for (size_t k = 0; k < inner_dim_extent; ++k) {
+                    const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
+                    // Broadcast lhs[i, k] for the operation
+                    const T lhs_val = lhs_ptr[lhs_row + k];
+                    // Loop over dim1 and perform the core op
+                    for (size_t j = 0; j < dim1_extent; ++j) {
+                        T partial = 0;
+                        overflow |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_ptr[rhs_row + j], &partial);
+                        overflow |= TensorMath_NS::_add_overflow_signed(result_ptr[result_row + j], partial, &(result_ptr[result_row + j]));
+                    }
+                }
+            }
+        }
+        // Handle unsigned types
+        else {
+            for (size_t i = 0; i < dim0_extent; ++i) {
+                const size_t result_row = result_offset + (result_dim0_stride * i);
+                const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+                // Loop over the inner dim to prevent cache misses
+                for (size_t k = 0; k < inner_dim_extent; ++k) {
+                    const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
+                    // Broadcast lhs[i, k] for the operation
+                    const T lhs_val = lhs_ptr[lhs_row + k];
+                    // Loop over dim1 and perform the core op
+                    for (size_t j = 0; j < dim1_extent; ++j) {
+                        T partial = 0;
+                        overflow |= TensorMath_NS::_mul_overflow_unsigned(lhs_val, rhs_ptr[rhs_row + j], &partial);
+                        overflow |= TensorMath_NS::_add_overflow_unsigned(result_ptr[result_row + j], partial, &(result_ptr[result_row + j]));
+                    }
+                }
+            }
+        }
+        if (overflow) {
+            throw std::overflow_error("TensorMatmul::_naive_matmul_impl_v2: Overflow / underflow detected.\n");
+        }
     }
 }
 // NOLINTEND(bugprone-easily-swappable-parameters, cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -497,7 +691,16 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
                                             destination.extent(0), destination.extent(1), lhs.extent(1));
                     return destination;
                 }
-                if (!destination.is_safe_aliasing(lhs) || !destination.is_safe_aliasing(rhs)) {
+                // If we have safe aliasing, but not unique memory blocks, use the less optimized version
+                else if (destination.is_safe_aliasing(lhs) && destination.is_safe_aliasing(rhs)) {
+                    _naive_matmul_impl_v2(lhs._data(), lhs.offset(), lhs_stride.at(0),
+                                          rhs._data(), rhs.offset(), rhs_stride.at(0),
+                                          destination._data(), destination.offset(), destination.dim_stride(0),
+                                          destination.extent(0), destination.extent(1), lhs.extent(1));
+                    return destination;
+                }
+                // If we do NOT have safe aliasing
+                else {
                     if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS) {
                         destination.contiguous();
                         return matmul(lhs, rhs, destination);
@@ -526,7 +729,7 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
         const Tensor<T>* rhs_ptr = dynamic_cast<const Tensor<T>*>(&rhs);
         // If we fail to cast, check to see if we want to convert to Tensor
         if (lhs_ptr == nullptr || rhs_ptr == nullptr) {
-            if constexpr (TENSORMATMUL_ENABLE_ABSTRACT_TENSOR_CONTIGUOUS) {
+            if constexpr (TENSORMATMUL_PREFER_ABSTRACT_TENSOR_CONTIGUOUS) {
                 // Use the to_tensor() call to convert ListTensorSlice --> Tensor
                 const Tensor<T> lhs_c = (lhs_ptr == nullptr) ? dynamic_cast<const ListTensorSlice<T>*>(&lhs)->to_tensor() : *lhs_ptr;
                 const Tensor<T> rhs_c = (rhs_ptr == nullptr) ? dynamic_cast<const ListTensorSlice<T>*>(&rhs)->to_tensor() : *rhs_ptr;
@@ -554,7 +757,14 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
                                             destination.extent(0), destination.extent(1), lhs_ptr->extent(1));
                     return destination;
                 }
-                if (!destination.is_safe_aliasing(*lhs_ptr) || !destination.is_safe_aliasing(*rhs_ptr)) {
+                else if (destination.is_safe_aliasing(*lhs_ptr) && destination.is_safe_aliasing(*rhs_ptr)) {
+                    _naive_matmul_impl_v2(lhs_ptr->_data(), lhs_ptr->offset(), lhs_ptr->dim_stride(0),
+                                          rhs_ptr->_data(), rhs_ptr->offset(), rhs_ptr->dim_stride(0),
+                                          destination._data(), destination.offset(), destination.dim_stride(0),
+                                          destination.extent(0), destination.extent(1), lhs_ptr->extent(1));
+                    return destination;
+                }
+                else {
                     if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS) {
                         destination.contiguous();
                         return matmul(*lhs_ptr, *rhs_ptr, destination);
@@ -570,9 +780,27 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
                     }
                 }
             }
+            if constexpr (TENSORMATMUL_NAIVE_MATMUL_V2_PREFER_COPY_CONTIGUOUS) {
+                if constexpr (TENSORMATMUL_NAIVE_MATMUL_V2_LOG_COPY_CONTIGUOUS) {
+                    log_message(Log_Priority::DEBUG, "TensorMatmul::matmul", "Executing clone() on inputs.");
+                }
+                if (lhs_ptr->dim_stride(1) != 1 && rhs_ptr->dim_stride(1) != 1) {
+                    Tensor<T> new_lhs = lhs_ptr->clone();
+                    Tensor<T> new_rhs = rhs_ptr->clone();
+                    return matmul(new_lhs, new_rhs, destination);
+                }
+                else if (lhs_ptr->dim_stride(1) != 1) {
+                    Tensor<T> new_lhs = lhs_ptr->clone();
+                    return matmul(new_lhs, *rhs_ptr, destination);
+                }
+                else {
+                    Tensor<T> new_rhs = rhs_ptr->clone();
+                    return matmul(*lhs_ptr, new_rhs, destination);
+                }
+            }
             if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
                 log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
-                    "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor.contiguous().");
+                    "Falling back to naive matmul v1 due to dim1_stride != 1 and TENSORMATMUL_NAIVE_MATMUL_V2_PREFER_COPY_CONTIGUOUS == false.");
             }
             _naive_matmul_impl_v1(lhs, rhs, destination);
             return destination;
@@ -580,8 +808,7 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
     }
     else {
         if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V2 && TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
-            log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
-                "Falling back to naive matmul v1.");
+            log_message(Log_Priority::WARNING, "TensorMatmul::matmul", "Falling back to naive matmul v1.");
         }
         // Use the desired matmul impl to execute the operation
         _naive_matmul_impl_v1(lhs, rhs, destination);
@@ -612,7 +839,7 @@ Tensor<T> matmul(const AbstractTensor<T>& lhs,
     // Create a Tensor to store the result
     Tensor<T> result({lhs.extent(0), rhs.extent(1)});
     // Use the desired matmul impl to execute the operation
-    _naive_matmul_impl_v1(lhs, rhs, result);
+    matmul(lhs, rhs, result);
     // Use RVO to return the result without copying
     return result;
 }
