@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-06
  *
  * Notes:
  * TensorMatmul.hpp contains kernels for running matrix multiplications on Tensors and TensorSlices
@@ -41,11 +41,11 @@
 
 namespace Tensor_Matmul_NS {
 
-/* Control whether or not we prefer to rematerialize AbstractTensors that are not contiguous to speed up matmuls */
-inline constexpr bool TENSORMATMUL_ENABLE_ABSTRACT_TENSOR_REMAT = true;
+/* Control whether or not we prefer to make AbstractTensors that are not contiguous into Tensors to speed up matmuls */
+inline constexpr bool TENSORMATMUL_ENABLE_ABSTRACT_TENSOR_CONTIGUOUS = true;
 
-/* Control whether or not to remat the destination Tensor for matmuls */
-inline constexpr bool TENSORMATMUL_ENABLE_DESTINATION_TENSOR_REMAT = true;
+/* Control whether or not to allow running .contiguous() on the destination Tensor for matmuls */
+inline constexpr bool TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS = true;
 
 /* Control whether or not we want to enable the naive matmul v2 path */
 inline constexpr bool TENSORMATMUL_ENABLE_NAIVE_MATMUL_V2 = true;
@@ -471,10 +471,10 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
             )
         );
     }
-    // Check to see if we want to remat destination
-    if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_REMAT) {
+    // Check to see if we want make the destination contiguous
+    if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS) {
         if (destination.dim_stride(1) != 1) {
-            destination.remat();
+            destination.contiguous();
         }
     }
     // Zero out the content of the destination
@@ -485,7 +485,7 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
         const auto& lhs_stride = lhs.stride();
         const auto& rhs_stride = rhs.stride();
         // Check to see if our Tensors are contiguous, which eliminates ListTensorSlice immediately
-        if (lhs.contiguous() && rhs.contiguous() && destination.contiguous()) {
+        if (lhs.is_contiguous() && rhs.is_contiguous() && destination.is_contiguous()) {
             // Ensure that j is stride == 1 for rhs and destination, and that k is stride == 1 for lhs
             if (lhs_stride.at(1) == 1 && rhs_stride.at(1) == 1 && destination.dim_stride(1) == 1) {
                 // Ensure we have either safe aliasing or that each Tensor is unique
@@ -498,15 +498,15 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
                     return destination;
                 }
                 if (!destination.is_safe_aliasing(lhs) || !destination.is_safe_aliasing(rhs)) {
-                    if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_REMAT) {
-                        destination.remat();
+                    if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS) {
+                        destination.contiguous();
                         return matmul(lhs, rhs, destination);
                     }
                     else {
                         // Fall back to the slower v1 path
                         if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
                             log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
-                                "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor remat.");
+                                "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor.contiguous()");
                         }
                         _naive_matmul_impl_v1(lhs, rhs, destination);
                         return destination;
@@ -524,9 +524,9 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
         // Try casting AbstractTensor to Tensor (fails if using ListTensorSlice)
         const Tensor<T>* lhs_ptr = dynamic_cast<const Tensor<T>*>(&lhs);
         const Tensor<T>* rhs_ptr = dynamic_cast<const Tensor<T>*>(&rhs);
-        // If we fail to cast, check to see if we want to remat / convert to Tensor
+        // If we fail to cast, check to see if we want to convert to Tensor
         if (lhs_ptr == nullptr || rhs_ptr == nullptr) {
-            if constexpr (TENSORMATMUL_ENABLE_ABSTRACT_TENSOR_REMAT) {
+            if constexpr (TENSORMATMUL_ENABLE_ABSTRACT_TENSOR_CONTIGUOUS) {
                 // Use the to_tensor() call to convert ListTensorSlice --> Tensor
                 const Tensor<T> lhs_c = (lhs_ptr == nullptr) ? dynamic_cast<const ListTensorSlice<T>*>(&lhs)->to_tensor() : *lhs_ptr;
                 const Tensor<T> rhs_c = (rhs_ptr == nullptr) ? dynamic_cast<const ListTensorSlice<T>*>(&rhs)->to_tensor() : *rhs_ptr;
@@ -536,7 +536,7 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
                 // Fall back to the slower v1 path
                 if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
                     log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
-                        "Falling back to native matmul v1 due to disabled AbstractTensor remat");
+                        "Falling back to native matmul v1 due to disabled AbstractTensor.to_tensor()");
                 }
                 _naive_matmul_impl_v1(lhs, rhs, destination);
                 return destination;
@@ -555,15 +555,15 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
                     return destination;
                 }
                 if (!destination.is_safe_aliasing(*lhs_ptr) || !destination.is_safe_aliasing(*rhs_ptr)) {
-                    if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_REMAT) {
-                        destination.remat();
+                    if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS) {
+                        destination.contiguous();
                         return matmul(*lhs_ptr, *rhs_ptr, destination);
                     }
                     else {
                         // Fall back to the slower v1 path
                         if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
                             log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
-                                "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor remat.");
+                                "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor.contiguous().");
                         }
                         _naive_matmul_impl_v1(lhs, rhs, destination);
                         return destination;
@@ -572,7 +572,7 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
             }
             if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
                 log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
-                    "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor remat.");
+                    "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor.contiguous().");
             }
             _naive_matmul_impl_v1(lhs, rhs, destination);
             return destination;

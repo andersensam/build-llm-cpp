@@ -75,7 +75,7 @@ TEST(SliceTest, ListTensorSlice1DVectorAnd2DGather) {
   ListTensorSlice<float> row_slice(emb, vsc);
   EXPECT_EQ(row_slice.rank(), 1U);
   EXPECT_EQ(row_slice.elements(), 3U);
-  EXPECT_FALSE(row_slice.contiguous());
+  EXPECT_FALSE(row_slice.is_contiguous());
   EXPECT_FLOAT_EQ(row_slice.at({0}), 300.0f);
   EXPECT_FLOAT_EQ(row_slice.at({1}), 301.0f);
   EXPECT_FLOAT_EQ(row_slice.at({2}), 302.0f);

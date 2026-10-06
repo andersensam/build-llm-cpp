@@ -258,15 +258,15 @@ TEST(MatmulTest, MatmulWithNonContiguousTensorSliceViewsMatchesRemat) {
   // Non-contiguous column slices [4, 3] representing a single attention head
   Tensor<float> q_slice = q_full.slice({0, 1}, {{0, 0}, {2, 5}}, {});
   Tensor<float> k_slice = k_full.slice({0, 1}, {{0, 0}, {2, 5}}, {});
-  ASSERT_FALSE(q_slice.contiguous());
-  ASSERT_FALSE(k_slice.contiguous());
+  ASSERT_FALSE(q_slice.is_contiguous());
+  ASSERT_FALSE(k_slice.is_contiguous());
 
   Tensor<float> scores_from_slices = matmul(q_slice, 0, 1, k_slice, 1, 0);
 
   Tensor<float> q_contig = q_slice.clone();
   Tensor<float> k_contig = k_slice.clone();
-  ASSERT_TRUE(q_contig.contiguous());
-  ASSERT_TRUE(k_contig.contiguous());
+  ASSERT_TRUE(q_contig.is_contiguous());
+  ASSERT_TRUE(k_contig.is_contiguous());
 
   Tensor<float> scores_from_contig = matmul(q_contig, 0, 1, k_contig, 1, 0);
   ASSERT_EQ(scores_from_slices.shape(), scores_from_contig.shape());

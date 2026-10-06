@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-30
+ * @version: 2026-10-06
  *
  * General Notes:
  *
@@ -192,7 +192,7 @@ public:
      * Check whether a Tensor's memory block is contiguous
      * @returns True if contiguous
      */
-    virtual bool contiguous() const = 0;
+    virtual bool is_contiguous() const = 0;
 
     /**
      * Get the offset for the start of the Storage memory block
@@ -229,7 +229,7 @@ public:
      * with a stide of 1 in the final dim
      * @returns Returns a reference to this Tensor
      */
-    virtual AbstractTensor<T>& remat() = 0;
+    virtual AbstractTensor<T>& contiguous() = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

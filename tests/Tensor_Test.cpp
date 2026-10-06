@@ -24,7 +24,7 @@ TEST(TensorTest, ConstructRank0Scalar) {
   Tensor<float> scalar({});
   EXPECT_EQ(scalar.rank(), 0U);
   EXPECT_EQ(scalar.elements(), 1U);
-  EXPECT_TRUE(scalar.contiguous());
+  EXPECT_TRUE(scalar.is_contiguous());
   scalar.at({}) = 42.5f;
   EXPECT_FLOAT_EQ(scalar.at({}), 42.5f);
   EXPECT_FLOAT_EQ(scalar.at(0), 42.5f);
@@ -418,7 +418,7 @@ TEST(TensorTest, ApplyDropoutValidatesBoundsAndScalesSurvivingElements) {
 }
 
 // ============================================================================
-// Tensor::slice, Tensor::remat, 2D Strided Ops, and Corner Cases
+// Tensor::slice, Tensor::contiguous, 2D Strided Ops, and Corner Cases
 // ============================================================================
 
 TEST(TensorTest, TensorSlice2DRowAndColSlicesShareStorage) {
@@ -435,7 +435,7 @@ TEST(TensorTest, TensorSlice2DRowAndColSlicesShareStorage) {
   EXPECT_EQ(sub.shape(), std::vector<size_t>({2, 3}));
   EXPECT_EQ(sub.stride(), std::vector<size_t>({5, 1}));
   EXPECT_EQ(sub.offset(), 6U);
-  EXPECT_FALSE(sub.contiguous());
+  EXPECT_FALSE(sub.is_contiguous());
 
   EXPECT_EQ(sub.at({0, 0}), 11);
   EXPECT_EQ(sub.at({0, 2}), 13);
@@ -466,7 +466,7 @@ TEST(TensorTest, TensorSlice3DReduceTo2DAnd1D) {
   Tensor<int32_t> s2d = t3.slice({1, 2}, {{1, 3}, {1, 4}}, {{0, 1}});
   EXPECT_EQ(s2d.rank(), 2U);
   EXPECT_EQ(s2d.shape(), std::vector<size_t>({2, 3}));
-  EXPECT_FALSE(s2d.contiguous());
+  EXPECT_FALSE(s2d.is_contiguous());
   EXPECT_EQ(s2d.at({0, 0}), 111);
   EXPECT_EQ(s2d.at({0, 2}), 113);
   EXPECT_EQ(s2d.at({1, 0}), 121);
@@ -516,7 +516,7 @@ TEST(TensorTest, UniformOpOn2DRowContiguousSlicesExercises2DStridedKernels) {
 
   Tensor<float> slice_a = base_a.slice({0, 1}, {{0, 0}, {1, 3}}, {});
   Tensor<float> slice_b = base_b.slice({0, 1}, {{0, 0}, {2, 4}}, {});
-  ASSERT_FALSE(slice_a.contiguous());
+  ASSERT_FALSE(slice_a.is_contiguous());
   ASSERT_EQ(slice_a.dim_stride(1), 1U);
 
   Tensor<float> sum = slice_a + slice_b;
@@ -560,11 +560,11 @@ TEST(TensorTest, RematMakesNonContiguousSliceAndTransposeContiguousAndUnique) {
 
   // Column slice: shape [3, 2], non-contiguous
   Tensor<int32_t> col_slice = base.slice({0, 1}, {{0, 0}, {1, 3}}, {});
-  EXPECT_FALSE(col_slice.contiguous());
+  EXPECT_FALSE(col_slice.is_contiguous());
   EXPECT_FALSE(col_slice.is_unique(base));
 
-  col_slice.remat();
-  EXPECT_TRUE(col_slice.contiguous());
+  col_slice.contiguous();
+  EXPECT_TRUE(col_slice.is_contiguous());
   EXPECT_EQ(col_slice.offset(), 0U);
   EXPECT_EQ(col_slice.shape(), std::vector<size_t>({3, 2}));
   EXPECT_EQ(col_slice.stride(), std::vector<size_t>({2, 1}));
@@ -574,17 +574,17 @@ TEST(TensorTest, RematMakesNonContiguousSliceAndTransposeContiguousAndUnique) {
   EXPECT_EQ(col_slice.at({2, 0}), 10);
   EXPECT_EQ(col_slice.at({2, 1}), 11);
 
-  // Mutating rematerialized tensor no longer affects base
+  // Mutating .contiguous() tensor no longer affects base
   col_slice.at({0, 0}) = 999;
   EXPECT_EQ(base.at({0, 1}), 2);
 
-  // Transpose then remat
+  // Transpose then run .contiguous()
   Tensor<int32_t> t({2, 3});
   t.set({1, 2, 3, 4, 5, 6});
   t.transpose();
-  EXPECT_FALSE(t.contiguous());
-  t.remat();
-  EXPECT_TRUE(t.contiguous());
+  EXPECT_FALSE(t.is_contiguous());
+  t.contiguous();
+  EXPECT_TRUE(t.is_contiguous());
   EXPECT_EQ(t.shape(), std::vector<size_t>({3, 2}));
   EXPECT_EQ(t.stride(), std::vector<size_t>({2, 1}));
   EXPECT_EQ(t.at({0, 0}), 1);
@@ -603,7 +603,7 @@ TEST(TensorTest, ReductionsAndSoftmaxOnNonContiguousSlice) {
 
   // Non-contiguous [3, 3] slice of middle 3 columns
   Tensor<float> sub = base.slice({0, 1}, {{0, 0}, {1, 4}}, {});
-  ASSERT_FALSE(sub.contiguous());
+  ASSERT_FALSE(sub.is_contiguous());
 
   EXPECT_FLOAT_EQ(sub.max(), -1.0f);
   EXPECT_FLOAT_EQ(sub.min(), -9.0f);

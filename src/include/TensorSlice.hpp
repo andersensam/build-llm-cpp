@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-06
  *
  * General Notes:
  *
@@ -630,7 +630,7 @@ public:
      * Check whether a Tensor's memory block is contiguous
      * @returns True if contiguous
      */
-    bool contiguous() const override {
+    bool is_contiguous() const override {
         return false;
     }
 
@@ -689,8 +689,8 @@ public:
      * with a stide of 1 in the final dim
      * @returns Returns a new contiguous Tensor
      */
-    Tensor<T>& remat() override {
-        throw std::runtime_error("ListTensorSlice: remat is unimplemented for ListTensorSlice.\n");
+    Tensor<T>& contiguous() override {
+        throw std::runtime_error("ListTensorSlice: .contiguous() is unimplemented for ListTensorSlice.\n");
     }
 };
 

@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-06
  *
  * General Notes:
  *
@@ -174,8 +174,8 @@ int main() {
         ListTensorSlice<float> qq(emb_ptr, query_vsc);
         log_message(Log_Priority::INFO, "main", std::format("ListTensorSlice: {}", qq.info()));
 
-        // Test calling remat on an already contiguous Tensor, which should throw a warning
-        mm_res2.remat();
+        // Test calling contiguous on an already contiguous Tensor, which should throw a warning
+        mm_res2.contiguous();
 
         // Prepare a new Tensor to slice
         Tensor<float> new_slice_base({2, 2, 2});

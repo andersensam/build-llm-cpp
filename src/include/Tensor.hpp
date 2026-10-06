@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-06
  *
  * General Notes:
  *
@@ -68,8 +68,8 @@ inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = true;
 inline constexpr size_t TENSOR_MAX_DEMANGLED_NAME_LEN = 32;
 /* Control logging for softmax warnings (NAN, inf, divide by 0) */
 inline constexpr bool TENSOR_ENABLE_SOFTMAX_WARNINGS = true;
-/* Control logging about remat being called on already contiguous Tensors (with dim_stride == 1 in outer dim) */
-inline constexpr bool TENSOR_ENABLE_UNNECESSARY_REMAT_LOGGING = true;
+/* Control logging about contiguous() being called on already contiguous Tensors (with dim_stride == 1 in outer dim) */
+inline constexpr bool TENSOR_ENABLE_UNNECESSARY_CONTIGUOUS_LOGGING = true;
 
 /* Use Logging functions */
 using Log_NS::Log_Priority;
@@ -477,7 +477,7 @@ public:
      * Check whether a Tensor's memory block is contiguous
      * @returns True if contiguous
      */
-    bool contiguous() const override {
+    bool is_contiguous() const override {
         return c_contiguous;
     }
 
@@ -526,16 +526,16 @@ public:
      * with a stide of 1 in the final dim
      * @returns Returns a new contiguous Tensor
      */
-    Tensor<T>& remat() override {
-        // Don't try to remat rank-0 Tensors
+    Tensor<T>& contiguous() override {
+        // Don't try to make rank-0 Tensors contiguous
         if (c_rank == 0) {
             return *this;
         }
         // If this Tensor already is contiguous and has stride == 1 in its
         // final dim, then return without any op
         if (c_contiguous && (dim_stride(c_rank - 1) == 1)) {
-            if constexpr (TENSOR_ENABLE_UNNECESSARY_REMAT_LOGGING) {
-                log_message(Log_Priority::WARNING, "Tensor.remat",
+            if constexpr (TENSOR_ENABLE_UNNECESSARY_CONTIGUOUS_LOGGING) {
+                log_message(Log_Priority::WARNING, "Tensor.contiguous",
                             "Remat called on a Tensor that is already contiguous and with outer dim stride == 1.");
             }
             return *this;
@@ -735,7 +735,7 @@ public:
             return *this;
         }
         // If both are unique Tensors and contiguous, use memcpy
-        if ((c_contiguous && target.contiguous()) && is_unique(target)) {
+        if ((c_contiguous && target.is_contiguous()) && is_unique(target)) {
             std::memcpy(_data() + c_offset, target._data() + target.offset(), c_elements * sizeof(T));
         }
         // Otherwise copy the elements one by one
@@ -781,7 +781,7 @@ public:
             uintptr_t start = reinterpret_cast<uintptr_t>(t._data() + t.offset());
             size_t element_span = t.elements();
             // If non-contiguous, compute true span using dimension extents and strides
-            if (!t.contiguous() && t.rank() > 0) {
+            if (!t.is_contiguous() && t.rank() > 0) {
                 element_span = 0;
                 const auto& strides = t.stride();
                 for (size_t i = 0; i < t.rank(); ++i) {
@@ -2040,7 +2040,7 @@ public:
      * Create a slice of a Tensor, creating a lightweight wrapper around the shared Storage
      * class. The resulting slice can perform all normal Tensor ops, though by virtue
      * of selecting a subset of the dims, the slice will not be contiguous.
-     * Converting to a contiguous Tensor is possible via the remat() function
+     * Converting to a contiguous Tensor is possible via the contiguous() function
      * @param dims List of dims to include in the Tensor slice
      * @param filters Optional std::initializer_list<std::pair<size_t, size_t>> containing start and stops for each dim
      * For a mixed setup where some dims should be filtered and others shouldn't, provide
@@ -2202,7 +2202,7 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& des
     // If lhs, rhs, and dest don't overlap and are contiguous, use the fastest possible, vectorized
     // method to perform the operation. Ensure lhs --> dest <-- rhs are unique to respect
     // __restrict__ rules
-    if (lhs.contiguous() && rhs.contiguous() && dest.contiguous() && dest.is_unique(lhs) && dest.is_unique(rhs)) {
+    if (lhs.is_contiguous() && rhs.is_contiguous() && dest.is_contiguous() && dest.is_unique(lhs) && dest.is_unique(rhs)) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.offset(),
@@ -2233,7 +2233,7 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<T>& des
     }
     // If lhs, rhs, and dest are all contiguous, but the is_unique condition is not met, use
     // the non __restrict__ variant
-    else if (lhs.contiguous() && rhs.contiguous() && dest.contiguous()) {
+    else if (lhs.is_contiguous() && rhs.is_contiguous() && dest.is_contiguous()) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_safe_tensor_add_contiguous(lhs._data(), lhs.offset(),
@@ -2502,7 +2502,7 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, Squeezed
     // If lhs and dest don't overlap and are contiguous, use the fastest possible, vectorized
     // method to perform the operation. Ensure lhs and dest are unique to respect
     // __restrict__ rules
-    if (lhs.contiguous() && dest.contiguous() && dest.is_unique(lhs) ) {
+    if (lhs.is_contiguous() && dest.is_contiguous() && dest.is_unique(lhs) ) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_safe_tensor_add_contiguous_v(lhs._data(), lhs.offset(),
@@ -2533,7 +2533,7 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, Squeezed
     }
     // If lhs and dest are contiguous, but the is_unique condition is not met, use
     // the non __restrict__ variant
-    else if (lhs.contiguous() && dest.contiguous()) {
+    else if (lhs.is_contiguous() && dest.is_contiguous()) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_safe_tensor_add_contiguous(lhs._data(), lhs.offset(),
@@ -2789,7 +2789,7 @@ Tensor<T>& unsafe_uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<
     // If lhs, rhs, and dest don't overlap and are contiguous, use the fastest possible, vectorized
     // method to perform the operation. Ensure lhs --> dest <-- rhs are unique to respect
     // __restrict__ rules
-    if (lhs.contiguous() && rhs.contiguous() && dest.contiguous() && dest.is_unique(lhs) && dest.is_unique(rhs)) {
+    if (lhs.is_contiguous() && rhs.is_contiguous() && dest.is_contiguous() && dest.is_unique(lhs) && dest.is_unique(rhs)) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_unsafe_float_tensor_add_contiguous_v(lhs._data(), lhs.offset(),
@@ -2820,7 +2820,7 @@ Tensor<T>& unsafe_uniform_op(const Tensor<T>& lhs, const Tensor<T>& rhs, Tensor<
     }
     // If lhs, rhs, and dest are all contiguous, but the is_unique condition is not met, use
     // the non __restrict__ variant
-    else if (lhs.contiguous() && rhs.contiguous() && dest.contiguous()) {
+    else if (lhs.is_contiguous() && rhs.is_contiguous() && dest.is_contiguous()) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_unsafe_float_tensor_add_contiguous(lhs._data(), lhs.offset(),
@@ -2992,7 +2992,7 @@ Tensor<T>& unsafe_uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, S
     // If lhs and dest don't overlap and are contiguous, use the fastest possible, vectorized
     // method to perform the operation. Ensure lhs and dest are unique to respect
     // __restrict__ rules
-    if (lhs.contiguous() && dest.contiguous() && dest.is_unique(lhs) ) {
+    if (lhs.is_contiguous() && dest.is_contiguous() && dest.is_unique(lhs) ) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_unsafe_float_tensor_add_contiguous_v(lhs._data(), lhs.offset(),
@@ -3023,7 +3023,7 @@ Tensor<T>& unsafe_uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, S
     }
     // If lhs and dest are contiguous, but the is_unique condition is not met, use
     // the non __restrict__ variant
-    else if (lhs.contiguous() && dest.contiguous()) {
+    else if (lhs.is_contiguous() && dest.is_contiguous()) {
         switch (op) {
             case SqueezedOpType::ADD:
                 TensorMath_NS::_unsafe_float_tensor_add_contiguous(lhs._data(), lhs.offset(),
