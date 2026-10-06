@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-29
+ * @version: 2026-10-05
  *
  * General Notes:
  *
@@ -29,7 +29,7 @@
 #include <string>
 #include <string_view>
 
-namespace Log {
+namespace Log_NS {
 
 inline constexpr size_t LOG_BUFFER_SIZE = 100;
 
@@ -79,6 +79,6 @@ void log_message(Log_Priority priority, const std::string& caller, const char* m
  */
 constexpr std::string_view get_log_priority(Log_Priority priority);
 
-}; // namespace Log
+}; // namespace Log_NS
 
 #endif

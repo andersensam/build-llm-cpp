@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-07-20
+ * @version: 2026-10-05
  *
  * General Notes:
  *
@@ -18,20 +18,20 @@
  */
 
 #include "include/Log.hpp"
-using Log::log_message;
-using Log::Log_Priority;
-using Log::get_log_priority;
+using Log_NS::log_message;
+using Log_NS::Log_Priority;
+using Log_NS::get_log_priority;
 
 
-void Log::log_message(Log_Priority priority, const char* caller, const std::string& message) {
+void Log_NS::log_message(Log_Priority priority, const char* caller, const std::string& message) {
 
     log_message(priority, caller, message.c_str());
 }
 
-void Log::log_message(Log_Priority priority, const char* caller, const char* message) {
+void Log_NS::log_message(Log_Priority priority, const char* caller, const char* message) {
 
     // Setup a buffer and get the current time
-    std::array<char, Log::LOG_BUFFER_SIZE> buffer = {0};
+    std::array<char, Log_NS::LOG_BUFFER_SIZE> buffer = {0};
     time_t t = time(NULL);
 
     // Format a time string, storing in the buffer
@@ -45,17 +45,17 @@ void Log::log_message(Log_Priority priority, const char* caller, const char* mes
     }
 }
 
-void Log::log_message(Log_Priority priority, const std::string& caller, const char* message) {
+void Log_NS::log_message(Log_Priority priority, const std::string& caller, const char* message) {
 
     log_message(priority, caller.c_str(), message);
 }
 
-void Log::log_message(Log_Priority priority, const std::string& caller, const std::string& message) {
+void Log_NS::log_message(Log_Priority priority, const std::string& caller, const std::string& message) {
 
     log_message(priority, caller.c_str(), message.c_str());
 }
 
-constexpr std::string_view Log::get_log_priority(Log_Priority priority) {
+constexpr std::string_view Log_NS::get_log_priority(Log_Priority priority) {
     switch (priority) {
         case Log_Priority::DEBUG: 
             return "DEBUG";

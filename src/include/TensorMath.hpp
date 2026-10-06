@@ -7,10 +7,10 @@
  *   \:: __  \ \\:. _    \ \\:\ \ \ \\::___\/_\: __ `\ \\_::._\:\\::___\/_\:. _    \ \\_::._\:\\:: __  \ \\:.\-/\  \ \ 
  *    \:.\ \  \ \\. \`-\  \ \\:\/.:| |\:\____/\\ \ `\ \ \ /____\:\\:\____/\\. \`-\  \ \ /____\:\\:.\ \  \ \\. \  \  \ \
  *     \__\/\__\/ \__\/ \__\/ \____/_/ \_____\/ \_\/ \_\/ \_____\/ \_____\/ \__\/ \__\/ \_____\/ \__\/\__\/ \__\/ \__\/    
- *                                                                                                               
+ *                                                                     
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-28
+ * @version: 2026-10-05
  *
  * Notes:
  * This file is full of boilerplate code; however, given the variance on __restrict__ and the ability
@@ -53,7 +53,7 @@ namespace TensorMath_NS {
  */
 template <typename T>
 requires std::is_integral_v<T> && std::is_unsigned_v<T>
-[[nodiscard]] inline bool _add_overflow_unsigned(T a, T b, T* result) {
+[[nodiscard]] bool _add_overflow_unsigned(T a, T b, T* result) {
     *result = a + b;
     // Wraparound check
     return *result < a;
@@ -71,7 +71,7 @@ requires std::is_integral_v<T> && std::is_unsigned_v<T>
  */
 template <typename T> 
 requires std::is_integral_v<T> && std::is_signed_v<T>
-[[nodiscard]] inline bool _add_overflow_signed(T a, T b, T* result) {
+[[nodiscard]] bool _add_overflow_signed(T a, T b, T* result) {
     // Get the corresponding unsigned type
     using U = std::make_unsigned_t<T>;
     U res_u = static_cast<U>(a) + static_cast<U>(b);
@@ -90,7 +90,7 @@ requires std::is_integral_v<T> && std::is_signed_v<T>
  */
 template <typename T>
 requires std::is_integral_v<T> && std::is_unsigned_v<T>
-[[nodiscard]] inline bool _sub_overflow_unsigned(T a, T b, T* result) {
+[[nodiscard]] bool _sub_overflow_unsigned(T a, T b, T* result) {
     *result = a - b;
     // By nature of being unsigned, if a is less than b, we will underflow
     return a < b;
@@ -108,7 +108,7 @@ requires std::is_integral_v<T> && std::is_unsigned_v<T>
  */
 template <typename T> 
 requires std::is_integral_v<T> && std::is_signed_v<T>
-[[nodiscard]] inline bool _sub_overflow_signed(T a, T b, T* result) {
+[[nodiscard]] bool _sub_overflow_signed(T a, T b, T* result) {
     // Get the corresponding unsigned type
     using U = std::make_unsigned_t<T>;
     U res_u = static_cast<U>(a) - static_cast<U>(b);
@@ -129,7 +129,7 @@ requires std::is_integral_v<T> && std::is_signed_v<T>
  */
 template <typename T> 
 requires std::is_integral_v<T> && std::is_unsigned_v<T>
-[[nodiscard]] inline bool _mul_overflow_unsigned(T a, T b, T* result) {
+[[nodiscard]] bool _mul_overflow_unsigned(T a, T b, T* result) {
     // Calculate the bit boundaries for type T and split in half
     constexpr size_t HALF_BITS = (sizeof(T) * 8) / 2;
     constexpr T HALF_MASK = (static_cast<T>(1) << HALF_BITS) - 1;
@@ -173,7 +173,7 @@ requires std::is_integral_v<T> && std::is_unsigned_v<T>
  */
 template <typename T> 
 requires std::is_integral_v<T> && std::is_signed_v<T>
-[[nodiscard]] inline bool _mul_overflow_signed(T a, T b, T* result) {
+[[nodiscard]] bool _mul_overflow_signed(T a, T b, T* result) {
     // Get the corresponding unsigned type
     using U = std::make_unsigned_t<T>;
 
@@ -206,7 +206,7 @@ requires std::is_integral_v<T> && std::is_signed_v<T>
  */
 template <typename T>
 requires std::is_integral_v<T> && std::is_signed_v<T>
-[[nodiscard]] inline bool _is_signed_div_overflow(T lhs, T rhs) {
+[[nodiscard]] bool _is_signed_div_overflow(T lhs, T rhs) {
     if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
         return rhs == -1 && lhs == std::numeric_limits<T>::min();
     }
@@ -233,10 +233,10 @@ requires std::is_arithmetic_v<T>
  * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when we are adding two TensorSlices with variable strides.
  */
-inline void _safe_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                             const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                             T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                             size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                      const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                      T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                      size_t dim0_extent, size_t dim1_extent) {
     // Handle the floating point types first, which have defined behaviors for overflow / underflow.
     // We perform the operation and then scan for NaN or inf afterwards
     if constexpr (std::is_floating_point_v<T>) {
@@ -328,10 +328,10 @@ requires std::is_arithmetic_v<T>
  * absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when adding a scalar to a TensorSlice with variable strides.
  */
-inline void _safe_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                             const T rhs,
-                                             T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                             size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                      const T rhs,
+                                      T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                      size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -416,10 +416,10 @@ requires std::is_arithmetic_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _safe_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                           const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                           T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                           size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                    const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                    T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                    size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -506,10 +506,10 @@ requires std::is_arithmetic_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _safe_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                           const T rhs,
-                                           T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                           size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                    const T rhs,
+                                    T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                    size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -592,9 +592,9 @@ requires std::is_arithmetic_v<T>
  * of add should only be used when we are sure that lhs_ptr, rhs_ptr, and result_ptr
  * absolutely do NOT overlap.
  */
-inline void _safe_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
-                                          const T* __restrict__ rhs_ptr, size_t rhs_offset,
-                                          T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                   const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                   T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             // When we have fully contiguous blocks of memory, traverse linearly with a single loop
@@ -655,9 +655,9 @@ requires std::is_arithmetic_v<T>
  * if we are using a TensorSlice, that its memory is contiguous. This version
  * should only be used when lhs_ptr and result_ptr do NOT overlap.
  */
-inline void _safe_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
-                                          const T rhs,
-                                          T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                   const T rhs,
+                                   T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs;
@@ -716,9 +716,9 @@ requires std::is_arithmetic_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _safe_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                        const T* rhs_ptr, size_t rhs_offset,
-                                        T* result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                 const T* rhs_ptr, size_t rhs_offset,
+                                 T* result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs_ptr[rhs_offset + i];
@@ -776,9 +776,9 @@ requires std::is_arithmetic_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _safe_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                        const T rhs,
-                                        T* result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                 const T rhs,
+                                 T* result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs;
@@ -842,10 +842,10 @@ requires std::is_arithmetic_v<T>
  * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when we are subtracting two TensorSlices with variable strides.
  */
-inline void _safe_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                             const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                             T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                             size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                      const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                      T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                      size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -933,10 +933,10 @@ requires std::is_arithmetic_v<T>
  * absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when subtracting a scalar from a TensorSlice with variable strides.
  */
-inline void _safe_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                             const T rhs,
-                                             T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                             size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                      const T rhs,
+                                      T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                      size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -1021,10 +1021,10 @@ requires std::is_arithmetic_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _safe_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                           const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                           T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                           size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                    const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                    T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                    size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -1111,10 +1111,10 @@ requires std::is_arithmetic_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _safe_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                           const T rhs,
-                                           T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                           size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                    const T rhs,
+                                    T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                    size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -1197,9 +1197,9 @@ requires std::is_arithmetic_v<T>
  * of sub should only be used when we are sure that lhs_ptr, rhs_ptr, and result_ptr
  * absolutely do NOT overlap.
  */
-inline void _safe_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
-                                          const T* __restrict__ rhs_ptr, size_t rhs_offset,
-                                          T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                   const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                   T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs_ptr[rhs_offset + i];
@@ -1258,9 +1258,9 @@ requires std::is_arithmetic_v<T>
  * if we are using a TensorSlice, that its memory is contiguous. This version
  * should only be used when lhs_ptr and result_ptr do NOT overlap.
  */
-inline void _safe_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
-                                          const T rhs,
-                                          T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                   const T rhs,
+                                   T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs;
@@ -1319,9 +1319,9 @@ requires std::is_arithmetic_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _safe_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                        const T* rhs_ptr, size_t rhs_offset,
-                                        T* result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                 const T* rhs_ptr, size_t rhs_offset,
+                                 T* result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs_ptr[rhs_offset + i];
@@ -1379,9 +1379,9 @@ requires std::is_arithmetic_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _safe_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                        const T rhs,
-                                        T* result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                 const T rhs,
+                                 T* result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs;
@@ -1445,10 +1445,10 @@ requires std::is_arithmetic_v<T>
  * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when we are multiplying two TensorSlices with variable strides.
  */
-inline void _safe_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                             const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                             T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                             size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                      const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                      T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                      size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -1536,10 +1536,10 @@ requires std::is_arithmetic_v<T>
  * absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when multiplying a TensorSlice by a scalar value with variable strides.
  */
-inline void _safe_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                             const T rhs,
-                                             T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                             size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                      const T rhs,
+                                      T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                      size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -1624,10 +1624,10 @@ requires std::is_arithmetic_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _safe_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                           const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                           T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                           size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                    const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                    T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                    size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -1714,10 +1714,10 @@ requires std::is_arithmetic_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _safe_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                           const T rhs,
-                                           T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                           size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                    const T rhs,
+                                    T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                    size_t dim0_extent, size_t dim1_extent) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < dim0_extent; ++i) {
             const size_t result_row = result_offset + (result_dim0_stride * i);
@@ -1800,9 +1800,9 @@ requires std::is_arithmetic_v<T>
  * of mul should only be used when we are sure that lhs_ptr, rhs_ptr, and result_ptr
  * absolutely do NOT overlap.
  */
-inline void _safe_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
-                                          const T* __restrict__ rhs_ptr, size_t rhs_offset,
-                                          T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                   const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                   T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs_ptr[rhs_offset + i];
@@ -1861,9 +1861,9 @@ requires std::is_arithmetic_v<T>
  * if we are using a TensorSlice, that its memory is contiguous. This version
  * should only be used when lhs_ptr and result_ptr do NOT overlap.
  */
-inline void _safe_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
-                                          const T rhs,
-                                          T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                   const T rhs,
+                                   T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs;
@@ -1922,9 +1922,9 @@ requires std::is_arithmetic_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _safe_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                        const T* rhs_ptr, size_t rhs_offset,
-                                        T* result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                 const T* rhs_ptr, size_t rhs_offset,
+                                 T* result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs_ptr[rhs_offset + i];
@@ -1982,9 +1982,9 @@ requires std::is_arithmetic_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _safe_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                        const T rhs,
-                                        T* result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                 const T rhs,
+                                 T* result_ptr, size_t result_offset, size_t elements) {
     if constexpr (std::is_floating_point_v<T>) {
         for (size_t i = 0; i < elements; ++i) {
             result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs;
@@ -2047,10 +2047,10 @@ inline void _safe_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset,
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-inline void _safe_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                             const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                             T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                             size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                      const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                      T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                      size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2103,10 +2103,10 @@ inline void _safe_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-inline void _safe_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                             const T rhs,
-                                             T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                             size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                      const T rhs,
+                                      T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                      size_t dim0_extent, size_t dim1_extent) {
     if (rhs == 0) {
         throw std::runtime_error("TensorMath::_safe_2d_tensor_div_contiguous_v: Divide by zero detected.\n");
     }
@@ -2161,10 +2161,10 @@ inline void _safe_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-inline void _safe_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                           const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                           T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                           size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                    const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                    T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                    size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2216,10 +2216,10 @@ inline void _safe_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-inline void _safe_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                           const T rhs,
-                                           T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                           size_t dim0_extent, size_t dim1_extent) {
+void _safe_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                    const T rhs,
+                                    T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                    size_t dim0_extent, size_t dim1_extent) {
     if (rhs == 0) {
         throw std::runtime_error("TensorMath::_safe_2d_tensor_div_contiguous: Divide by zero detected.\n");
     }
@@ -2271,9 +2271,9 @@ inline void _safe_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-inline void _safe_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
-                                          const T* __restrict__ rhs_ptr, size_t rhs_offset,
-                                          T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                   const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                   T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if (std::any_of(rhs_ptr + rhs_offset, rhs_ptr + rhs_offset + elements, [](T val) { return val == 0; })) {
         throw std::runtime_error("TensorMath::_safe_tensor_div_contiguous_v: Divide by zero detected.\n");
     }
@@ -2310,9 +2310,9 @@ inline void _safe_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t 
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-inline void _safe_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
-                                          const T rhs,
-                                          T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                   const T rhs,
+                                   T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if (rhs == 0) {
         throw std::runtime_error("TensorMath::_safe_tensor_div_contiguous_v: Divide by zero detected.\n");
     }
@@ -2351,9 +2351,9 @@ inline void _safe_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t 
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-inline void _safe_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                        const T* rhs_ptr, size_t rhs_offset,
-                                        T* result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                 const T* rhs_ptr, size_t rhs_offset,
+                                 T* result_ptr, size_t result_offset, size_t elements) {
     if (std::any_of(rhs_ptr + rhs_offset, rhs_ptr + rhs_offset + elements, [](T val) { return val == 0; })) {
         throw std::runtime_error("TensorMath::_safe_tensor_div_contiguous: Divide by zero detected.\n");
     }
@@ -2389,9 +2389,9 @@ inline void _safe_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset,
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
-inline void _safe_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                        const T rhs,
-                                        T* result_ptr, size_t result_offset, size_t elements) {
+void _safe_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                 const T rhs,
+                                 T* result_ptr, size_t result_offset, size_t elements) {
     if (rhs == 0) {
         throw std::runtime_error("TensorMath::_safe_tensor_div_contiguous: Divide by zero detected.\n");
     }
@@ -2440,10 +2440,10 @@ requires std::is_floating_point_v<T>
  * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when we are adding two TensorSlices with variable strides.
  */
-inline void _unsafe_float_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                     const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                     size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                              const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                              T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                              size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2471,10 +2471,10 @@ requires std::is_floating_point_v<T>
  * absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when adding a scalar to a TensorSlice with variable strides.
  */
-inline void _unsafe_float_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                     const T rhs,
-                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                     size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                              const T rhs,
+                                              T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                              size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2502,10 +2502,10 @@ requires std::is_floating_point_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _unsafe_float_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                   const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                   size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                            const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                            T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                            size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2532,10 +2532,10 @@ requires std::is_floating_point_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _unsafe_float_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                   const T rhs,
-                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                   size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                            const T rhs,
+                                            T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                            size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2561,9 +2561,9 @@ requires std::is_floating_point_v<T>
  * of add should only be used when we are sure that lhs_ptr, rhs_ptr, and result_ptr
  * absolutely do NOT overlap.
  */
-inline void _unsafe_float_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
-                                                  const T* __restrict__ rhs_ptr, size_t rhs_offset,
-                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                           const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                           T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         // When we have fully contiguous blocks of memory, traverse linearly with a single loop
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs_ptr[rhs_offset + i];
@@ -2584,9 +2584,9 @@ requires std::is_floating_point_v<T>
  * if we are using a TensorSlice, that its memory is contiguous. This version
  * should only be used when lhs_ptr and result_ptr do NOT overlap.
  */
-inline void _unsafe_float_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
-                                                  const T rhs,
-                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_add_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                           const T rhs,
+                                           T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs;
     }
@@ -2606,9 +2606,9 @@ requires std::is_floating_point_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _unsafe_float_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                                const T* rhs_ptr, size_t rhs_offset,
-                                                T* result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                         const T* rhs_ptr, size_t rhs_offset,
+                                         T* result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs_ptr[rhs_offset + i];
     }
@@ -2627,9 +2627,9 @@ requires std::is_floating_point_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _unsafe_float_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                                const T rhs,
-                                                T* result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_add_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                         const T rhs,
+                                         T* result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] + rhs;
     }
@@ -2654,10 +2654,10 @@ requires std::is_floating_point_v<T>
  * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when we are subtracting two TensorSlices with variable strides.
  */
-inline void _unsafe_float_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                     const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                     size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                              const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                              T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                              size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2685,10 +2685,10 @@ requires std::is_floating_point_v<T>
  * absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when subtracting a scalar from a TensorSlice with variable strides.
  */
-inline void _unsafe_float_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                     const T rhs,
-                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                     size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                              const T rhs,
+                                              T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                              size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2716,10 +2716,10 @@ requires std::is_floating_point_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _unsafe_float_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                   const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                   size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                            const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                            T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                            size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2746,10 +2746,10 @@ requires std::is_floating_point_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _unsafe_float_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                   const T rhs,
-                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                   size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                            const T rhs,
+                                            T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                            size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2775,9 +2775,9 @@ requires std::is_floating_point_v<T>
  * of sub should only be used when we are sure that lhs_ptr, rhs_ptr, and result_ptr
  * absolutely do NOT overlap.
  */
-inline void _unsafe_float_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
-                                                  const T* __restrict__ rhs_ptr, size_t rhs_offset,
-                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                           const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                           T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs_ptr[rhs_offset + i];
     }
@@ -2797,9 +2797,9 @@ requires std::is_floating_point_v<T>
  * if we are using a TensorSlice, that its memory is contiguous. This version
  * should only be used when lhs_ptr and result_ptr do NOT overlap.
  */
-inline void _unsafe_float_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
-                                                  const T rhs,
-                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_sub_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                           const T rhs,
+                                           T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs;
     }
@@ -2819,9 +2819,9 @@ requires std::is_floating_point_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _unsafe_float_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                                const T* rhs_ptr, size_t rhs_offset,
-                                                T* result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                        const T* rhs_ptr, size_t rhs_offset,
+                                        T* result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs_ptr[rhs_offset + i];
     }
@@ -2840,9 +2840,9 @@ requires std::is_floating_point_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _unsafe_float_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                                const T rhs,
-                                                T* result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_sub_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                         const T rhs,
+                                         T* result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] - rhs;
     }
@@ -2867,10 +2867,10 @@ requires std::is_floating_point_v<T>
  * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when we are multiplying two TensorSlices with variable strides.
  */
-inline void _unsafe_float_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                     const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                     size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                              const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                              T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                              size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2898,10 +2898,10 @@ requires std::is_floating_point_v<T>
  * absolutely do NOT overlap. Inner dim stride must equal 1.
  * This method should be used when multiplying a TensorSlice by a scalar value with variable strides.
  */
-inline void _unsafe_float_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                     const T rhs,
-                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                     size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                              const T rhs,
+                                              T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                              size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2929,10 +2929,10 @@ requires std::is_floating_point_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _unsafe_float_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                   const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                   size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                            const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                            T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                            size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2959,10 +2959,10 @@ requires std::is_floating_point_v<T>
  * NOTE: There is flexibility in different strides for each Tensor; however, the inner dim stride must == 1.
  * Memory blocks may overlap safely.
  */
-inline void _unsafe_float_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                   const T rhs,
-                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                   size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                            const T rhs,
+                                            T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                            size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -2988,9 +2988,9 @@ requires std::is_floating_point_v<T>
  * of mul should only be used when we are sure that lhs_ptr, rhs_ptr, and result_ptr
  * absolutely do NOT overlap.
  */
-inline void _unsafe_float_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
-                                                  const T* __restrict__ rhs_ptr, size_t rhs_offset,
-                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                           const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                           T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs_ptr[rhs_offset + i];
     }
@@ -3010,9 +3010,9 @@ requires std::is_floating_point_v<T>
  * if we are using a TensorSlice, that its memory is contiguous. This version
  * should only be used when lhs_ptr and result_ptr do NOT overlap.
  */
-inline void _unsafe_float_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
-                                                  const T rhs,
-                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_mul_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                           const T rhs,
+                                           T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs;
     }
@@ -3032,9 +3032,9 @@ requires std::is_floating_point_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _unsafe_float_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                                const T* rhs_ptr, size_t rhs_offset,
-                                                T* result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                         const T* rhs_ptr, size_t rhs_offset,
+                                         T* result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs_ptr[rhs_offset + i];
     }
@@ -3053,9 +3053,9 @@ requires std::is_floating_point_v<T>
  * NOTE: This can only be used with contiguous memory blocks, so the caller must ensure that
  * if we are using a TensorSlice, that its memory is contiguous.
  */
-inline void _unsafe_float_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                                const T rhs,
-                                                T* result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                         const T rhs,
+                                         T* result_ptr, size_t result_offset, size_t elements) {
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] * rhs;
     }
@@ -3079,10 +3079,10 @@ inline void _unsafe_float_tensor_mul_contiguous(const T* lhs_ptr, size_t lhs_off
  */
 template <typename T>
 requires std::is_floating_point_v<T>
-inline void _unsafe_float_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                     const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                     size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                              const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                              T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                              size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -3114,10 +3114,10 @@ inline void _unsafe_float_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_p
  */
 template <typename T>
 requires std::is_floating_point_v<T>
-inline void _unsafe_float_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                     const T rhs,
-                                                     T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                     size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                              const T rhs,
+                                              T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                              size_t dim0_extent, size_t dim1_extent) {
     if (rhs == 0) {
         throw std::runtime_error("TensorMath::_unsafe_float_2d_tensor_div_contiguous_v: Divide by zero detected.\n");
     }
@@ -3149,10 +3149,10 @@ inline void _unsafe_float_2d_tensor_div_contiguous_v(const T* __restrict__ lhs_p
  */
 template <typename T>
 requires std::is_floating_point_v<T>
-inline void _unsafe_float_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                   const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
-                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                   size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                            const T* rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                                            T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                            size_t dim0_extent, size_t dim1_extent) {
     for (size_t i = 0; i < dim0_extent; ++i) {
         const size_t result_row = result_offset + (result_dim0_stride * i);
         const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -3183,10 +3183,10 @@ inline void _unsafe_float_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_
  */
 template <typename T>
 requires std::is_floating_point_v<T>
-inline void _unsafe_float_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
-                                                   const T rhs,
-                                                   T* result_ptr, size_t result_offset, size_t result_dim0_stride,
-                                                   size_t dim0_extent, size_t dim1_extent) {
+void _unsafe_float_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                                            const T rhs,
+                                            T* result_ptr, size_t result_offset, size_t result_dim0_stride,
+                                            size_t dim0_extent, size_t dim1_extent) {
     if (rhs == 0) {
         throw std::runtime_error("TensorMath::_unsafe_float_2d_tensor_div_contiguous: Divide by zero detected.\n");
     }
@@ -3215,9 +3215,9 @@ inline void _unsafe_float_2d_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_
  */
 template <typename T>
 requires std::is_floating_point_v<T>
-inline void _unsafe_float_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
-                                                  const T* __restrict__ rhs_ptr, size_t rhs_offset,
-                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, 
+                                           const T* __restrict__ rhs_ptr, size_t rhs_offset,
+                                           T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if (std::any_of(rhs_ptr + rhs_offset, rhs_ptr + rhs_offset + elements, [](T val) { return val == 0; })) {
         throw std::runtime_error("TensorMath::_unsafe_float_tensor_div_contiguous_v: Divide by zero detected.\n");
     }
@@ -3240,9 +3240,9 @@ inline void _unsafe_float_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr,
  */
 template <typename T>
 requires std::is_floating_point_v<T>
-inline void _unsafe_float_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
-                                                  const T rhs,
-                                                  T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr, size_t lhs_offset,
+                                           const T rhs,
+                                           T* __restrict__ result_ptr, size_t result_offset, size_t elements) {
     if (rhs == 0) {
         throw std::runtime_error("TensorMath::_unsafe_float_tensor_div_contiguous_v: Divide by zero detected.\n");
     }
@@ -3265,9 +3265,9 @@ inline void _unsafe_float_tensor_div_contiguous_v(const T* __restrict__ lhs_ptr,
  */
 template <typename T>
 requires std::is_floating_point_v<T>
-inline void _unsafe_float_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                                const T* rhs_ptr, size_t rhs_offset,
-                                                T* result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                         const T* rhs_ptr, size_t rhs_offset,
+                                         T* result_ptr, size_t result_offset, size_t elements) {
     if (std::any_of(rhs_ptr + rhs_offset, rhs_ptr + rhs_offset + elements, [](T val) { return val == 0; })) {
         throw std::runtime_error("TensorMath::_unsafe_float_tensor_div_contiguous: Divide by zero detected.\n");
     }
@@ -3289,9 +3289,9 @@ inline void _unsafe_float_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_off
  */
 template <typename T>
 requires std::is_floating_point_v<T>
-inline void _unsafe_float_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
-                                                const T rhs,
-                                                T* result_ptr, size_t result_offset, size_t elements) {
+void _unsafe_float_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset, 
+                                         const T rhs,
+                                         T* result_ptr, size_t result_offset, size_t elements) {
     if (rhs == 0) {
         throw std::runtime_error("TensorMath::_unsafe_float_tensor_div_contiguous: Divide by zero detected.\n");
     }

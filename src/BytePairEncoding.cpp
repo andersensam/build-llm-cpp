@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-30
+ * @version: 2026-10-05
  *
  * General Notes:
  *
@@ -21,8 +21,8 @@
 
 using BytePairEncoding_NS::BytePairEncodingTokenizer;
 using BytePairEncoding_NS::BytePositionInfo;
-using Log::log_message;
-using Log::Log_Priority;
+using Log_NS::log_message;
+using Log_NS::Log_Priority;
 
 BytePositionInfo::BytePositionInfo() {
     // Blank since we already set defaults in the class header

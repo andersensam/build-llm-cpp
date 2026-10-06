@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-30
+ * @version: 2026-10-05
  *
  * Notes:
  * TensorMatmul.hpp contains kernels for running matrix multiplications on Tensors and TensorSlices
@@ -33,17 +33,38 @@
 
 /* Local dependencies */
 #include "AbstractTensor.hpp"
+#include "Log.hpp"
+#include "Numerics.hpp"
 #include "Tensor.hpp"
 #include "TensorMath.hpp"
+#include "TensorSlice.hpp"
 
 namespace Tensor_Matmul_NS {
 
 /* Control whether or not we prefer to rematerialize AbstractTensors that are not contiguous to speed up matmuls */
 inline constexpr bool TENSORMATMUL_ENABLE_ABSTRACT_TENSOR_REMAT = true;
 
+/* Control whether or not to remat the destination Tensor for matmuls */
+inline constexpr bool TENSORMATMUL_ENABLE_DESTINATION_TENSOR_REMAT = true;
+
+/* Control whether or not we want to enable the naive matmul v2 path */
+inline constexpr bool TENSORMATMUL_ENABLE_NAIVE_MATMUL_V2 = true;
+
+/* Control whether to log warnings about falling back to naive matmul v1 */
+inline constexpr bool TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING = true;
+
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
+
+/* Use logging */
+using Log_NS::log_message;
+using Log_NS::Log_Priority;
+
+/* Use Tensor */
 using Tensor_NS::Tensor;
+
+/* Use ListTensorSlice */
+using TensorSlice_NS::ListTensorSlice;
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 /**
@@ -216,6 +237,67 @@ void _naive_matmul_impl_v1(const AbstractTensor<T>& lhs,
     }
 }
 
+// NOLINTBEGIN(bugprone-easily-swappable-parameters, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+/**
+ * Vectorized naive matmul implementation
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor, needed when using TensorSlices
+ * @param lhs_dim0_stride Stride of the lhs outer dim
+ * @param rhs_ptr Pointer to the raw data underlying the Tensor
+ * @param rhs_offset Offset to the beginning of the data block
+ * @param rhs_dim0_stride Stride of the rhs outer dim
+ * @param result_ptr Pointer to the raw data block underlying the result Tensor
+ * @param result_offset Offset to the beginning of the data block
+ * @param result_dim0_stride Stride of the result outer dim
+ * @param dim0_extent Number of rows in the destination Tensor
+ * @param dim1_extent Number of columns in the destination Tensor
+ * @param inner_dim_extent Inner dim of lhs and rhs
+ * NOTE: This version of add should only be used when we are sure that lhs_ptr, rhs_ptr, and
+ * result_ptr absolutely do NOT overlap. Inner dim stride must equal 1.
+ */
+template <typename T>
+requires std::is_arithmetic_v<T>
+void _naive_matmul_impl_v2_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, size_t lhs_dim0_stride,
+                             const T* __restrict__ rhs_ptr, size_t rhs_offset, size_t rhs_dim0_stride,
+                             T* __restrict__ result_ptr, size_t result_offset, size_t result_dim0_stride,
+                             size_t dim0_extent, size_t dim1_extent, size_t inner_dim_extent) {
+    // Handle floating point types first
+    if constexpr (std::is_floating_point_v<T>) {
+        // Loop over dim0
+        for (size_t i = 0; i < dim0_extent; ++i) {
+            const size_t result_row = result_offset + (result_dim0_stride * i);
+            const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
+            // Loop over the inner dim to prevent cache misses
+            for (size_t k = 0; k < inner_dim_extent; ++k) {
+                const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
+                // Broadcast lhs[i, k] for the operation
+                const T lhs_val = lhs_ptr[lhs_row + k];
+                // Loop over dim1 and perform the core op
+                for (size_t j = 0; j < dim1_extent; ++j) {
+                    result_ptr[result_row + j] += lhs_val * rhs_ptr[rhs_row + j];
+                }
+            }
+        }
+        // Check for INF and NaN in the result Tensor
+        bool overflow = false;
+        for (size_t i = 0; i < dim0_extent; ++i) {
+            const size_t result_row = result_offset + (result_dim0_stride * i);
+            for (size_t j = 0; j < dim1_extent; ++j) {
+                T result = result_ptr[result_row + j];
+                overflow |= !std::isfinite(result);
+            }
+        }
+        if (overflow) {
+            throw std::overflow_error("TensorMatmul::_naive_matmul_impl_v2_v: Overflow / underflow detected.\n");
+        }
+    }
+    // Handle the integer types, checking for accumulator availability
+    else {
+        // Implement later
+    }
+}
+// NOLINTEND(bugprone-easily-swappable-parameters, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+
 /**
  * Perform a matmul across two Tensors, with their target dims specified
  * @param lhs Lefthand Tensor to matmul
@@ -370,11 +452,11 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
                   const AbstractTensor<T>& rhs,
                   Tensor<T>& destination) {
     // Assume we want dims 0 and 1 from lhs and rhs and that their rank must == 2
-    if (lhs.rank() != 2 || rhs.rank() != 2) {
+    if (lhs.rank() != 2 || rhs.rank() != 2 || destination.rank() != 2) {
         throw std::invalid_argument(
             std::format(
-                "Tensor_Matmul::matmul: Invalid Tensor rank for matmul(lhs, rhs). lhs.rank == {}. rhs.rank == {}.",
-                    lhs.rank(), rhs.rank()));
+                "Tensor_Matmul::matmul: Invalid Tensor rank for matmul(lhs, rhs, destination). lhs.rank == {}. rhs.rank == {}. destination.rank == {}",
+                    lhs.rank(), rhs.rank(), destination.rank()));
     }
     auto compat = lhs._can_matmul(0, 1, rhs, 0, 1);
     if (!compat.has_value()) {
@@ -389,10 +471,121 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs,
             )
         );
     }
+    // Check to see if we want to remat destination
+    if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_REMAT) {
+        if (destination.dim_stride(1) != 1) {
+            destination.remat();
+        }
+    }
     // Zero out the content of the destination
     destination.fill(0);
-    // Use the desired matmul impl to execute the operation
-    _naive_matmul_impl_v1(lhs, rhs, destination);
+    // Perform additional checks if using naive matmul v2
+    if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V2) {
+        // Get the strides for lhs and rhs
+        const auto& lhs_stride = lhs.stride();
+        const auto& rhs_stride = rhs.stride();
+        // Check to see if our Tensors are contiguous, which eliminates ListTensorSlice immediately
+        if (lhs.contiguous() && rhs.contiguous() && destination.contiguous()) {
+            // Ensure that j is stride == 1 for rhs and destination, and that k is stride == 1 for lhs
+            if (lhs_stride.at(1) == 1 && rhs_stride.at(1) == 1 && destination.dim_stride(1) == 1) {
+                // Ensure we have either safe aliasing or that each Tensor is unique
+                if ((destination.is_safe_aliasing(lhs) && destination.is_safe_aliasing(rhs)) && (destination.is_unique(lhs)) && destination.is_unique(rhs)) {
+                    // If all of the safety checks are true, then use the optimized v2 path
+                    _naive_matmul_impl_v2_v(lhs._data(), lhs.offset(), lhs_stride.at(0),
+                                            rhs._data(), rhs.offset(), rhs_stride.at(0),
+                                            destination._data(), destination.offset(), destination.dim_stride(0),
+                                            destination.extent(0), destination.extent(1), lhs.extent(1));
+                    return destination;
+                }
+                if (!destination.is_safe_aliasing(lhs) || !destination.is_safe_aliasing(rhs)) {
+                    if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_REMAT) {
+                        destination.remat();
+                        return matmul(lhs, rhs, destination);
+                    }
+                    else {
+                        // Fall back to the slower v1 path
+                        if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
+                            log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
+                                "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor remat.");
+                        }
+                        _naive_matmul_impl_v1(lhs, rhs, destination);
+                        return destination;
+                    }
+                }
+
+            }
+            // Fall back to the slower v1 path
+            if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
+                log_message(Log_Priority::WARNING, "TensorMatmul::matmul", "Falling back to naive matmul v1.");
+            }
+            _naive_matmul_impl_v1(lhs, rhs, destination);
+            return destination;
+        }
+        // Try casting AbstractTensor to Tensor (fails if using ListTensorSlice)
+        const Tensor<T>* lhs_ptr = dynamic_cast<const Tensor<T>*>(&lhs);
+        const Tensor<T>* rhs_ptr = dynamic_cast<const Tensor<T>*>(&rhs);
+        // If we fail to cast, check to see if we want to remat / convert to Tensor
+        if (lhs_ptr == nullptr || rhs_ptr == nullptr) {
+            if constexpr (TENSORMATMUL_ENABLE_ABSTRACT_TENSOR_REMAT) {
+                // Use the to_tensor() call to convert ListTensorSlice --> Tensor
+                const Tensor<T> lhs_c = (lhs_ptr == nullptr) ? dynamic_cast<const ListTensorSlice<T>*>(&lhs)->to_tensor() : *lhs_ptr;
+                const Tensor<T> rhs_c = (rhs_ptr == nullptr) ? dynamic_cast<const ListTensorSlice<T>*>(&rhs)->to_tensor() : *rhs_ptr;
+                return matmul(lhs_c, rhs_c, destination);
+            }
+            else {
+                // Fall back to the slower v1 path
+                if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
+                    log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
+                        "Falling back to native matmul v1 due to disabled AbstractTensor remat");
+                }
+                _naive_matmul_impl_v1(lhs, rhs, destination);
+                return destination;
+            }
+        }
+        // If both casts are successful, check the dims and prefer the v2 path
+        else {
+            if (lhs_ptr->dim_stride(1) == 1 && rhs_ptr->dim_stride(1) == 1 && destination.dim_stride(1) == 1) {
+                // Ensure we have safe aliasing and unique destinations
+                if ((destination.is_safe_aliasing(*lhs_ptr) && destination.is_safe_aliasing(*rhs_ptr)) &&
+                    destination.is_unique(*lhs_ptr) && destination.is_unique(*rhs_ptr)) {
+                    _naive_matmul_impl_v2_v(lhs_ptr->_data(), lhs_ptr->offset(), lhs_ptr->dim_stride(0),
+                                            rhs_ptr->_data(), rhs_ptr->offset(), rhs_ptr->dim_stride(0),
+                                            destination._data(), destination.offset(), destination.dim_stride(0),
+                                            destination.extent(0), destination.extent(1), lhs_ptr->extent(1));
+                    return destination;
+                }
+                if (!destination.is_safe_aliasing(*lhs_ptr) || !destination.is_safe_aliasing(*rhs_ptr)) {
+                    if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_REMAT) {
+                        destination.remat();
+                        return matmul(*lhs_ptr, *rhs_ptr, destination);
+                    }
+                    else {
+                        // Fall back to the slower v1 path
+                        if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
+                            log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
+                                "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor remat.");
+                        }
+                        _naive_matmul_impl_v1(lhs, rhs, destination);
+                        return destination;
+                    }
+                }
+            }
+            if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
+                log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
+                    "Falling back to naive matmul v1 due to unsafe aliasing and disabled destination Tensor remat.");
+            }
+            _naive_matmul_impl_v1(lhs, rhs, destination);
+            return destination;
+        }
+    }
+    else {
+        if constexpr (TENSORMATMUL_ENABLE_NAIVE_MATMUL_V2 && TENSORMATMUL_ENABLE_NAIVE_MATMUL_V1_FALLBACK_WARNING) {
+            log_message(Log_Priority::WARNING, "TensorMatmul::matmul",
+                "Falling back to naive matmul v1.");
+        }
+        // Use the desired matmul impl to execute the operation
+        _naive_matmul_impl_v1(lhs, rhs, destination);
+    }
     return destination;
 }
 

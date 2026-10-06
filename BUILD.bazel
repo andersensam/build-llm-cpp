@@ -121,8 +121,11 @@ cc_library(
     includes = [],
     deps = [
         ":abstracttensor",
+        ":llmlog",
+        ":numerics",
         ":tensor",
         ":tensormath",
+        ":tensorslice",
     ]
 )
 
@@ -195,7 +198,7 @@ cc_library(
     includes = [],
     deps = [
         ":llmlog",
-        ":tokenizer"
+        ":tokenizer",
     ]
 )
 
@@ -217,7 +220,7 @@ cc_library(
     deps = [
         ":llmlog",
         ":tensor",
-        ":tokenizer"
+        ":tokenizer",
     ]
 )
 
@@ -240,10 +243,45 @@ cc_library(
         ":llmlog",
         ":tensor",
         ":tensormatmul",
-        ":tensorslice"
+        ":tensorslice",
     ]
 )
 
+# Layer library
+cc_library(
+    name = "layer",
+    hdrs = glob(
+        [
+            "src/include/Layer.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":tensor",
+        ":tensormath",
+    ]
+)
+
+# Linear Layer library
+cc_library(
+    name = "linearlayer",
+    hdrs = glob(
+        [
+            "src/include/LinearLayer.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":layer",
+        ":tensor",
+        ":tensormath",
+        ":tensormatmul",
+    ]
+)
+
+# Main binary for execution
 cc_binary(
     name = "build-llm-cpp",
     srcs = glob(
@@ -256,6 +294,8 @@ cc_binary(
         ":attention",
         ":bpe",
         ":dataloader",
+        ":layer",
+        ":linearlayer",
         ":llmlog",
         ":tensor",
         ":tensormatmul",

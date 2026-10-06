@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-08
+ * @version: 2026-10-05
  *
  * General Notes:
  *
@@ -21,8 +21,8 @@
 
 using DataLoader_NS::DataLoader;
 using Tensor_NS::Tensor;
-using Log::Log_Priority;
-using Log::log_message;
+using Log_NS::Log_Priority;
+using Log_NS::log_message;
 
 std::vector<std::pair<size_t, size_t>> DataLoader::get_idxs(size_t base) const {
     // Setup the result vector

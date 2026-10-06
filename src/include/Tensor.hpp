@@ -72,8 +72,8 @@ inline constexpr bool TENSOR_ENABLE_SOFTMAX_WARNINGS = true;
 inline constexpr bool TENSOR_ENABLE_UNNECESSARY_REMAT_LOGGING = true;
 
 /* Use Logging functions */
-using Log::Log_Priority;
-using Log::log_message;
+using Log_NS::Log_Priority;
+using Log_NS::log_message;
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;

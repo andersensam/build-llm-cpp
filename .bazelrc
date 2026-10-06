@@ -1,15 +1,34 @@
 build --cxxopt=-std=c++23
 build --host_cxxopt=-std=c++23
 build --test_output=errors
+
+# For release, build with maximum optimizations
 build:release --cxxopt=-O3
+
+# Debug settings, disabling most compiler optimizations 
 build:debug --cxxopt=-O0 
 build:debug --cxxopt=-Wall 
 build:debug --cxxopt=-Wextra
 build:debug --cxxopt=-Wpedantic 
 build:debug --cxxopt=-g
+build:debug --cxxopt=-fno-omit-frame-pointer
+build:debug --cxxopt=-mno-omit-leaf-frame-pointer
 build:debug --cxxopt=-fsanitize=address,undefined
 build:debug --linkopt=-fsanitize=address,undefined
 build:debug --build_tag_filters=-no-clang-tidy
+
+# Enable some optimizations via -O2, but still include debug information
+build:vectorize --cxxopt=-O2
+build:vectorize --cxxopt=-Wall 
+build:vectorize --cxxopt=-Wextra
+build:vectorize --cxxopt=-Wpedantic 
+build:vectorize --cxxopt=-g
+build:vectorize --cxxopt=-Rpass=loop-vectorize
+build:vectorize --cxxopt=-Rpass-missed=loop-vectorize
+#build:vectorize --cxxopt=-Rpass-analysis=loop-vectorize
+build:vectorize --cxxopt=-fno-omit-frame-pointer
+build:vectorize --cxxopt=-mno-omit-leaf-frame-pointer
+build:vectorize --build_tag_filters=-no-clang-tidy
 
 # Required for bazel_clang_tidy to operate as expected
 build:clang-tidy --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect

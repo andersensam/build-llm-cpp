@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-14
+ * @version: 2026-10-05
  *
  * General Notes:
  *
@@ -30,6 +30,7 @@
 #include "include/Attention.hpp"
 #include "include/BytePairEncoding.hpp"
 #include "include/DataLoader.hpp"
+#include "include/LinearLayer.hpp"
 #include "include/Log.hpp"
 #include "include/Tensor.hpp"
 #include "include/TensorMatmul.hpp"
@@ -38,8 +39,10 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
 int main() {
 
-    using Log::Log_Priority;
-    using Log::log_message;
+    using LinearLayer_NS::LinearLayer;
+
+    using Log_NS::Log_Priority;
+    using Log_NS::log_message;
 
     using Tensor_NS::Tensor;
     using Tensor_NS::CausalMaskType;
@@ -187,6 +190,15 @@ int main() {
         Tensor<float> nsr = new_slice_range.slice({0, 1}, {{0, 2}, {0, 2}}, {});
         log_message(Log_Priority::INFO, "main", "Created range slice.");
         log_message(Log_Priority::INFO, "main", std::format("Original Tensor: {}. Slice: {}", new_slice_range.to_string(), nsr.to_string()));
+
+        // Create a new Linear Layer
+        LinearLayer<float> ll0(256, 512);
+        // Create a Tensor slice of dim [512, 256]
+        Tensor<float> ll0_slice0 = emb.slice({0, 1}, {{0, 512}, {0, 256}}, {});
+        // Run the forward pass for the layer
+        Tensor<float> ll0_result = ll0.forward(ll0_slice0);
+        log_message(Log_Priority::INFO, "main", std::format("Layer output: {}", ll0_result.info()));
+        
 
     } catch (const std::exception& e) {
 

@@ -51,8 +51,8 @@ using AbstractTensor_NS::AbstractTensor;
 using DimInfo_NS::DimInfo;
 
 /* Use logging functions */
-using Log::log_message;
-using Log::Log_Priority;
+using Log_NS::log_message;
+using Log_NS::Log_Priority;
 
 /* Use Tensor and helper functions from Tensor_NS */
 using Tensor_NS::AbstractTensor;
