@@ -223,6 +223,15 @@ private:
      * This will not be true if creating a TensorSlice
      */
     bool c_contiguous = true;
+
+/* Private functions */
+    /**
+     * Private constructor for Tensor, used only when creating Tensor slices as we only need
+     * the shared_ptr to m_data and calculate the rest of the values on the fly
+     */
+    explicit Tensor(std::shared_ptr<Storage<T>> data_ptr): m_data(std::move(data_ptr)) {
+        // Handle the rest of the setup in the slice() function
+    }
     
 /* Public functions */
 public:
@@ -2054,13 +2063,9 @@ public:
                 throw std::invalid_argument("Tensor.slice: Invalid dims provided.\n");
             }
         }
-        // Ensure dims doesn't have any duplicates
-        size_t prev_dim = dims.begin()[0];
-        for (size_t i = 1; i < dims.size(); ++i) {
-            if (dims.begin()[i] == prev_dim) {
-                throw std::invalid_argument("Tensor.slice: Duplicate dim detected.\n");
-            }
-            prev_dim = dims.begin()[i];
+        // Ensure dims doesn't contain duplicates
+        if (std::unordered_set<size_t>(dims.begin(), dims.end()).size() != dims.size()) {
+            throw std::invalid_argument("Tensor.slice: Duplicate dims detected.\n");
         }
         // Ensure that c_rank - dims.size() = other_dims.size()
         if ((c_rank - dims.size()) != other_dims.size()) {
@@ -2076,8 +2081,8 @@ public:
                 throw std::invalid_argument("Tensor.slice: Invalid other_dim specified.\n");
             }
         }
-        // Create a shallow copy of this Tensor
-        Tensor<T> result = *this;
+        // Create a shallow copy of this Tensor using the private constructor
+        Tensor<T> result(m_data);
         result.c_rank = dims.size();
         // Resize the m_dims and m_stride vectors to account for the new rank
         result.m_dims.resize(result.c_rank);

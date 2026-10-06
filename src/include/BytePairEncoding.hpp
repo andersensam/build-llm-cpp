@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-29
+ * @version: 2026-10-05
  *
  * General Notes:
  *

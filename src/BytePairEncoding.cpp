@@ -35,9 +35,9 @@ BytePositionInfo::BytePositionInfo(uint32_t byte_sequence, size_t pos_0, size_t 
     m_positions.emplace_back(pos_0, pos_1);
 }
 
-BytePositionInfo::BytePositionInfo(const BytePositionInfo& target) : m_byte_sequence(target.m_byte_sequence),
-    m_positions(target.m_positions.size()) {
+BytePositionInfo::BytePositionInfo(const BytePositionInfo& target) : m_byte_sequence(target.m_byte_sequence) {
 
+    m_positions.reserve(target.m_positions.size());
     for (const auto& [p0, p1] : target.m_positions) {
         m_positions.emplace_back(p0, p1);
     }
@@ -378,6 +378,10 @@ std::string BytePairEncoding_NS::byte_vector_to_string(const std::vector<std::by
 }
 
 std::string BytePairEncoding_NS::token_vector_to_string(const std::vector<size_t>& v) {
+    // Handle being handed an empty token vector
+    if (v.empty()) {
+        return "";
+    }
 
     std::string output;
     output.reserve(v.size());
