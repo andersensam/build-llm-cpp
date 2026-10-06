@@ -3100,6 +3100,7 @@ Tensor<T>& unsafe_uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, S
                                                                       rhs_val,
                                                                       dest._data(), dest.offset(), dest.dim_stride(0),
                                                                       dest.extent(0), dest.extent(1));
+                break;
             case SqueezedOpType::DIV:
                 TensorMath_NS::_unsafe_float_2d_tensor_div_contiguous(lhs._data(), lhs.offset(), lhs.dim_stride(0),
                                                                       rhs_val,
