@@ -194,7 +194,7 @@ bool BytePairEncodingTokenizer::known(uint32_t t) const {
 
 bool BytePairEncodingTokenizer::known(size_t id) const {
 
-    return (id <= m_vocab_size);
+    return (id < m_vocab_size);
 }
 
 size_t BytePairEncodingTokenizer::add_token(uint32_t t) {
@@ -204,7 +204,7 @@ size_t BytePairEncodingTokenizer::add_token(uint32_t t) {
     }
 
     // Add the new token to the vocabulary
-    m_vocab.at(t) = m_vocab_size;
+    m_vocab[t] = m_vocab_size;
     m_token_ids.push_back(t);
     m_vocab_size += 1;
 
@@ -535,7 +535,7 @@ std::vector<uint32_t> BytePairEncoding_NS::create_tokens(const std::vector<std::
         std::span<const uint32_t> uv_span{uv};
         // Start at the beginning of the vector but end one element early as we can't
         // merge something past the end of the vector
-        for (size_t i = 0; i + 1 < uv.size() - 1; ++i) {
+        for (size_t i = 0; i + 1 < uv.size(); ++i) {
             // Merge together eligible bytes / byte sequences
             // Check that a particular uint32_t isn't already full
             size_t pos_0_bytes = get_num_packed_bytes(uv.at(i));
@@ -556,7 +556,7 @@ std::vector<uint32_t> BytePairEncoding_NS::create_tokens(const std::vector<std::
                 else {
                     auto& bpi = token_occurrences.at(packed);
                     // Only track non-overlapping instances of the same token
-                    if (bpi.get_positions().back().second < 1) {
+                    if (bpi.get_positions().back().second < i) {
                         // Add the current position to the list inside of BytePositionInfo
                         bpi.add_position(i, i + 1);
                     }
@@ -575,6 +575,8 @@ std::vector<uint32_t> BytePairEncoding_NS::create_tokens(const std::vector<std::
                                                     [] (const auto& v1, const auto& v2) {
                                                         return v1.second.get_frequency() < v2.second.get_frequency();
                                                     });
+        // Stop merging if there are no repeated pairs
+        if (most_frequent_token->second.get_frequency() < 2) { break; }
         const auto& positions = most_frequent_token->second.get_positions();
         // Iterate over the positions in reverse order, changing the first position to be the
         // new merged token, then erasing the second. We do this in reverse so that the positions

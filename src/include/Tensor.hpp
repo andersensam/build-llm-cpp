@@ -2064,7 +2064,8 @@ public:
             }
         }
         // Ensure dims doesn't contain duplicates
-        if (std::unordered_set<size_t>(dims.begin(), dims.end()).size() != dims.size()) {
+        std::unordered_set<size_t> dims_set(dims.begin(), dims.end());
+        if (dims_set.size() != dims.size()) {
             throw std::invalid_argument("Tensor.slice: Duplicate dims detected.\n");
         }
         // Ensure that c_rank - dims.size() = other_dims.size()
@@ -2075,11 +2076,22 @@ public:
                 )
             );
         }
+        std::unordered_set<size_t> other_dim_set;
         // Ensure other_dims are valid
         for (auto [dim, idx] : other_dims) {
             if (dim >= c_rank) {
                 throw std::invalid_argument("Tensor.slice: Invalid other_dim specified.\n");
             }
+            if (dims_set.count(dim) != 0) {
+                throw std::invalid_argument("Tensor.slice: Dim cannot be present in dims and other_dims.\n");
+            }
+            if (idx >= extent(dim)) {
+                throw std::invalid_argument("Tensor.slice: Invalid other_dim index provided.\n");
+            }
+            other_dim_set.insert(dim);
+        }
+        if (other_dim_set.size() != other_dims.size()) {
+            throw std::invalid_argument("Tensor.slice: Duplicate dim detected in other_dims.\n");
         }
         // Create a shallow copy of this Tensor using the private constructor
         Tensor<T> result(m_data);
@@ -2103,19 +2115,8 @@ public:
             std::vector<size_t> offset_query(c_rank, 0);
             for (size_t i = 0; i < other_dims.size(); ++i) {
                 auto [dim_num, dim_c] = other_dims.begin()[i];
-                if (dim_num >= c_rank) {
-                    throw std::invalid_argument(
-                        std::format("Tensor.slice: Invalid other dim id provided. Got {} but Tensor has rank {}.", dim_num, c_rank)
-                    );
-                }
-                // Ensure we don't have any duplicates in other_dims
-                size_t& offset_query_val = offset_query[dim_num];
-                if (offset_query_val != 0) {
-                    throw std::invalid_argument(
-                        std::format("Tensor.slice: Duplicate other_dim detected: {}.", dim_num)
-                    );
-                }
-                offset_query_val = dim_c;
+                // Ensure dim_c doesn't extend
+                offset_query[dim_num] = dim_c;
             }
             // Calculate the offset from this Tensor and persist into the target
             result.c_offset = _get_offset(offset_query);
