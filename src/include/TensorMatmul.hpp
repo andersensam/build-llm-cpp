@@ -322,7 +322,7 @@ void _naive_matmul_impl_v2_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, s
                     for (size_t j = 0; j < dim1_extent; ++j) {
                         accumulator_t result = lhs_val * static_cast<accumulator_t>(rhs_ptr[rhs_row + j]);
                         accumulator_t result_i_j = static_cast<accumulator_t>(result_ptr[result_row + j]) + result;
-                        overflow |= (result_i_j > MAX_VAL || result < MIN_VAL);
+                        overflow |= (result_i_j > MAX_VAL || result_i_j < MIN_VAL);
                         result_ptr[result_row + j] = static_cast<T>(result_i_j);
                     }
                 }
