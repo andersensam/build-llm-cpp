@@ -278,6 +278,8 @@ void _naive_matmul_impl_v2_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, s
                 const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
                 // Broadcast lhs[i, k] for the operation
                 const T lhs_val = lhs_ptr[lhs_row + k];
+                // If lhs_val == 0, we can skip the entire inner dim1 loop
+                if (lhs_val == 0) { continue; }
                 // Loop over dim1 and perform the core op
                 for (size_t j = 0; j < dim1_extent; ++j) {
                     result_ptr[result_row + j] += lhs_val * rhs_ptr[rhs_row + j];
@@ -314,6 +316,8 @@ void _naive_matmul_impl_v2_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, s
                     const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
                     // Broadcast lhs[i, k] for the operation
                     const accumulator_t lhs_val = static_cast<accumulator_t>(lhs_ptr[lhs_row + k]);
+                    // If lhs_val == 0, we can skip the entire inner dim1 loop
+                    if (lhs_val == 0) { continue; }
                     // Loop over dim1 and perform the core op
                     for (size_t j = 0; j < dim1_extent; ++j) {
                         accumulator_t result = lhs_val * static_cast<accumulator_t>(rhs_ptr[rhs_row + j]);
@@ -326,6 +330,17 @@ void _naive_matmul_impl_v2_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, s
         }
         // Handle signed types without accumulators
         else if constexpr (std::is_signed_v<T>) {
+            // Get the corresponding unsigned type
+            using U = std::make_unsigned_t<T>;
+            // Get the min and max values for the type
+            constexpr T MIN_VAL = std::numeric_limits<T>::min();
+            constexpr T MAX_VAL = std::numeric_limits<T>::max();
+            // Use an overflow mask as a target for SIMD
+            // We might run into issues with small types (int8_t or int16_t) being
+            // promoted to int32_t, which can cause issues with |= operation on
+            // a bool
+            uint32_t overflow_mask = 0;
+            // Iterate over the outer dim
             for (size_t i = 0; i < dim0_extent; ++i) {
                 const size_t result_row = result_offset + (result_dim0_stride * i);
                 const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -334,14 +349,54 @@ void _naive_matmul_impl_v2_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, s
                     const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
                     // Broadcast lhs[i, k] for the operation
                     const T lhs_val = lhs_ptr[lhs_row + k];
+                    // If lhs_val == 0, we can skip the entire inner dim1 loop
+                    if (lhs_val == 0) { continue; }
+                    // Calcuate the valid range of values for rhs once outside the inner loop
+                    /**
+                     * DISCLOSURE: AI tools were used to analyze why this branch was not easily
+                     * vectorizable -- new learnings: integer promotion for int8_t and int16_t
+                     * and the boolean accumulator issues. I do find it interesting
+                     * that the unsigned path doesn't have this issue and was vectorizable
+                     * from the beginning.
+                     */
+                    T rhs_v_min = 0, rhs_v_max = 0;
+                    if (lhs_val > 0) {
+                        rhs_v_min = MIN_VAL / lhs_val;
+                        rhs_v_max = MAX_VAL / lhs_val;
+                    }
+                    else if (lhs_val == -1) {
+                        rhs_v_min = -MAX_VAL;
+                        rhs_v_max = MAX_VAL;
+                    }
+                    else {
+                        rhs_v_min = MAX_VAL / lhs_val;
+                        rhs_v_max = MIN_VAL / lhs_val;
+                    }
                     // Loop over dim1 and perform the core op
                     for (size_t j = 0; j < dim1_extent; ++j) {
-                        T partial = 0;
-                        overflow |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_ptr[rhs_row + j], &partial);
-                        overflow |= TensorMath_NS::_add_overflow_signed(result_ptr[result_row + j], partial, &(result_ptr[result_row + j]));
+                        // Get the vals for rhs and result
+                        const T rhs_val = rhs_ptr[rhs_row + j];
+                        const T result_val = result_ptr[result_row + j];
+                        // Use unsigned ops to perform the multiplication of lhs_val * rhs_val
+                        const T prod = static_cast<T>(static_cast<U>(lhs_val) * static_cast<U>(rhs_val));
+                        const T sum = static_cast<T>(static_cast<U>(result_val) + static_cast<U>(prod));
+                        // Detect multiplcation and addition overflows by validating against the rhs range
+                        // The rhs checks could occur earlier; however, vectorization prevents early exits,
+                        // so just calculate with the addition overflow for readability
+                        const bool mul_overflow = (rhs_val < rhs_v_min) | (rhs_val > rhs_v_max);
+                        // If result_val and sum have different signs AND prod and sum have different signs
+                        // then we must have overflowed on the addition
+                        // XOR checks the MSB (see TensorMath.hpp)
+                        const T add_check = static_cast<T>((result_val ^ sum) & (prod ^ sum));
+                        const bool add_overflow = add_check < 0;
+                        // Write to the overflow_mask
+                        overflow_mask |= static_cast<uint32_t>(mul_overflow | add_overflow);
+                        // Persist the value
+                        result_ptr[result_row + j] = sum;
                     }
                 }
             }
+            overflow |= (overflow_mask != 0);
         }
         // Handle unsigned types
         else {
@@ -353,6 +408,8 @@ void _naive_matmul_impl_v2_v(const T* __restrict__ lhs_ptr, size_t lhs_offset, s
                     const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
                     // Broadcast lhs[i, k] for the operation
                     const T lhs_val = lhs_ptr[lhs_row + k];
+                    // If lhs_val == 0, we can skip the entire inner dim1 loop
+                    if (lhs_val == 0) { continue; }
                     // Loop over dim1 and perform the core op
                     for (size_t j = 0; j < dim1_extent; ++j) {
                         T partial = 0;
@@ -401,6 +458,8 @@ void _naive_matmul_impl_v2(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_
                 const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
                 // Broadcast lhs[i, k] for the operation
                 const T lhs_val = lhs_ptr[lhs_row + k];
+                // If lhs_val == 0, we can skip the entire inner dim1 loop
+                if (lhs_val == 0) { continue; }
                 // Loop over dim1 and perform the core op
                 for (size_t j = 0; j < dim1_extent; ++j) {
                     result_ptr[result_row + j] += lhs_val * rhs_ptr[rhs_row + j];
@@ -437,11 +496,13 @@ void _naive_matmul_impl_v2(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_
                     const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
                     // Broadcast lhs[i, k] for the operation
                     const accumulator_t lhs_val = static_cast<accumulator_t>(lhs_ptr[lhs_row + k]);
+                    // If lhs_val == 0, we can skip the entire inner dim1 loop
+                    if (lhs_val == 0) { continue; }
                     // Loop over dim1 and perform the core op
                     for (size_t j = 0; j < dim1_extent; ++j) {
                         accumulator_t result = lhs_val * static_cast<accumulator_t>(rhs_ptr[rhs_row + j]);
                         accumulator_t result_i_j = static_cast<accumulator_t>(result_ptr[result_row + j]) + result;
-                        overflow |= (result_i_j > MAX_VAL || result < MIN_VAL);
+                        overflow |= (result_i_j > MAX_VAL || result_i_j < MIN_VAL);
                         result_ptr[result_row + j] = static_cast<T>(result_i_j);
                     }
                 }
@@ -449,6 +510,17 @@ void _naive_matmul_impl_v2(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_
         }
         // Handle signed types without accumulators
         else if constexpr (std::is_signed_v<T>) {
+            // Get the corresponding unsigned type
+            using U = std::make_unsigned_t<T>;
+            // Get the min and max values for the type
+            constexpr T MIN_VAL = std::numeric_limits<T>::min();
+            constexpr T MAX_VAL = std::numeric_limits<T>::max();
+            // Use an overflow mask as a target for SIMD
+            // We might run into issues with small types (int8_t or int16_t) being
+            // promoted to int32_t, which can cause issues with |= operation on
+            // a bool
+            uint32_t overflow_mask = 0;
+            // Iterate over the outer dim
             for (size_t i = 0; i < dim0_extent; ++i) {
                 const size_t result_row = result_offset + (result_dim0_stride * i);
                 const size_t lhs_row = lhs_offset + (lhs_dim0_stride * i);
@@ -457,14 +529,54 @@ void _naive_matmul_impl_v2(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_
                     const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
                     // Broadcast lhs[i, k] for the operation
                     const T lhs_val = lhs_ptr[lhs_row + k];
+                    // If lhs_val == 0, we can skip the entire inner dim1 loop
+                    if (lhs_val == 0) { continue; }
+                    // Calcuate the valid range of values for rhs once outside the inner loop
+                    /**
+                     * DISCLOSURE: AI tools were used to analyze why this branch was not easily
+                     * vectorizable -- new learnings: integer promotion for int8_t and int16_t
+                     * and the boolean accumulator issues. I do find it interesting
+                     * that the unsigned path doesn't have this issue and was vectorizable
+                     * from the beginning.
+                     */
+                    T rhs_v_min = 0, rhs_v_max = 0;
+                    if (lhs_val > 0) {
+                        rhs_v_min = MIN_VAL / lhs_val;
+                        rhs_v_max = MAX_VAL / lhs_val;
+                    }
+                    else if (lhs_val == -1) {
+                        rhs_v_min = -MAX_VAL;
+                        rhs_v_max = MAX_VAL;
+                    }
+                    else {
+                        rhs_v_min = MAX_VAL / lhs_val;
+                        rhs_v_max = MIN_VAL / lhs_val;
+                    }
                     // Loop over dim1 and perform the core op
                     for (size_t j = 0; j < dim1_extent; ++j) {
-                        T partial = 0;
-                        overflow |= TensorMath_NS::_mul_overflow_signed(lhs_val, rhs_ptr[rhs_row + j], &partial);
-                        overflow |= TensorMath_NS::_add_overflow_signed(result_ptr[result_row + j], partial, &(result_ptr[result_row + j]));
+                        // Get the vals for rhs and result
+                        const T rhs_val = rhs_ptr[rhs_row + j];
+                        const T result_val = result_ptr[result_row + j];
+                        // Use unsigned ops to perform the multiplication of lhs_val * rhs_val
+                        const T prod = static_cast<T>(static_cast<U>(lhs_val) * static_cast<U>(rhs_val));
+                        const T sum = static_cast<T>(static_cast<U>(result_val) + static_cast<U>(prod));
+                        // Detect multiplcation and addition overflows by validating against the rhs range
+                        // The rhs checks could occur earlier; however, vectorization prevents early exits,
+                        // so just calculate with the addition overflow for readability
+                        const bool mul_overflow = (rhs_val < rhs_v_min) | (rhs_val > rhs_v_max);
+                        // If result_val and sum have different signs AND prod and sum have different signs
+                        // then we must have overflowed on the addition
+                        // XOR checks the MSB (see TensorMath.hpp)
+                        const T add_check = static_cast<T>((result_val ^ sum) & (prod ^ sum));
+                        const bool add_overflow = add_check < 0;
+                        // Write to the overflow_mask
+                        overflow_mask |= static_cast<uint32_t>(mul_overflow | add_overflow);
+                        // Persist the value
+                        result_ptr[result_row + j] = sum;
                     }
                 }
             }
+            overflow |= (overflow_mask != 0);
         }
         // Handle unsigned types
         else {
@@ -476,6 +588,8 @@ void _naive_matmul_impl_v2(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_
                     const size_t rhs_row = rhs_offset + (rhs_dim0_stride * k);
                     // Broadcast lhs[i, k] for the operation
                     const T lhs_val = lhs_ptr[lhs_row + k];
+                    // If lhs_val == 0, we can skip the entire inner dim1 loop
+                    if (lhs_val == 0) { continue; }
                     // Loop over dim1 and perform the core op
                     for (size_t j = 0; j < dim1_extent; ++j) {
                         T partial = 0;

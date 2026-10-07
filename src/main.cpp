@@ -201,24 +201,39 @@ int main() {
 
         // Test new matmul with int16_t
         Tensor<int16_t> int16_t0({256, 512});
+        int16_t0.random(-10, 10);
         Tensor<int16_t> int16_t1({512, 256});
+        int16_t1.fill(2);
         Tensor<int16_t> int16_mm_result({256, 256});
         Tensor_Matmul_NS::matmul(int16_t0, int16_t1, int16_mm_result);
         log_message(Log_Priority::INFO, "main", std::format("MM output: {}", int16_mm_result.info()));
+        // Force the compiler to do something with the result
+        Tensor<int16_t> int16_slice = int16_mm_result.slice({0, 1}, {{0, 4}, {0,4}}, {});
+        log_message(Log_Priority::INFO, "main", std::format("int16_mm_slice: {}", int16_slice.to_string()));
 
         // Test new matmul with int64_t
         Tensor<int64_t> int64_t0({256, 512});
+        int64_t0.random(-256, 256);
         Tensor<int64_t> int64_t1({512, 256});
+        int64_t1.fill(4);
         Tensor<int64_t> int64_mm_result({256, 256});
         Tensor_Matmul_NS::matmul(int64_t0, int64_t1, int64_mm_result);
         log_message(Log_Priority::INFO, "main", std::format("MM output: {}", int64_mm_result.info()));
+        // Force the compiler to do something with the result
+        Tensor<int64_t> int64_slice = int64_mm_result.slice({0, 1}, {{0, 4}, {0,4}}, {});
+        log_message(Log_Priority::INFO, "main", std::format("int64_mm_slice: {}", int64_slice.to_string()));
 
         // Test new matmul with uint16_t
         Tensor<uint16_t> uint16_t0({256, 512});
+        uint16_t0.random(0, 4);
         Tensor<uint16_t> uint16_t1({512, 256});
+        uint16_t1.fill(2);
         Tensor<uint16_t> uint16_mm_result({256, 256});
         Tensor_Matmul_NS::matmul(uint16_t0, uint16_t1, uint16_mm_result);
         log_message(Log_Priority::INFO, "main", std::format("MM output: {}", uint16_mm_result.info()));
+        // Force the compiler to do something with the result
+        Tensor<uint16_t> uint16_slice = uint16_mm_result.slice({0, 1}, {{0, 4}, {0,4}}, {});
+        log_message(Log_Priority::INFO, "main", std::format("uint16_mm_slice: {}", uint16_slice.to_string()));
         
 
     } catch (const std::exception& e) {
