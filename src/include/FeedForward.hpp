@@ -41,6 +41,7 @@ using GELULayer_NS::GELULayer;
 
 /* Use the Layer interface */
 using Layer_NS::Layer;
+using Layer_NS::LAYER_PREFER_TEMP_DESTIATION_OVER_EXCEPTION;
 
 /* Use LinearLayer */
 using LinearLayer_NS::LinearLayer;
@@ -138,6 +139,14 @@ public:
         // Ensure that the 2nd dim of input == emb_dim
         if (input.shape() != dest.shape()) {
             throw std::invalid_argument("FeedForward.forward: Input and dest must have the same shape.\n");
+        }
+        if (!dest.is_unique(input)) {
+            if constexpr (LAYER_PREFER_TEMP_DESTIATION_OVER_EXCEPTION) {
+                Tensor<T> temp_dest = dest.clone();
+                forward(input, temp_dest);
+                return dest.copy_from(temp_dest);
+            }
+            throw std::invalid_argument("FeedForward.forward: Input and destination Tensors must be unique.\n");
         }
         // Perform the forward operation: linear_0 --> gelu --> linear_1
         Tensor<T> int_res = linear_0.forward(input);
