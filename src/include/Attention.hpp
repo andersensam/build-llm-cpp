@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-07
  *
  * General Notes:
  *
@@ -39,7 +39,7 @@ namespace Attention_NS {
 
 using Tensor_NS::Tensor;
 using Tensor_NS::CausalMaskType;
-using Tensor_Matmul_NS::matmul;
+using TensorMatmul_NS::matmul;
 
 // NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**

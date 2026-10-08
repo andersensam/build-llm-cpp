@@ -1,6 +1,6 @@
 module(
     name = "build-llm-cpp",
-    version = "2026.10.06",
+    version = "2026.10.07",
 )
 
 bazel_dep(name = "rules_cc", version = "0.2.22")

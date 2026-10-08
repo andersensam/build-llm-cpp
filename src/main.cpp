@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-06
+ * @version: 2026-10-07
  *
  * General Notes:
  *
@@ -18,6 +18,8 @@
  */
 
 /* Standard dependencies */
+#include <cstdint>
+#include <cstddef>
 #include <exception>
 #include <format>
 #include <iostream>
@@ -32,6 +34,7 @@
 #include "include/DataLoader.hpp"
 #include "include/LinearLayer.hpp"
 #include "include/Log.hpp"
+#include "include/SliceConfig.hpp"
 #include "include/Tensor.hpp"
 #include "include/TensorMatmul.hpp"
 #include "include/TensorSlice.hpp"
@@ -39,25 +42,27 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
 int main() {
 
+    using Attention_NS::CausalAttention;
+    using Attention_NS::MultiHeadAttention;
+
+    using DataLoader_NS::DataLoader;
+
     using LinearLayer_NS::LinearLayer;
 
     using Log_NS::Log_Priority;
     using Log_NS::log_message;
 
+    using SliceConfig_NS::VectorSliceConfig;
+    using SliceConfig_NS::MatrixSliceConfig;
+    using SliceConfig_NS::VectorSliceOrientation;
+    using SliceConfig_NS::IndexType;
+
     using Tensor_NS::Tensor;
     using Tensor_NS::CausalMaskType;
-    using Tensor_Matmul_NS::matmul;
 
-    using TensorSlice_NS::VectorSliceConfig;
-    using TensorSlice_NS::MatrixSliceConfig;
-    using TensorSlice_NS::VectorSliceOrientation;
-    using TensorSlice_NS::IndexType;
+    using TensorMatmul_NS::matmul;
+
     using TensorSlice_NS::ListTensorSlice;
-
-    using DataLoader_NS::DataLoader;
-
-    using Attention_NS::CausalAttention;
-    using Attention_NS::MultiHeadAttention;
 
     try {
         
@@ -107,6 +112,7 @@ int main() {
 
         // Convert the TensorSlice to a Matrix
         Tensor<float> query_result = query_mat.to_tensor();
+        log_message(Log_Priority::INFO, "main", std::format("query_result: {}", query_result.info()));
         //Tensor<float> attn_scores = query_result.matmul_self(true);
         // Transpose query_result inside the matmul
         Tensor<float> attn_scores = matmul(query_result, 0 , 1, query_result, 1, 0);
@@ -205,7 +211,7 @@ int main() {
         Tensor<int16_t> int16_t1({512, 256});
         int16_t1.fill(2);
         Tensor<int16_t> int16_mm_result({256, 256});
-        Tensor_Matmul_NS::matmul(int16_t0, int16_t1, int16_mm_result);
+        TensorMatmul_NS::matmul(int16_t0, int16_t1, int16_mm_result);
         log_message(Log_Priority::INFO, "main", std::format("MM output: {}", int16_mm_result.info()));
         // Force the compiler to do something with the result
         Tensor<int16_t> int16_slice = int16_mm_result.slice({0, 1}, {{0, 4}, {0,4}}, {});
@@ -217,7 +223,7 @@ int main() {
         Tensor<int64_t> int64_t1({512, 256});
         int64_t1.fill(4);
         Tensor<int64_t> int64_mm_result({256, 256});
-        Tensor_Matmul_NS::matmul(int64_t0, int64_t1, int64_mm_result);
+        TensorMatmul_NS::matmul(int64_t0, int64_t1, int64_mm_result);
         log_message(Log_Priority::INFO, "main", std::format("MM output: {}", int64_mm_result.info()));
         // Force the compiler to do something with the result
         Tensor<int64_t> int64_slice = int64_mm_result.slice({0, 1}, {{0, 4}, {0,4}}, {});
@@ -229,11 +235,20 @@ int main() {
         Tensor<uint16_t> uint16_t1({512, 256});
         uint16_t1.fill(2);
         Tensor<uint16_t> uint16_mm_result({256, 256});
-        Tensor_Matmul_NS::matmul(uint16_t0, uint16_t1, uint16_mm_result);
+        TensorMatmul_NS::matmul(uint16_t0, uint16_t1, uint16_mm_result);
         log_message(Log_Priority::INFO, "main", std::format("MM output: {}", uint16_mm_result.info()));
         // Force the compiler to do something with the result
         Tensor<uint16_t> uint16_slice = uint16_mm_result.slice({0, 1}, {{0, 4}, {0,4}}, {});
         log_message(Log_Priority::INFO, "main", std::format("uint16_mm_slice: {}", uint16_slice.to_string()));
+
+        // Test creating a slice of a slice
+        Tensor<uint32_t> base({3, 3});
+        base.set({0, 1, 2, 3, 4, 5, 6, 7, 8});
+        log_message(Log_Priority::INFO, "main", std::format("Base tensor: {}", base.to_string()));
+        Tensor<uint32_t> base_transpose = base.slice({1, 0}, {{0, 1}, {0, 0}}, {});
+        log_message(Log_Priority::INFO, "main", std::format("Base transpose: {}", base_transpose.to_string()));
+        Tensor<uint32_t> base_t_t = base_transpose.slice({1, 0}, {}, {});
+        log_message(Log_Priority::INFO, "main", std::format("Base t_t: {}", base_t_t.to_string()));
         
 
     } catch (const std::exception& e) {

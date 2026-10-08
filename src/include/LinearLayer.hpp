@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-07
  *
  * Notes:
  * LinearLayer.hpp defines a standard linear layer for use in the feed forward network (FFN)
@@ -127,7 +127,7 @@ public:
             );
         }
         // Execute the matmul
-        return Tensor_Matmul_NS::matmul(input, m_w, dest);
+        return TensorMatmul_NS::matmul(input, m_w, dest);
     }
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)

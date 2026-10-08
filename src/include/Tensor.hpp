@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-06
+ * @version: 2026-10-07
  *
  * General Notes:
  *
@@ -559,6 +559,13 @@ public:
      * @returns Returns a size_t representing the offset we want
      */
     [[nodiscard]] size_t _get_offset(std::initializer_list<size_t> c) const {
+        // Ensure c has the same size as c_rank
+        if (c.size() != c_rank) {
+            throw std::invalid_argument(
+                std::format("Tensor._get_offset: Invalid number of coordinates provided. Got {} but wanted {}.", c.size(), c_rank
+                )
+            );
+        }
         // Do some pointer arithmetic to calculate the exact address to retrieve from m_data
         size_t target_offset = c_offset;
         // Ensure the coordinates are valid for our Tensor
@@ -580,6 +587,13 @@ public:
      * @returns Returns a size_t representing the offset we want
      */
     [[nodiscard]] size_t _get_offset(const std::vector<size_t>& c) const {
+        // Ensure c has the same size as c_rank
+        if (c.size() != c_rank) {
+            throw std::invalid_argument(
+                std::format("Tensor._get_offset: Invalid number of coordinates provided. Got {} but wanted {}.", c.size(), c_rank
+                )
+            );
+        }
         // Do some pointer arithmetic to calculate the exact address to retrieve from m_data
         size_t target_offset = c_offset;
         // Ensure the coordinates are valid for our Tensor
@@ -645,7 +659,6 @@ public:
                 return false;
             }
         }
-
         return true;
     }
 
@@ -677,7 +690,9 @@ public:
      */
     Tensor<T>& copy_from(const Tensor<T>& target) {
         if (!_compatible(target)) {
-            throw std::invalid_argument("Tensor.copy_from: Invalid target Tensor provided to copy_from.\n");
+            throw std::invalid_argument(
+                std::format("Tensor.copy_from: Invalid target Tensor provided to copy_from. Source: {}, dest: {}.",
+                    target.info(), info()));
         }
         // Ensure we don't copy if we receive the same Tensor or Storage
         if (this == &target || (_data() == target._data() && c_offset == target.c_offset && is_same_layout(target))) {
@@ -2108,9 +2123,8 @@ public:
                 result.c_elements *= extent(dims.begin()[i]);
                 result.m_stride[i] = dim_stride(dims.begin()[i]);
             }
-            // Since we have no filters and a different target rank, we must have other
-            // dims to consider. Create a vector and prepare a query to get the new
-            // offset for the slice
+            // If we have other dims to consider, set their coordinates in the offset query,
+            // otherwise, it's all set to 0
             std::vector<size_t> offset_query(c_rank, 0);
             for (size_t i = 0; i < other_dims.size(); ++i) {
                 auto [dim_num, dim_c] = other_dims.begin()[i];

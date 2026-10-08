@@ -126,6 +126,7 @@ cc_library(
         ":tensor",
         ":tensormath",
         ":tensorslice",
+        ":tensorutils",
     ]
 )
 
@@ -146,6 +147,22 @@ cc_library(
         ":numerics",
         ":sliceconfig",
         ":storage",
+        ":tensor",
+    ]
+)
+
+# Utilities for Tensors
+cc_library(
+    name = "tensorutils",
+    hdrs = glob(
+        [
+            "src/include/TensorUtils.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
         ":tensor",
     ]
 )
@@ -301,6 +318,24 @@ cc_binary(
         ":tensormatmul",
         ":tensorslice",
     ]
+)
+
+# Matmul benchmark binary
+cc_binary(
+    name = "matmul-benchmark",
+    srcs = glob(
+        [
+            "benchmarks/Matmul_Benchmark.cpp"
+        ]
+    ),
+    copts = ["-Isrc/include"],
+    includes = [],
+    deps = [
+        ":llmlog",
+        ":tensor",
+        ":tensormatmul",
+        ":tensorslice",
+    ],
 )
 
 cc_test(

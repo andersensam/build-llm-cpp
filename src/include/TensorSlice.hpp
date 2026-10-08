@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-06
+ * @version: 2026-10-07
  *
  * General Notes:
  *
@@ -618,11 +618,7 @@ public:
         }
         // Otherwise we must be dealing with a 2-D TensorSlice
         Tensor<T> target({extent(0), extent(1)});
-        for (size_t i = 0; i < extent(0); ++i) {
-            for (size_t j = 0; j < extent(1); ++j) {
-                target.at({i, j}) = this->at({i, j});
-            }
-        }
+        target.copy_from(*this);
         return target;
     }
 

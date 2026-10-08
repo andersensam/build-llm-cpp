@@ -16,7 +16,7 @@ namespace {
 
 using SliceConfig_NS::IndexType;
 using SliceConfig_NS::MatrixSliceConfig;
-using Tensor_Matmul_NS::matmul;
+using TensorMatmul_NS::matmul;
 using Tensor_NS::Tensor;
 using TensorSlice_NS::ListTensorSlice;
 
