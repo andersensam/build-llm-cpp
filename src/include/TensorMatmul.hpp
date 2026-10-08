@@ -1074,7 +1074,7 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1
         if ((destination.rank() - 1 == destination_dim1) && (destination.dim_stride(destination_dim1) != 1)) {
             destination.contiguous();
             // Do a sanity check to ensure the op was successful
-            if (destination.dim_stride(1) != 1) {
+            if (destination.dim_stride(destination_dim1) != 1) {
                 throw std::runtime_error("TensorMatmul::matmul: Unknown error when trying to call destination.contiguous().\n");
             }
         }
