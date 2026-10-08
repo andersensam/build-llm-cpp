@@ -34,6 +34,7 @@
 #include "include/DataLoader.hpp"
 #include "include/LinearLayer.hpp"
 #include "include/Log.hpp"
+#include "include/NormalizationLayer.hpp"
 #include "include/SliceConfig.hpp"
 #include "include/Tensor.hpp"
 #include "include/TensorMatmul.hpp"
@@ -51,6 +52,8 @@ int main() {
 
     using Log_NS::Log_Priority;
     using Log_NS::log_message;
+
+    using NormalizationLayer_NS::NormalizationLayer;
 
     using SliceConfig_NS::VectorSliceConfig;
     using SliceConfig_NS::MatrixSliceConfig;
@@ -198,58 +201,19 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Original Tensor: {}. Slice: {}", new_slice_range.to_string(), nsr.to_string()));
 
         // Create a new Linear Layer
-        LinearLayer<float> ll0(256, 512);
-        // Create a Tensor slice of dim [512, 256]
-        Tensor<float> ll0_slice0 = emb.slice({0, 1}, {{0, 512}, {0, 256}}, {});
+        LinearLayer<float> ll0(5, 5);
+        // Create a Tensor slice of dim [5, 5]
+        Tensor<float> ll0_slice0 = emb.slice({0, 1}, {{0, 5}, {0, 5}}, {});
         // Run the forward pass for the layer
         Tensor<float> ll0_result = ll0.forward(ll0_slice0);
         log_message(Log_Priority::INFO, "main", std::format("Layer output: {}", ll0_result.info()));
 
-        // Test new matmul with int16_t
-        Tensor<int16_t> int16_t0({256, 512});
-        int16_t0.random(-10, 10);
-        Tensor<int16_t> int16_t1({512, 256});
-        int16_t1.fill(2);
-        Tensor<int16_t> int16_mm_result({256, 256});
-        TensorMatmul_NS::matmul(int16_t0, int16_t1, int16_mm_result);
-        log_message(Log_Priority::INFO, "main", std::format("MM output: {}", int16_mm_result.info()));
-        // Force the compiler to do something with the result
-        Tensor<int16_t> int16_slice = int16_mm_result.slice({0, 1}, {{0, 4}, {0,4}}, {});
-        log_message(Log_Priority::INFO, "main", std::format("int16_mm_slice: {}", int16_slice.to_string()));
-
-        // Test new matmul with int64_t
-        Tensor<int64_t> int64_t0({256, 512});
-        int64_t0.random(-256, 256);
-        Tensor<int64_t> int64_t1({512, 256});
-        int64_t1.fill(4);
-        Tensor<int64_t> int64_mm_result({256, 256});
-        TensorMatmul_NS::matmul(int64_t0, int64_t1, int64_mm_result);
-        log_message(Log_Priority::INFO, "main", std::format("MM output: {}", int64_mm_result.info()));
-        // Force the compiler to do something with the result
-        Tensor<int64_t> int64_slice = int64_mm_result.slice({0, 1}, {{0, 4}, {0,4}}, {});
-        log_message(Log_Priority::INFO, "main", std::format("int64_mm_slice: {}", int64_slice.to_string()));
-
-        // Test new matmul with uint16_t
-        Tensor<uint16_t> uint16_t0({256, 512});
-        uint16_t0.random(0, 4);
-        Tensor<uint16_t> uint16_t1({512, 256});
-        uint16_t1.fill(2);
-        Tensor<uint16_t> uint16_mm_result({256, 256});
-        TensorMatmul_NS::matmul(uint16_t0, uint16_t1, uint16_mm_result);
-        log_message(Log_Priority::INFO, "main", std::format("MM output: {}", uint16_mm_result.info()));
-        // Force the compiler to do something with the result
-        Tensor<uint16_t> uint16_slice = uint16_mm_result.slice({0, 1}, {{0, 4}, {0,4}}, {});
-        log_message(Log_Priority::INFO, "main", std::format("uint16_mm_slice: {}", uint16_slice.to_string()));
-
-        // Test creating a slice of a slice
-        Tensor<uint32_t> base({3, 3});
-        base.set({0, 1, 2, 3, 4, 5, 6, 7, 8});
-        log_message(Log_Priority::INFO, "main", std::format("Base tensor: {}", base.to_string()));
-        Tensor<uint32_t> base_transpose = base.slice({1, 0}, {{0, 1}, {0, 0}}, {});
-        log_message(Log_Priority::INFO, "main", std::format("Base transpose: {}", base_transpose.to_string()));
-        Tensor<uint32_t> base_t_t = base_transpose.slice({1, 0}, {}, {});
-        log_message(Log_Priority::INFO, "main", std::format("Base t_t: {}", base_t_t.to_string()));
-        
+        // Create a new Normalization Layer
+        NormalizationLayer<float> nl0;
+        Tensor<float> ll0_n = nl0.forward(ll0_result);
+        log_message(Log_Priority::INFO, "main", std::format("Normalized layer info: {}", ll0_n.info()));
+        // Take small slices of ll0_result and ll0_n and compare them
+        log_message(Log_Priority::INFO, "main", std::format("Pre normalized: {}\nNormalized: {}", ll0_result.to_string(), ll0_n.to_string()));
 
     } catch (const std::exception& e) {
 

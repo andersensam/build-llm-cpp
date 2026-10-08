@@ -46,7 +46,7 @@ using Tensor_NS::Tensor;
 
 // NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**
- * Abstract Layer class to be implemented
+ * LinearLayer class (used in FFN)
  */
 template <typename T>
 requires std::is_arithmetic_v<T>
@@ -78,7 +78,12 @@ public:
      */
     LinearLayer(size_t in_dim, size_t out_dim) : c_input_dim(in_dim), c_output_dim(out_dim), m_w({c_input_dim, c_output_dim}) {
         // Initialize the Tensor to have random weights
-        m_w.random(-2, 2);
+        if constexpr (std::is_unsigned_v<T>) {
+            m_w.random(0, 2);
+        }
+        else {
+            m_w.random(-2, 2);
+        }
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)
 
@@ -95,6 +100,10 @@ public:
      * @returns Returns a new Tensor with the result
      */
     Tensor<T> forward(const AbstractTensor<T>& input) const override {
+        // Ensure we have a rank 2 Tensor
+        if (input.rank() != 2) {
+            throw std::invalid_argument("LinearLayer.forward: Input Tensor must have rank == 2.\n");
+        }
         // Check to see that we can matmul
         auto compatible = input._can_matmul(0, 1, m_w, 0, 1);
         if (!compatible.has_value()) {
@@ -113,6 +122,10 @@ public:
      * @returns Returns a reference to the destination Tensor provided
      */
     Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const override {
+        // Ensure we have a rank 2 Tensor
+        if (input.rank() != 2) {
+            throw std::invalid_argument("LinearLayer.forward: Input Tensor must have rank == 2.\n");
+        }
         // Check to see that we can matmul
         auto compatible = input._can_matmul(0, 1, m_w, 0, 1);
         if (!compatible.has_value()) {

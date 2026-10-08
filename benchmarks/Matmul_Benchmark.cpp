@@ -103,7 +103,7 @@ int main() {
         log_message(Log_Priority::INFO, "main", "Finished transposed float matmul");
 
         // Test using ListTensorSlice
-        auto f_ptr = std::make_shared<Tensor<float>>(float_t0);
+        auto f_ptr = std::make_shared<Tensor<float>>(float_t0.shape());
         std::vector<size_t> idx0(128);
         std::vector<size_t> idx1(64);
         for (size_t i = 0; i < 128; ++i) {

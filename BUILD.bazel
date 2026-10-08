@@ -298,6 +298,24 @@ cc_library(
     ]
 )
 
+# Normalization Layer library
+cc_library(
+    name = "normalizationlayer",
+    hdrs = glob(
+        [
+            "src/include/NormalizationLayer.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
+        ":layer",
+        ":tensor",
+        ":tensorslice",
+    ]
+)
+
 # Main binary for execution
 cc_binary(
     name = "build-llm-cpp",
@@ -314,6 +332,7 @@ cc_binary(
         ":layer",
         ":linearlayer",
         ":llmlog",
+        ":normalizationlayer",
         ":tensor",
         ":tensormatmul",
         ":tensorslice",
