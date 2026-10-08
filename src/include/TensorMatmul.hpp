@@ -391,7 +391,7 @@ void _naive_matmul_impl_v2(const T* lhs_ptr, size_t lhs_offset, size_t lhs_dim0_
                     for (size_t j = 0; j < dim1_extent; ++j) {
                         accumulator_t result = lhs_val * static_cast<accumulator_t>(rhs_ptr[rhs_row + j]);
                         accumulator_t result_i_j = static_cast<accumulator_t>(result_ptr[result_row + j]) + result;
-                        overflow_mask |= static_cast<uint32_t>((result_i_j > MAX_VAL | result_i_j < MIN_VAL));
+                        overflow_mask |= static_cast<uint32_t>((result_i_j > MAX_VAL) | (result_i_j < MIN_VAL));
                         result_ptr[result_row + j] = static_cast<T>(result_i_j);
                     }
                 }
@@ -807,7 +807,7 @@ bool naive_matmul_v2_dispatch(const AbstractTensor<T>& lhs, size_t lhs_dim0, siz
                 if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS) {
                     // Check to see if dest_dim1 is the outer dim
                     const auto& dest_dims = dest.shape();
-                    if (dest_dims.at(dest_dims.size()) - 1 == dest_dim1) {
+                    if (dest_dims.back() == dest_dim1) {
                         // If the outer dim is indeed dest_dim1, try running .contiguous()
                         dest.contiguous();
                         // Check to see that our call worked
@@ -957,6 +957,8 @@ bool naive_matmul_v2_dispatch(const AbstractTensor<T>& lhs, size_t lhs_dim0, siz
                         }
                         return false;
                     }
+                    // Create a new coordinate vector set to {0, 0}, reflecting the copy
+                    std::vector<size_t> dummy_coordinates(2, 0);
                     // Handle both Tensors requiring copies
                     if (lhs_ptr->dim_stride(lhs_dim1) != 1 && rhs_ptr->dim_stride(rhs_dim1) != 1) {
                         if constexpr (TENSORMATMUL_NAIVE_MATMUL_V2_LOG_TEMP) {
@@ -973,8 +975,8 @@ bool naive_matmul_v2_dispatch(const AbstractTensor<T>& lhs, size_t lhs_dim0, siz
                         TensorUtils_NS::copy_high_rank_abstract_to_tensor(rhs, rhs_dim0, rhs_dim1, rhs_coordinates,
                                                                           temp_rhs, 0, 1, temp_rhs.offset());
                         // Since destination hasn't been rewritten, we should be able to return the result directly
-                        return naive_matmul_v2_dispatch(temp_lhs, 0, 1, lhs_coordinates,
-                                                        temp_rhs, 0, 1, rhs_coordinates,
+                        return naive_matmul_v2_dispatch(temp_lhs, 0, 1, dummy_coordinates,
+                                                        temp_rhs, 0, 1, dummy_coordinates,
                                                         dest, dest_dim0, dest_dim1, dest_coordinates);
                     }
                     // If only lhs needs to be copied
@@ -988,7 +990,7 @@ bool naive_matmul_v2_dispatch(const AbstractTensor<T>& lhs, size_t lhs_dim0, siz
                         TensorUtils_NS::copy_high_rank_abstract_to_tensor(lhs, lhs_dim0, lhs_dim1, lhs_coordinates,
                                                                           temp_lhs, 0, 1, temp_lhs.offset());
                         // Since destination hasn't been rewritten, we should be able to return the result directly
-                        return naive_matmul_v2_dispatch(temp_lhs, 0, 1, lhs_coordinates,
+                        return naive_matmul_v2_dispatch(temp_lhs, 0, 1, dummy_coordinates,
                                                         rhs, rhs_dim0, rhs_dim1, rhs_coordinates,
                                                         dest, dest_dim0, dest_dim1, dest_coordinates);
                     }
@@ -1004,7 +1006,7 @@ bool naive_matmul_v2_dispatch(const AbstractTensor<T>& lhs, size_t lhs_dim0, siz
                                                                           temp_rhs, 0, 1, temp_rhs.offset());
                         // Since destination hasn't been rewritten, we should be able to return the result directly
                         return naive_matmul_v2_dispatch(lhs, lhs_dim0, lhs_dim1, lhs_coordinates,
-                                                        temp_rhs, 0, 1, rhs_coordinates,
+                                                        temp_rhs, 0, 1, dummy_coordinates,
                                                         dest, dest_dim0, dest_dim1, dest_coordinates);
                     }
                 }
