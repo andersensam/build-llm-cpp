@@ -137,7 +137,7 @@ public:
         }
         if (dest.extent(0) != input.extent(0) || dest.extent(1) != m_w.extent(1)) {
             throw std::invalid_argument(
-                std::format("LinearLayer.foward: Invalid destination Tensor. Got dims [{}, {}], but expected [{}, {}];",
+                std::format("LinearLayer.forward: Invalid destination Tensor. Got dims [{}, {}], but expected [{}, {}];",
                     dest.extent(0), dest.extent(1), input.extent(0), m_w.extent(1))
             );
         }
