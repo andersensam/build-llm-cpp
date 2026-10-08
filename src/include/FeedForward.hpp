@@ -13,7 +13,7 @@
  * @version: 2026-10-08
  *
  * Notes:
- * NormalizationLayer.hpp
+ * FeedForward.hpp
  */
 
 #ifndef FEED_FORWARD_HPP
