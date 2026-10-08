@@ -65,24 +65,14 @@ private:
     static constexpr T eps = 0.00001;
 
     /**
-     * Input dimension
-     */
-    size_t c_input_dim = 0;
-
-    /**
-     * Output dimension
-     */
-    size_t c_output_dim = 0;
-
-    /**
      * Scale Tensor, used for scaling the output up or down
      */
-    Tensor<T> m_scale;
+    T m_scale = 1;
 
     /**
      * Shift Tensor, used for shifting the output closer to / further from zero
      */
-    Tensor<T> m_shift;
+    T m_shift = 0;
 
 /* Public functions */
 public:
@@ -92,10 +82,8 @@ public:
      * @param in_dim Input dimension
      * @param out_dim Output dimension
      */
-    NormalizationLayer(size_t in_dim, size_t out_dim) : c_input_dim(in_dim), c_output_dim(out_dim),
-                                                        m_scale({in_dim, out_dim}), m_shift({in_dim, out_dim}) {
-        // Ensure scale is set to 1
-        m_scale.fill(1);
+    NormalizationLayer() {
+        // Do nothing
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)
 
@@ -158,6 +146,14 @@ public:
         }
         if (dest.extent(0) != input.extent(0) || dest.extent(1) != input.extent(1)) {
             throw std::invalid_argument("NormalizationLayer.forward: Input and dest Tensor shapes do not match.\n");
+        }
+        // Since normalization is an in-place operation, we might have input == dest. To ensure we aren't
+        // overwriting the input, create a temp destination and then copy the result back
+        if (!dest.is_unique(input)) {
+            Tensor<T> temp_dest = dest.clone();
+            forward(input, temp_dest);
+            dest.copy_from(temp_dest);
+            return dest;
         }
         // Calculate the mean for each input row in the Tensor
         Tensor<T> means({input.extent(0)});

@@ -215,7 +215,7 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Layer output: {}", ll0_result.info()));
 
         // Create a new Normalization Layer
-        NormalizationLayer<float> nl0(5, 5);
+        NormalizationLayer<float> nl0;
         Tensor<float> ll0_n = nl0.forward(ll0_result);
         log_message(Log_Priority::INFO, "main", std::format("Normalized layer info: {}", ll0_n.info()));
         // Take small slices of ll0_result and ll0_n and compare them

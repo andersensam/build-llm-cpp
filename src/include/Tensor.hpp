@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-07
+ * @version: 2026-10-08
  *
  * General Notes:
  *
@@ -423,14 +423,6 @@ public:
     }
 
     /**
-     * Get the dims of a Tensor
-     * @returns Returns a const ref to m_dims
-     */
-    const std::vector<size_t>& dims() const {
-        return m_dims;
-    }
-
-    /**
      * Get the dimensions of the Tensor
      * @returns Returns a const reference to the vector containing the dimensions
      */
@@ -456,7 +448,7 @@ public:
         if (dim >= c_rank) {
             throw std::invalid_argument("Tensor.extent: Invalid dim provided.\n");
         }
-        return m_dims.at(dim);
+        return m_dims[dim];
     }
 
     /**
@@ -573,7 +565,7 @@ public:
             if (c.begin()[i] >= extent(i)) {
                 throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end dim ({}).", c.begin()[i], extent(i)));
             }
-            target_offset += c.begin()[i] * m_stride.at(i);
+            target_offset += c.begin()[i] * m_stride[i];
         }
         if (target_offset >= m_data->c_elements) {
             throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end of Storage.", target_offset));
@@ -601,7 +593,7 @@ public:
             if (c[i] >= extent(i)) {
                 throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end dim ({}).", c[i], extent(i)));
             }
-            target_offset += c.at(i) * m_stride.at(i);
+            target_offset += c[i] * m_stride[i];
         }
         if (target_offset >= m_data->c_elements) {
             throw std::out_of_range(std::format("Tensor._get_offset: Index {} exceeds end of Storage.", target_offset));
@@ -800,7 +792,7 @@ public:
                 const auto& strides = t.stride();
                 for (size_t i = 0; i < t.rank(); ++i) {
                     if (t.extent(i) > 0) {
-                        element_span += (t.extent(i) - 1) * strides.at(i);
+                        element_span += (t.extent(i) - 1) * strides[i];
                     }
                 }
                 element_span += 1; // Include final element
@@ -831,7 +823,7 @@ public:
         // Check the dims and strides match, m_dims and m_stride always have size() == c_rank
         for (size_t i = 0; i < c_rank; ++i) {
             if (m_dims[i] != target.extent(i)) { return false; }
-            if (m_stride[i] != strides.at(i)) { return false; }
+            if (m_stride[i] != strides[i]) { return false; }
         }
         return true;
     }
@@ -1024,7 +1016,7 @@ public:
             throw std::invalid_argument("Tensor.+: Incompatible Tensor shapes provided to +.\n");
         }
         // Allocate a new Tensor with the same dimensions as lhs
-        Tensor<T> result(lhs.dims());
+        Tensor<T> result(lhs.shape());
         uniform_op(lhs, rhs, result, SqueezedOpType::ADD);
         return result;
     }
@@ -1037,7 +1029,7 @@ public:
      */
     friend Tensor<T> operator+(const Tensor<T>& lhs, T rhs) {
         // Allocate a new Tensor with the same dimensions as lhs
-        Tensor<T> result(lhs.dims());
+        Tensor<T> result(lhs.shape());
         uniform_op(lhs, rhs, result, SqueezedOpType::ADD);
         return result;
     }
@@ -1073,7 +1065,7 @@ public:
             throw std::invalid_argument("Tensor.-: Incompatible Tensor shapes provided to -.\n");
         }
         // Allocate a new Tensor with the same dimensions as lhs
-        Tensor<T> result(lhs.dims());
+        Tensor<T> result(lhs.shape());
         uniform_op(lhs, rhs, result, SqueezedOpType::SUB);
         return result;
     }
@@ -1086,7 +1078,7 @@ public:
      */
     friend Tensor<T> operator-(const Tensor<T>& lhs, T rhs) {
         // Allocate a new Tensor with the same dimensions as lhs
-        Tensor<T> result(lhs.dims());
+        Tensor<T> result(lhs.shape());
         uniform_op(lhs, rhs, result, SqueezedOpType::SUB);
         return result;
     }
@@ -1122,7 +1114,7 @@ public:
             throw std::invalid_argument("Tensor.*: Incompatible Tensor shapes provided to *.\n");
         }
         // Allocate a new Tensor with the same dimensions as lhs
-        Tensor<T> result(lhs.dims());
+        Tensor<T> result(lhs.shape());
         uniform_op(lhs, rhs, result, SqueezedOpType::MUL);
         return result;
     }
@@ -1135,7 +1127,7 @@ public:
      */
     friend Tensor<T> operator*(const Tensor<T>& lhs, T rhs) {
         // Allocate a new Tensor with the same dimensions as lhs
-        Tensor<T> result(lhs.dims());
+        Tensor<T> result(lhs.shape());
         uniform_op(lhs, rhs, result, SqueezedOpType::MUL);
         return result;
     }
@@ -1171,7 +1163,7 @@ public:
             throw std::invalid_argument("Tensor./: Incompatible Tensor shapes provided to /.\n");
         }
         // Allocate a new Tensor with the same dimensions as lhs
-        Tensor<T> result(lhs.dims());
+        Tensor<T> result(lhs.shape());
         uniform_op(lhs, rhs, result, SqueezedOpType::DIV);
         return result;
     }
@@ -1184,7 +1176,7 @@ public:
      */
     friend Tensor<T> operator/(const Tensor<T>& lhs, T rhs) {
         // Allocate a new Tensor with the same dimensions as lhs
-        Tensor<T> result(lhs.dims());
+        Tensor<T> result(lhs.shape());
         uniform_op(lhs, rhs, result, SqueezedOpType::DIV);
         return result;
     }
@@ -2512,6 +2504,29 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, Squeezed
         dest.copy_from(temp_dest);
         return dest;
     }
+    // Short circuit specific ops to save time
+    if (rhs_val == 0) {
+        if (op == SqueezedOpType::DIV) {
+            throw std::runtime_error("Tensor.uniform_op: Divide by zero detected.\n");
+        }
+        else if (op == SqueezedOpType::MUL) {
+            // Fill the destination Tensor with zeroes
+            dest.fill(0);
+            return dest;
+        }
+        else {
+            // If we are adding or subtracting zero, it's a no-op
+            dest.copy_from(lhs);
+            return dest;
+        }
+    }
+    if (rhs_val == 1) {
+        // If multiplying or dividing by 1, it's a no-op
+        if (op == SqueezedOpType::MUL || op == SqueezedOpType::DIV) {
+            dest.copy_from(lhs);
+            return dest;
+        }
+    }
     // If lhs and dest don't overlap and are contiguous, use the fastest possible, vectorized
     // method to perform the operation. Ensure lhs and dest are unique to respect
     // __restrict__ rules
@@ -2712,9 +2727,6 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, Squeezed
                     }
                     break;
                 case SqueezedOpType::DIV:
-                    if (rhs_val == 0) {
-                        throw std::runtime_error("Tensor::uniform_op: Divide by zero detected.\n");
-                    }
                     for (size_t i = 0; i < dest.elements(); ++i) {
                         const T lhs_val = lhs_data[lhs._get_offset(i)];
                         T& dest_val = dest_data[dest._get_offset(i)];
@@ -2753,9 +2765,6 @@ Tensor<T>& uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, Squeezed
                     }
                     break;
                 case SqueezedOpType::DIV:
-                    if (rhs_val == 0) {
-                        throw std::runtime_error("Tensor::uniform_op: Divide by zero detected.\n");
-                    }
                     for (size_t i = 0; i < dest.elements(); ++i) {
                         const T lhs_val = lhs_data[lhs._get_offset(i)];
                         T& dest_val = dest_data[dest._get_offset(i)];
@@ -3001,6 +3010,29 @@ Tensor<T>& unsafe_uniform_op(const Tensor<T>& lhs, T rhs_val, Tensor<T>& dest, S
         // Copy the result back into dest
         dest.copy_from(temp_dest);
         return dest;
+    }
+    // Short circuit specific ops to save time
+    if (rhs_val == 0) {
+        if (op == SqueezedOpType::DIV) {
+            throw std::runtime_error("Tensor.unsafe_uniform_op: Divide by zero detected.\n");
+        }
+        else if (op == SqueezedOpType::MUL) {
+            // Fill the destination Tensor with zeroes
+            dest.fill(0);
+            return dest;
+        }
+        else {
+            // If we are adding or subtracting zero, it's a no-op
+            dest.copy_from(lhs);
+            return dest;
+        }
+    }
+    if (rhs_val == 1) {
+        // If multiplying or dividing by 1, it's a no-op
+        if (op == SqueezedOpType::MUL || op == SqueezedOpType::DIV) {
+            dest.copy_from(lhs);
+            return dest;
+        }
     }
     // If lhs and dest don't overlap and are contiguous, use the fastest possible, vectorized
     // method to perform the operation. Ensure lhs and dest are unique to respect
