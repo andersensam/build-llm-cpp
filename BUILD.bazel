@@ -461,3 +461,23 @@ cc_test(
     ],
     tags = ["no-clang-tidy"],
 )
+
+cc_test(
+    name = "layer_test",
+    size = "small",
+    srcs = ["tests/Layer_Test.cpp"],
+    copts = ["-Isrc/include"],
+    deps = [
+        ":feedforward",
+        ":gelulayer",
+        ":layer",
+        ":linearlayer",
+        ":normalizationlayer",
+        ":sliceconfig",
+        ":tensor",
+        ":tensorslice",
+        "@googletest//:gtest_main",
+    ],
+    tags = ["no-clang-tidy"],
+)
+
