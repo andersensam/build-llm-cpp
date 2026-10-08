@@ -316,6 +316,42 @@ cc_library(
     ]
 )
 
+# GELU Layer library
+cc_library(
+    name = "gelulayer",
+    hdrs = glob(
+        [
+            "src/include/GELULayer.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
+        ":layer",
+        ":tensor",
+    ]
+)
+
+# Feed Forward library
+cc_library(
+    name = "feedforward",
+    hdrs = glob(
+        [
+            "src/include/FeedForward.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
+        ":gelulayer",
+        ":layer",
+        ":linearlayer",
+        ":tensor",
+    ]
+)
+
 # Main binary for execution
 cc_binary(
     name = "build-llm-cpp",
@@ -329,6 +365,8 @@ cc_binary(
         ":attention",
         ":bpe",
         ":dataloader",
+        ":feedforward",
+        ":gelulayer",
         ":layer",
         ":linearlayer",
         ":llmlog",

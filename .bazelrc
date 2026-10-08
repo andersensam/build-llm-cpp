@@ -11,11 +11,17 @@ build:debug --cxxopt=-Wall
 build:debug --cxxopt=-Wextra
 build:debug --cxxopt=-Wpedantic 
 build:debug --cxxopt=-g
+build:debug --copt=-g
+build:debug --strip=never
 build:debug --cxxopt=-fno-omit-frame-pointer
 build:debug --cxxopt=-mno-omit-leaf-frame-pointer
 build:debug --cxxopt=-fsanitize=address,undefined
 build:debug --linkopt=-fsanitize=address,undefined
 build:debug --build_tag_filters=-no-clang-tidy
+
+# Enable dumping of dSYM on macOS
+build:dsym --output_groups=+dsyms
+build:dsym --apple_generate_dsym
 
 # Enable some optimizations via -O2, but still include debug information
 build:vectorize --cxxopt=-O2
@@ -23,6 +29,8 @@ build:vectorize --cxxopt=-Wall
 build:vectorize --cxxopt=-Wextra
 build:vectorize --cxxopt=-Wpedantic 
 build:vectorize --cxxopt=-g
+build:vectorize --copt=-g
+build:vectorize --strip=never
 build:vectorize --cxxopt=-Rpass=loop-vectorize
 build:vectorize --cxxopt=-Rpass-missed=loop-vectorize
 #build:vectorize --cxxopt=-Rpass-analysis=loop-vectorize

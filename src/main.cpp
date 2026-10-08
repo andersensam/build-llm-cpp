@@ -32,6 +32,8 @@
 #include "include/Attention.hpp"
 #include "include/BytePairEncoding.hpp"
 #include "include/DataLoader.hpp"
+#include "include/FeedForward.hpp"
+#include "include/GELULayer.hpp"
 #include "include/LinearLayer.hpp"
 #include "include/Log.hpp"
 #include "include/NormalizationLayer.hpp"
@@ -47,6 +49,10 @@ int main() {
     using Attention_NS::MultiHeadAttention;
 
     using DataLoader_NS::DataLoader;
+
+    using FeedForward_NS::FeedForward;
+
+    using GELULayer_NS::GELULayer;
 
     using LinearLayer_NS::LinearLayer;
 
@@ -209,11 +215,24 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Layer output: {}", ll0_result.info()));
 
         // Create a new Normalization Layer
-        NormalizationLayer<float> nl0;
+        NormalizationLayer<float> nl0(5, 5);
         Tensor<float> ll0_n = nl0.forward(ll0_result);
         log_message(Log_Priority::INFO, "main", std::format("Normalized layer info: {}", ll0_n.info()));
         // Take small slices of ll0_result and ll0_n and compare them
         log_message(Log_Priority::INFO, "main", std::format("Pre normalized: {}\nNormalized: {}", ll0_result.to_string(), ll0_n.to_string()));
+
+        // Create a GELU activation Layer
+        GELULayer<float> gl0;
+        Tensor<float> gl0_out = gl0.forward(ll0_n);
+        log_message(Log_Priority::INFO, "main", std::format("GELU activations applied: {}", gl0_out.to_string()));
+
+        // Create a FeedForward block
+        FeedForward<float> ff0(768, 4);
+        // Create a 512 token batch by embedding dimension 768
+        Tensor<float> test_input({512, 768});
+        test_input.random(-200, 200);
+        Tensor<float> ff0_result = ff0.forward(test_input);
+        log_message(Log_Priority::INFO, "main", std::format("FeedForward results: {}", ff0_result.info()));
 
     } catch (const std::exception& e) {
 

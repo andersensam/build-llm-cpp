@@ -13,15 +13,16 @@
  * @version: 2026-10-08
  *
  * Notes:
- * LinearLayer.hpp defines a standard linear layer for use in the feed forward network (FFN)
+ * GELULayer.hpp defines a Gaussian error linear unit activation layer
  */
 
-#ifndef LINEAR_LAYER_HPP
-#define LINEAR_LAYER_HPP
+#ifndef GELU_LAYER_HPP
+#define GELU_LAYER_HPP
 
 /* Standard dependencies */
-#include <expected>
+#include <cmath>
 #include <format>
+#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -30,10 +31,8 @@
 #include "AbstractTensor.hpp"
 #include "Layer.hpp"
 #include "Tensor.hpp"
-#include "TensorMath.hpp"
-#include "TensorMatmul.hpp"
 
-namespace LinearLayer_NS {
+namespace GELULayer_NS {
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
@@ -46,51 +45,36 @@ using Tensor_NS::Tensor;
 
 // NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**
- * LinearLayer class (used in FFN)
+ * GELULayer class (used in FFN)
  */
 template <typename T>
-requires std::is_arithmetic_v<T>
-class LinearLayer final : public Layer<T> {
+requires std::is_floating_point_v<T>
+class GELULayer final : public Layer<T> {
 /* Private data elements */
 private:
     /**
-     * Input dimension
+     * Constant used by the GELU activation function
      */
-    size_t c_input_dim = 0;
+    static constexpr T _gelu_const = 0.044715;
 
     /**
-     * Output dimension
+     * Scaling constant for the input (const) * input * (1 + tanh[...])
      */
-    size_t c_output_dim = 0;
-
-    /**
-     * Weight Tensor
-     */
-    Tensor<T> m_w;
+    static constexpr T _scale_const = 0.5;
 
 /* Public functions */
 public:
-    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
     /**
-     * Default constructor for LinearLayer
-     * @param in_dim Input dimension
-     * @param out_dim Output dimension
+     * Default constructor for GELULayer
      */
-    LinearLayer(size_t in_dim, size_t out_dim) : c_input_dim(in_dim), c_output_dim(out_dim), m_w({c_input_dim, c_output_dim}) {
-        // Initialize the Tensor to have random weights
-        if constexpr (std::is_unsigned_v<T>) {
-            m_w.random(0, 2);
-        }
-        else {
-            m_w.random(-2, 2);
-        }
+    GELULayer() {
+        // Do nothing
     }
-    // NOLINTEND(bugprone-easily-swappable-parameters)
 
     /**
-     * LinearLayer destructor
+     * GELULayer destructor
      */
-    ~LinearLayer() override {
+    ~GELULayer() override {
         // Do nothing
     }
 
@@ -103,18 +87,11 @@ public:
     Tensor<T> forward(const AbstractTensor<T>& input) const override {
         // Ensure we have a rank 2 Tensor
         if (input.rank() != 2) {
-            throw std::invalid_argument("LinearLayer.forward: Input Tensor must have rank == 2.\n");
+            throw std::invalid_argument("GELULayer.forward: Input Tensor must have rank == 2.\n");
         }
-        // Check to see that we can matmul
-        auto compatible = input._can_matmul(0, 1, m_w, 0, 1);
-        if (!compatible.has_value()) {
-            throw std::invalid_argument(
-                std::format("LinearLayer.forward: Incompatible Tensor shapes: {}", compatible.error())
-            );
-        }
-        Tensor<T> output({input.extent(0), m_w.extent(1)});
-        forward(input, output);
-        return output;
+        Tensor<T> result(input.shape());
+        forward(input, result);
+        return result;
     }
 
     /**
@@ -125,27 +102,43 @@ public:
     Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const override {
         // Ensure we have a rank 2 Tensor
         if (input.rank() != 2) {
-            throw std::invalid_argument("LinearLayer.forward: Input Tensor must have rank == 2.\n");
+            throw std::invalid_argument("GELULayer.forward: Input Tensor must have rank == 2.\n");
         }
-        // Check to see that we can matmul
-        auto compatible = input._can_matmul(0, 1, m_w, 0, 1);
-        if (!compatible.has_value()) {
-            throw std::invalid_argument(
-                std::format("LinearLayer.forward: Incompatible Tensor shapes: {}", compatible.error())
-            );
+        // Since GELU is an in-place operation, we might have input == dest. To ensure we aren't
+        // overwriting the input, create a temp destination and then copy the result back
+        if (!dest.is_unique(input)) {
+            Tensor<T> temp_dest = dest.clone();
+            forward(input, temp_dest);
+            dest.copy_from(temp_dest);
+            return dest;
         }
-        if (dest.extent(0) != input.extent(0) || dest.extent(1) != m_w.extent(1)) {
-            throw std::invalid_argument(
-                std::format("LinearLayer.foward: Invalid destination Tensor. Got dims [{}, {}], but expected [{}, {}];",
-                    dest.extent(0), dest.extent(1), input.extent(0), m_w.extent(1))
-            );
-        }
-        // Execute the matmul
-        return TensorMatmul_NS::matmul(input, m_w, dest);
+        // Copy the input to dest
+        dest.copy_from(input);
+        // GELU requires a few copies of the input
+        Tensor<T> x = dest.clone();
+        // Take input ^ 3
+        x.apply(std::pow, 3);
+        // Multiply input ^ 3 by the constant 0.044715
+        x *= _gelu_const;
+        // Add the result to the input
+        dest += x;
+        // Scale dest by sqrt(2 / pi)
+        dest *= std::sqrt(2 / std::numbers::pi_v<T>);
+        // Take tanh
+        dest.apply(std::tanh);
+        // Add one to the result
+        dest += 1;
+        // Copy the original input back into x
+        x.copy_from(input);
+        // Scale by 0.5
+        x *= _scale_const;
+        // Multiply dest * x to get the final result
+        dest *= x;
+        return dest;
     }
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 
-}; // namespace LinearLayer_NS
+}; // namespace GELULayer_NS
 
 #endif

@@ -13,84 +13,90 @@
  * @version: 2026-10-08
  *
  * Notes:
- * LinearLayer.hpp defines a standard linear layer for use in the feed forward network (FFN)
+ * NormalizationLayer.hpp
  */
 
-#ifndef LINEAR_LAYER_HPP
-#define LINEAR_LAYER_HPP
+#ifndef FEED_FORWARD_HPP
+#define FEED_FORWARD_HPP
 
 /* Standard dependencies */
-#include <expected>
-#include <format>
+#include <memory>
 #include <stdexcept>
-#include <string>
 #include <type_traits>
 
 /* Local dependencies */
 #include "AbstractTensor.hpp"
+#include "GELULayer.hpp"
 #include "Layer.hpp"
+#include "LinearLayer.hpp"
 #include "Tensor.hpp"
-#include "TensorMath.hpp"
-#include "TensorMatmul.hpp"
 
-namespace LinearLayer_NS {
+namespace FeedForward_NS {
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
 
+/* Use GELU */
+using GELULayer_NS::GELULayer;
+
 /* Use the Layer interface */
 using Layer_NS::Layer;
+
+/* Use LinearLayer */
+using LinearLayer_NS::LinearLayer;
 
 /* Use Tensor */
 using Tensor_NS::Tensor;
 
 // NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**
- * LinearLayer class (used in FFN)
+ * Feed Forward block, which essentially is a layer with multiple
+ * sublayers executed in sequence
  */
 template <typename T>
-requires std::is_arithmetic_v<T>
-class LinearLayer final : public Layer<T> {
+requires std::is_floating_point_v<T>
+class FeedForward final : public Layer<T> {
 /* Private data elements */
 private:
     /**
      * Input dimension
      */
-    size_t c_input_dim = 0;
+    size_t c_emb_dim = 0;
 
     /**
      * Output dimension
      */
-    size_t c_output_dim = 0;
+    size_t c_scale_dim = 0;
 
     /**
-     * Weight Tensor
+     * First Linear Layer, where we scale up the dims input
      */
-    Tensor<T> m_w;
+    LinearLayer<T> linear_0;
+
+    /**
+     * GELU Activation Layer
+     */
+    GELULayer<T> gelu;
+
+    /**
+     * Second Linear Layer, scaling down the dims back to emb_dim
+     */
+    LinearLayer<T> linear_1;
 
 /* Public functions */
 public:
-    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
     /**
-     * Default constructor for LinearLayer
-     * @param in_dim Input dimension
-     * @param out_dim Output dimension
+     * Default constructor for FeedForward
      */
-    LinearLayer(size_t in_dim, size_t out_dim) : c_input_dim(in_dim), c_output_dim(out_dim), m_w({c_input_dim, c_output_dim}) {
-        // Initialize the Tensor to have random weights
-        if constexpr (std::is_unsigned_v<T>) {
-            m_w.random(0, 2);
-        }
-        else {
-            m_w.random(-2, 2);
-        }
+    FeedForward(size_t emb_dim, size_t scale_dim) : c_emb_dim(emb_dim), c_scale_dim(scale_dim), linear_0(emb_dim, scale_dim * emb_dim),
+                                                    gelu(), linear_1(scale_dim * emb_dim, emb_dim) {
+        // Do nothing
     }
-    // NOLINTEND(bugprone-easily-swappable-parameters)
 
     /**
-     * LinearLayer destructor
+     * FeedForward destructor
      */
-    ~LinearLayer() override {
+    ~FeedForward() override {
         // Do nothing
     }
 
@@ -103,49 +109,44 @@ public:
     Tensor<T> forward(const AbstractTensor<T>& input) const override {
         // Ensure we have a rank 2 Tensor
         if (input.rank() != 2) {
-            throw std::invalid_argument("LinearLayer.forward: Input Tensor must have rank == 2.\n");
+            throw std::invalid_argument("FeedForward.forward: Input Tensor must have rank == 2.\n");
         }
-        // Check to see that we can matmul
-        auto compatible = input._can_matmul(0, 1, m_w, 0, 1);
-        if (!compatible.has_value()) {
-            throw std::invalid_argument(
-                std::format("LinearLayer.forward: Incompatible Tensor shapes: {}", compatible.error())
-            );
+        // Ensure that the 2nd dim of input == emb_dim
+        if (input.extent(1) != c_emb_dim) {
+            throw std::invalid_argument("FeedForward.forward: Input Tensor's second dim must be emb_dim.\n");
         }
-        Tensor<T> output({input.extent(0), m_w.extent(1)});
-        forward(input, output);
-        return output;
+        Tensor<T> result(input.shape());
+        forward(input, result);
+        return result;
     }
 
     /**
      * Forward function, performing the forward pass on the layer and writing the result
      * to a defined destination
+     * @param input Const ref to an AbstractTensor serving as the input
      * @returns Returns a reference to the destination Tensor provided
      */
     Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const override {
         // Ensure we have a rank 2 Tensor
-        if (input.rank() != 2) {
-            throw std::invalid_argument("LinearLayer.forward: Input Tensor must have rank == 2.\n");
+        if (input.rank() != 2 || dest.rank() != 2) {
+            throw std::invalid_argument("FeedForward.forward: Input and dest Tensors must have rank == 2.\n");
         }
-        // Check to see that we can matmul
-        auto compatible = input._can_matmul(0, 1, m_w, 0, 1);
-        if (!compatible.has_value()) {
-            throw std::invalid_argument(
-                std::format("LinearLayer.forward: Incompatible Tensor shapes: {}", compatible.error())
-            );
+        // Ensure that the 2nd dim of input == emb_dim
+        if (input.extent(1) != c_emb_dim) {
+            throw std::invalid_argument("FeedForward.forward: Input Tensor's second dim must be emb_dim.\n");
         }
-        if (dest.extent(0) != input.extent(0) || dest.extent(1) != m_w.extent(1)) {
-            throw std::invalid_argument(
-                std::format("LinearLayer.foward: Invalid destination Tensor. Got dims [{}, {}], but expected [{}, {}];",
-                    dest.extent(0), dest.extent(1), input.extent(0), m_w.extent(1))
-            );
+        // Ensure that the 2nd dim of input == emb_dim
+        if (input.shape() != dest.shape()) {
+            throw std::invalid_argument("FeedForward.forward: Input and dest must have the same shape.\n");
         }
-        // Execute the matmul
-        return TensorMatmul_NS::matmul(input, m_w, dest);
+        // Perform the forward operation: linear_0 --> gelu --> linear_1
+        Tensor<T> int_res = linear_0.forward(input);
+        gelu.forward(int_res, int_res);
+        return linear_1.forward(int_res, dest);
     }
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 
-}; // namespace LinearLayer_NS
+}; // namespace FeedForward_NS
 
 #endif

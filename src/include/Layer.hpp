@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-08
  *
  * Notes:
  * Layer.hpp defines the interface for all layers used throughout the LLM. All normalization, activations, etc.,
@@ -53,6 +53,7 @@ public:
     /**
      * Forward function, performing the forward pass on the layer and returning a reference
      * to itself with the computation complete
+     * @param input Const ref to an AbstractTensor serving as the input
      * @returns Returns a new Tensor with the result
      */
     virtual Tensor<T> forward(const AbstractTensor<T>& input) const = 0;
@@ -60,9 +61,10 @@ public:
     /**
      * Forward function, performing the forward pass on the layer and writing the result
      * to a defined destination
+     * @param input Const ref to an AbstractTensor serving as the input
      * @returns Returns a reference to the destination Tensor provided
      */
-    virtual Tensor<T>& forward(const AbstractTensor<T>& intput, Tensor<T>& dest) const = 0;
+    virtual Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 
