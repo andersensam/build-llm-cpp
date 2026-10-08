@@ -480,4 +480,3 @@ cc_test(
     ],
     tags = ["no-clang-tidy"],
 )
-
