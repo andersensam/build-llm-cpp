@@ -572,7 +572,7 @@ bool naive_matmul_v2_dispatch(const AbstractTensor<T>& lhs, size_t lhs_dim0, siz
                     }
                     else {
                         // If neither dim in dest has stride == 1, try to run .contiguous() if dest_dim1 is the outer dim
-                        if (dest.shape().at(1) == dest_dim1) {
+                        if (dest.rank() - 1 == dest_dim1) {
                             dest.contiguous();
                             // Do another sanity check to ensure the .contiguous() call worked
                             if (dest.dim_stride(dest_dim1) == 1) {
@@ -806,8 +806,7 @@ bool naive_matmul_v2_dispatch(const AbstractTensor<T>& lhs, size_t lhs_dim0, siz
             case NaiveMatmulV2Error::DEST_STRIDE: {
                 if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS) {
                     // Check to see if dest_dim1 is the outer dim
-                    const auto& dest_dims = dest.shape();
-                    if (dest_dims.back() == dest_dim1) {
+                    if (dest.rank() - 1 == dest_dim1) {
                         // If the outer dim is indeed dest_dim1, try running .contiguous()
                         dest.contiguous();
                         // Check to see that our call worked
@@ -1072,7 +1071,7 @@ Tensor<T>& matmul(const AbstractTensor<T>& lhs, size_t lhs_dim0, size_t lhs_dim1
     // Check to see if we want make the destination contiguous
     if constexpr (TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS) {
         // Only run .contiguous() if destination_dim1 is the outer dim
-        if ((destination.shape().at(destination.rank() - 1) == destination_dim1) && (destination.dim_stride(destination_dim1) != 1)) {
+        if ((destination.rank() - 1 == destination_dim1) && (destination.dim_stride(destination_dim1) != 1)) {
             destination.contiguous();
             // Do a sanity check to ensure the op was successful
             if (destination.dim_stride(1) != 1) {
