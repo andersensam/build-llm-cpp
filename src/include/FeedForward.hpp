@@ -41,7 +41,7 @@ using GELULayer_NS::GELULayer;
 
 /* Use the Layer interface */
 using Layer_NS::Layer;
-using Layer_NS::LAYER_PREFER_TEMP_DESTIATION_OVER_EXCEPTION;
+using Layer_NS::LAYER_PREFER_TEMP_DESTINATION_OVER_EXCEPTION;
 
 /* Use LinearLayer */
 using LinearLayer_NS::LinearLayer;
@@ -141,7 +141,7 @@ public:
             throw std::invalid_argument("FeedForward.forward: Input and dest must have the same shape.\n");
         }
         if (!dest.is_unique(input)) {
-            if constexpr (LAYER_PREFER_TEMP_DESTIATION_OVER_EXCEPTION) {
+            if constexpr (LAYER_PREFER_TEMP_DESTINATION_OVER_EXCEPTION) {
                 Tensor<T> temp_dest = dest.clone();
                 forward(input, temp_dest);
                 return dest.copy_from(temp_dest);

@@ -32,7 +32,7 @@
 namespace Layer_NS {
 
 /* Control whether or not to prefer creating temporary destination Tensors if is_unique() fails */
-inline constexpr bool LAYER_PREFER_TEMP_DESTIATION_OVER_EXCEPTION = true;
+inline constexpr bool LAYER_PREFER_TEMP_DESTINATION_OVER_EXCEPTION = true;
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;

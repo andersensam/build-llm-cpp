@@ -40,7 +40,7 @@ using AbstractTensor_NS::AbstractTensor;
 
 /* Use the Layer interface */
 using Layer_NS::Layer;
-using Layer_NS::LAYER_PREFER_TEMP_DESTIATION_OVER_EXCEPTION;
+using Layer_NS::LAYER_PREFER_TEMP_DESTINATION_OVER_EXCEPTION;
 
 /* Use Tensor */
 using Tensor_NS::Tensor;
@@ -142,7 +142,7 @@ public:
             );
         }
         if (!dest.is_unique(input)) {
-            if constexpr (LAYER_PREFER_TEMP_DESTIATION_OVER_EXCEPTION) {
+            if constexpr (LAYER_PREFER_TEMP_DESTINATION_OVER_EXCEPTION) {
                 Tensor<T> temp_dest = dest.clone();
                 forward(input, temp_dest);
                 return dest.copy_from(temp_dest);
