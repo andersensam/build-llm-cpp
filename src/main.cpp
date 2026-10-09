@@ -29,13 +29,14 @@
 #include <vector>
 
 /* Local dependencies */
-#include "include/Attention.hpp"
 #include "include/BytePairEncoding.hpp"
+#include "include/CausalAttention.hpp"
 #include "include/DataLoader.hpp"
 #include "include/FeedForward.hpp"
 #include "include/GELULayer.hpp"
 #include "include/LinearLayer.hpp"
 #include "include/Log.hpp"
+#include "include/MultiHeadAttention.hpp"
 #include "include/NormalizationLayer.hpp"
 #include "include/SliceConfig.hpp"
 #include "include/Tensor.hpp"
@@ -45,8 +46,7 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
 int main() {
 
-    using Attention_NS::CausalAttention;
-    using Attention_NS::MultiHeadAttention;
+    using CausalAttention_NS::CausalAttention;
 
     using DataLoader_NS::DataLoader;
 
@@ -58,6 +58,8 @@ int main() {
 
     using Log_NS::Log_Priority;
     using Log_NS::log_message;
+
+    using MultiHeadAttention_NS::MultiHeadAttention;
 
     using NormalizationLayer_NS::NormalizationLayer;
 

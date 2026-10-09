@@ -241,14 +241,9 @@ cc_library(
     ]
 )
 
-# Attention module
+# Attention interface
 cc_library(
     name = "attention",
-    srcs = glob(
-        [
-            "src/Attention.cpp"
-        ]
-    ),
     hdrs = glob(
         [
             "src/include/Attention.hpp"
@@ -257,10 +252,44 @@ cc_library(
     strip_include_prefix = "src",
     includes = [],
     deps = [
-        ":llmlog",
+        ":abstracttensor",
+        ":tensor",
+    ]
+)
+
+# CausalAttention library
+cc_library(
+    name = "causalattention",
+    hdrs = glob(
+        [
+            "src/include/CausalAttention.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
+        ":attention",
         ":tensor",
         ":tensormatmul",
-        ":tensorslice",
+    ]
+)
+
+# MultiHeadAttention library
+cc_library(
+    name = "multiheadattention",
+    hdrs = glob(
+        [
+            "src/include/MultiHeadAttention.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
+        ":attention",
+        ":tensor",
+        ":tensormatmul",
     ]
 )
 
@@ -362,14 +391,15 @@ cc_binary(
     ),
     includes = [],
     deps = [
-        ":attention",
         ":bpe",
+        ":causalattention",
         ":dataloader",
         ":feedforward",
         ":gelulayer",
         ":layer",
         ":linearlayer",
         ":llmlog",
+        ":multiheadattention",
         ":normalizationlayer",
         ":tensor",
         ":tensormatmul",
@@ -441,7 +471,8 @@ cc_test(
     srcs = ["tests/Attention_Test.cpp"],
     copts = ["-Isrc/include"],
     deps = [
-        ":attention",
+        ":causalattention",
+        ":multiheadattention",
         ":tensor",
         ":tensormatmul",
         ":tensorslice",

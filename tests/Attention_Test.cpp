@@ -6,13 +6,14 @@
 
 #include <gtest/gtest.h>
 
-#include "Attention.hpp"
+#include "CausalAttention.hpp"
+#include "MultiHeadAttention.hpp"
 #include "Tensor.hpp"
 
 namespace {
 
-using Attention_NS::CausalAttention;
-using Attention_NS::MultiHeadAttention;
+using CausalAttention_NS::CausalAttention;
+using MultiHeadAttention_NS::MultiHeadAttention;
 using Tensor_NS::Tensor;
 
 // ============================================================================
