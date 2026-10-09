@@ -12,10 +12,10 @@
 #include "GELULayer.hpp"
 #include "Layer.hpp"
 #include "LinearLayer.hpp"
+#include "ListTensorSlice.hpp"
 #include "NormalizationLayer.hpp"
 #include "SliceConfig.hpp"
 #include "Tensor.hpp"
-#include "TensorSlice.hpp"
 
 namespace {
 
@@ -23,11 +23,11 @@ using FeedForward_NS::FeedForward;
 using GELULayer_NS::GELULayer;
 using Layer_NS::Layer;
 using LinearLayer_NS::LinearLayer;
+using ListTensorSlice_NS::ListTensorSlice;
 using NormalizationLayer_NS::NormalizationLayer;
 using SliceConfig_NS::IndexType;
 using SliceConfig_NS::MatrixSliceConfig;
 using Tensor_NS::Tensor;
-using TensorSlice_NS::ListTensorSlice;
 
 // ============================================================================
 // LinearLayer Tests

@@ -125,17 +125,17 @@ cc_library(
         ":numerics",
         ":tensor",
         ":tensormath",
-        ":tensorslice",
+        ":listtensorslice",
         ":tensorutils",
     ]
 )
 
-# TensorSlice template library
+# ListTensorSlice library
 cc_library(
-    name = "tensorslice",
+    name = "listtensorslice",
     hdrs = glob(
         [
-            "src/include/TensorSlice.hpp"
+            "src/include/ListTensorSlice.hpp"
         ]
     ),
     strip_include_prefix = "src",
@@ -341,7 +341,7 @@ cc_library(
         ":abstracttensor",
         ":layer",
         ":tensor",
-        ":tensorslice",
+        ":listtensorslice",
     ]
 )
 
@@ -381,6 +381,26 @@ cc_library(
     ]
 )
 
+# Transformer Block library
+cc_library(
+    name = "transformerblock",
+    hdrs = glob(
+        [
+            "src/include/TransformerBlock.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
+        ":feedforward",
+        ":layer",
+        ":multiheadattention",
+        ":normalizationlayer",
+        ":tensor",
+    ]
+)
+
 # Main binary for execution
 cc_binary(
     name = "build-llm-cpp",
@@ -403,7 +423,8 @@ cc_binary(
         ":normalizationlayer",
         ":tensor",
         ":tensormatmul",
-        ":tensorslice",
+        ":listtensorslice",
+        ":transformerblock",
     ]
 )
 
@@ -421,7 +442,7 @@ cc_binary(
         ":llmlog",
         ":tensor",
         ":tensormatmul",
-        ":tensorslice",
+        ":listtensorslice",
     ],
 )
 
@@ -445,21 +466,21 @@ cc_test(
     deps = [
         ":tensor",
         ":tensormatmul",
-        ":tensorslice",
+        ":listtensorslice",
         "@googletest//:gtest_main",
     ],
     tags = ["no-clang-tidy"],
 )
 
 cc_test(
-    name = "tensorslice_test",
+    name = "listtensorslice_test",
     size = "small",
     srcs = ["tests/TensorSlice_Test.cpp"],
     copts = ["-Isrc/include"],
     deps = [
         ":sliceconfig",
         ":tensor",
-        ":tensorslice",
+        ":listtensorslice",
         "@googletest//:gtest_main",
     ],
     tags = ["no-clang-tidy"],
@@ -475,7 +496,7 @@ cc_test(
         ":multiheadattention",
         ":tensor",
         ":tensormatmul",
-        ":tensorslice",
+        ":listtensorslice",
         "@googletest//:gtest_main",
     ],
     tags = ["no-clang-tidy"],
@@ -506,7 +527,7 @@ cc_test(
         ":normalizationlayer",
         ":sliceconfig",
         ":tensor",
-        ":tensorslice",
+        ":listtensorslice",
         "@googletest//:gtest_main",
     ],
     tags = ["no-clang-tidy"],

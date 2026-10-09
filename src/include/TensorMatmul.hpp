@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-07
+ * @version: 2026-10-09
  *
  * Notes:
  * TensorMatmul.hpp contains kernels for running matrix multiplications on Tensors and TensorSlices
@@ -33,11 +33,11 @@
 
 /* Local dependencies */
 #include "AbstractTensor.hpp"
+#include "ListTensorSlice.hpp"
 #include "Log.hpp"
 #include "Numerics.hpp"
 #include "Tensor.hpp"
 #include "TensorMath.hpp"
-#include "TensorSlice.hpp"
 #include "TensorUtils.hpp"
 
 namespace TensorMatmul_NS {
@@ -76,15 +76,15 @@ enum class NaiveMatmulV2Error : uint8_t {
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
 
+/* Use ListTensorSlice */
+using ListTensorSlice_NS::ListTensorSlice;
+
 /* Use logging */
 using Log_NS::log_message;
 using Log_NS::Log_Priority;
 
 /* Use Tensor */
 using Tensor_NS::Tensor;
-
-/* Use ListTensorSlice */
-using TensorSlice_NS::ListTensorSlice;
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 /**

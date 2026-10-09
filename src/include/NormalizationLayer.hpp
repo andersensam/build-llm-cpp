@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-08
+ * @version: 2026-10-09
  *
  * Notes:
  * NormalizationLayer.hpp
@@ -29,8 +29,8 @@
 /* Local dependencies */
 #include "AbstractTensor.hpp"
 #include "Layer.hpp"
+#include "ListTensorSlice.hpp"
 #include "Tensor.hpp"
-#include "TensorSlice.hpp"
 
 namespace NormalizationLayer_NS {
 
@@ -41,12 +41,12 @@ using AbstractTensor_NS::AbstractTensor;
 using Layer_NS::Layer;
 using Layer_NS::LAYER_PREFER_TEMP_DESTINATION_OVER_EXCEPTION;
 
+/* Use TensorSlice */
+using ListTensorSlice_NS::ListTensorSlice;
+
 /* Use Tensor */
 using Tensor_NS::Tensor;
 using Tensor_NS::SqueezedOpType;
-
-/* Use TensorSlice */
-using TensorSlice_NS::ListTensorSlice;
 
 // NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**

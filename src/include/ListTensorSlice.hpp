@@ -10,15 +10,15 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-07
+ * @version: 2026-10-09
  *
  * General Notes:
  *
  * TODO: Continue adding functionality 
  */
 
-#ifndef TENSORSLICE_HPP
-#define TENSORSLICE_HPP
+#ifndef LIST_TENSORSLICE_HPP
+#define LIST_TENSORSLICE_HPP
 
 /* Standard dependencies */
 #include <array>
@@ -42,7 +42,7 @@
 #include "Storage.hpp"
 #include "Tensor.hpp"
 
-namespace TensorSlice_NS {
+namespace ListTensorSlice_NS {
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
@@ -689,6 +689,6 @@ public:
     }
 };
 
-}; // namespace TensorSlice_NS
+}; // namespace ListTensorSlice_NS
 
 #endif

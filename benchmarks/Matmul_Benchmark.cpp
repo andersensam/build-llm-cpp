@@ -30,11 +30,11 @@
 #include <vector>
 
 /* Local dependencies */
+#include "ListTensorSlice.hpp"
 #include "Log.hpp"
 #include "SliceConfig.hpp"
 #include "Tensor.hpp"
 #include "TensorMatmul.hpp"
-#include "TensorSlice.hpp"
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 int main() {
@@ -52,7 +52,7 @@ int main() {
     /* Use ListTensorSlice and required utils */
     using SliceConfig_NS::MatrixSliceConfig;
     using SliceConfig_NS::IndexType;
-    using TensorSlice_NS::ListTensorSlice;
+    using ListTensorSlice_NS::ListTensorSlice;
 
     try {
         log_message(Log_Priority::INFO, "main", "Initializing matmul benchmark");

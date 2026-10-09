@@ -6,18 +6,18 @@
 
 #include <gtest/gtest.h>
 
+#include "ListTensorSlice.hpp"
 #include "SliceConfig.hpp"
 #include "Tensor.hpp"
-#include "TensorSlice.hpp"
 
 namespace {
 
+using ListTensorSlice_NS::ListTensorSlice;
 using SliceConfig_NS::IndexType;
 using SliceConfig_NS::MatrixSliceConfig;
 using SliceConfig_NS::VectorSliceConfig;
 using SliceConfig_NS::VectorSliceOrientation;
 using Tensor_NS::Tensor;
-using TensorSlice_NS::ListTensorSlice;
 
 // ============================================================================
 // SliceConfig Validation

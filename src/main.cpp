@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-07
+ * @version: 2026-10-09
  *
  * General Notes:
  *
@@ -35,13 +35,14 @@
 #include "include/FeedForward.hpp"
 #include "include/GELULayer.hpp"
 #include "include/LinearLayer.hpp"
+#include "include/ListTensorSlice.hpp"
 #include "include/Log.hpp"
 #include "include/MultiHeadAttention.hpp"
 #include "include/NormalizationLayer.hpp"
 #include "include/SliceConfig.hpp"
 #include "include/Tensor.hpp"
 #include "include/TensorMatmul.hpp"
-#include "include/TensorSlice.hpp"
+#include "include/TransformerBlock.hpp"
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
 int main() {
@@ -55,6 +56,8 @@ int main() {
     using GELULayer_NS::GELULayer;
 
     using LinearLayer_NS::LinearLayer;
+
+    using ListTensorSlice_NS::ListTensorSlice;
 
     using Log_NS::Log_Priority;
     using Log_NS::log_message;
@@ -72,8 +75,6 @@ int main() {
     using Tensor_NS::CausalMaskType;
 
     using TensorMatmul_NS::matmul;
-
-    using TensorSlice_NS::ListTensorSlice;
 
     try {
         

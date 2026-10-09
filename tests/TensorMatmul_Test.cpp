@@ -7,18 +7,18 @@
 
 #include <gtest/gtest.h>
 
+#include "ListTensorSlice.hpp"
 #include "SliceConfig.hpp"
 #include "Tensor.hpp"
 #include "TensorMatmul.hpp"
-#include "TensorSlice.hpp"
 
 namespace {
 
+using ListTensorSlice_NS::ListTensorSlice;
 using SliceConfig_NS::IndexType;
 using SliceConfig_NS::MatrixSliceConfig;
 using TensorMatmul_NS::matmul;
 using Tensor_NS::Tensor;
-using TensorSlice_NS::ListTensorSlice;
 
 // ============================================================================
 // Basic 2D Matrix Multiplication Across Numeric Types
