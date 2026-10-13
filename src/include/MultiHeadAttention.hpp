@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-08
+ * @version: 2026-10-12
  *
  * General Notes:
  *
@@ -88,6 +88,11 @@ private:
     size_t c_head_dim = 0;
 
     /**
+     * Whether a shortcut connection comes after this layer
+     */
+    bool c_shortcut = false;
+
+    /**
      * Query weights
      */
     Tensor<T> m_w_query;
@@ -118,10 +123,18 @@ public:
      * @param dropout Float >= 0, < 1 (set to 0 to disable)
      * @param num_heads Number of heads
      */
-    MultiHeadAttention(size_t emb_dim, size_t output_dim, size_t context_len, float dropout, size_t num_heads) :
-                       c_emb_dim(emb_dim), c_output_dim(output_dim), c_dropout(dropout), c_context_len(context_len),
-                       c_num_heads(num_heads), c_head_dim(c_output_dim / c_num_heads), m_w_query({c_emb_dim, c_output_dim}),
-                       m_w_key({c_emb_dim, c_output_dim}), m_w_value({c_emb_dim, c_output_dim}) {
+    MultiHeadAttention(size_t emb_dim, size_t output_dim, size_t context_len,
+                       float dropout, size_t num_heads, bool shortcut) :
+                                                                        c_emb_dim(emb_dim), c_output_dim(output_dim), 
+                                                                        c_dropout(dropout), c_context_len(context_len),
+                                                                        c_num_heads(num_heads), c_shortcut(shortcut),
+                                                                        m_w_query({c_emb_dim, c_output_dim}),
+                                                                        m_w_key({c_emb_dim, c_output_dim}),
+                                                                        m_w_value({c_emb_dim, c_output_dim}) {
+        // Ensure emb_dim, output_dim, context_len, and num_heads are not zero
+        if (emb_dim == 0 || output_dim == 0 || context_len == 0 || num_heads == 0) {
+            throw std::invalid_argument("MultiHeadAttention.MultiHeadAttention: emb_dim, output_dim, context_len, and num_heads cannot be zero.\n");
+        }
         // Ensure we get a dropout within the acceptable range
         if (dropout < 0 || dropout >= 1) {
             throw std::invalid_argument("MultiHeadAttention.MultiHeadAttention: Dropout must be >= 0, < 1.\n");
@@ -130,10 +143,18 @@ public:
         if (c_output_dim % c_num_heads != 0) {
             throw std::invalid_argument("MultiHeadAttention.MultiHeadAttention: Output dim must be divisible by number of heads.\n");
         }
+        c_head_dim = c_output_dim / c_num_heads;
         // Initialize the three matrices with random values
-        m_w_query.random(-2, 2);
-        m_w_key.random(-2, 2);
-        m_w_value.random(-2, 2);
+        if constexpr (std::is_signed_v<T>) {
+            m_w_query.random(-2, 2);
+            m_w_key.random(-2, 2);
+            m_w_value.random(-2, 2);
+        }
+        else {
+            m_w_query.random(0, 4);
+            m_w_key.random(0, 4);
+            m_w_value.random(0, 4);
+        }
         // Reserve space for the number of attention heads
         c_heads.reserve(c_num_heads);
         // Shard query, key, and value over the number of attention heads
@@ -215,7 +236,7 @@ public:
                 output.ninf_tri(CausalMaskType::UPPER);
                 // Divide each value by the embedding dim, using unsafe_uniform_op to still vectorize
                 // without checking for INF of NaN
-                Tensor_NS::unsafe_uniform_op(output, std::sqrtf(static_cast<T>(c_head_dim)), output, Tensor_NS::SqueezedOpType::DIV);
+                Tensor_NS::unsafe_uniform_op(output, std::sqrt(static_cast<T>(c_head_dim)), output, Tensor_NS::SqueezedOpType::DIV);
                 // Apply softmax on dim 0
                 output.softmax(0);
             }
@@ -242,6 +263,13 @@ public:
         return dest;
     }
     // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+
+    /**
+     * Check to see if a layer has a shortcut
+     */
+    bool has_shortcut() const override {
+        return c_shortcut;
+    }
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

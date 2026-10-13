@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-12
  *
  * General Notes:
  *
@@ -39,6 +39,7 @@
 #include <vector>
 
 /* Local dependencies */
+#include "AbstractTensor.hpp"
 #include "Log.hpp"
 #include "Tokenizer.hpp"
 
@@ -63,6 +64,9 @@ inline const uint32_t BPE_NUM_VOCAB_MAGIC_NUMBER = 0x885174;
 inline const uint32_t BPE_TOKEN_START_MAGIC_NUMBER = 0x885175;
 inline const uint32_t BPE_TOKEN_END_MAGIC_NUMBER = 0x885176;
 inline const uint32_t BPE_END_MAGIC_NUMBER = 0x885179;
+
+/* Use the AbstractTensor interface */
+using AbstractTensor_NS::AbstractTensor;
 
 /**
  * Object for storing information about a specific byte pair, including its contents
@@ -253,6 +257,13 @@ public:
      * @returns Returns a string containing the detokenized output
      */
     std::string detokenize_to_string(const std::vector<size_t>& v) const override;
+
+    /**
+     * Detokenize an input, returning a string containing the decoded text
+     * @param t AbstractTensor reference containing token ids. The Tensor must have a shape of [N, 1] or [1, N]
+     * @returns Returns a string containing the detokenized output
+     */
+    std::string detokenize_to_string(const AbstractTensor<size_t>& t) const override;
 
     /**
      * Export BytePairEncoding to a model file

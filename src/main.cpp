@@ -29,9 +29,11 @@
 #include <vector>
 
 /* Local dependencies */
+#include "include/AbsolutePositionalEmbedding.hpp"
 #include "include/BytePairEncoding.hpp"
 #include "include/CausalAttention.hpp"
 #include "include/DataLoader.hpp"
+#include "include/Embedding.hpp"
 #include "include/FeedForward.hpp"
 #include "include/GELULayer.hpp"
 #include "include/LinearLayer.hpp"
@@ -47,9 +49,13 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
 int main() {
 
+    using AbsolutePositionalEmbedding_NS::AbsolutePositionalEmbedding;
+
     using CausalAttention_NS::CausalAttention;
 
     using DataLoader_NS::DataLoader;
+
+    using Embedding_NS::Embedding;
 
     using FeedForward_NS::FeedForward;
 
@@ -75,6 +81,8 @@ int main() {
     using Tensor_NS::CausalMaskType;
 
     using TensorMatmul_NS::matmul;
+
+    using TransformerBlock_NS::TransformerBlock;
 
     try {
         
@@ -164,7 +172,7 @@ int main() {
         lower_tri.tri(CausalMaskType::LOWER);
         attn_scores_full *= lower_tri;
         // Scale the attention scores by the squareroot of the embedding dimension
-        attn_scores_full /= std::sqrtf(static_cast<float>(emb_dim));
+        attn_scores_full /= std::sqrt(static_cast<float>(emb_dim));
         // Apply softmax on the attention scores
         attn_scores_full.softmax(0);
         // Apply dropout
@@ -174,7 +182,7 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Context Matrix: {}", context_full.info()));
 
         // Create a CausalAttention head
-        CausalAttention<float> head(emb_dim, emb_dim, 0.1);
+        CausalAttention<float> head(emb_dim, emb_dim, 0.1, false);
         Tensor<float> ca_result = head.forward(query_result);
 
         // Test the same matmul with Tensor
@@ -183,7 +191,7 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Slice Matrix (new Tensor slice): {}", mm_res2.to_string()));
 
         // Create MultiHeadAttention instance
-        MultiHeadAttention<float> mha(emb_dim, emb_dim, 1024, 0.1, 8);
+        MultiHeadAttention<float> mha(emb_dim, emb_dim, 1024, 0.1, 8, false);
         // Run the forward pass
         Tensor<float> mha_result = mha.forward(query_result);
         log_message(Log_Priority::INFO, "main", std::format("MultiHeadAttention result: {}", mha_result.info()));
@@ -210,7 +218,7 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Original Tensor: {}. Slice: {}", new_slice_range.to_string(), nsr.to_string()));
 
         // Create a new Linear Layer
-        LinearLayer<float> ll0(5, 5);
+        LinearLayer<float> ll0(5, 5, false);
         // Create a Tensor slice of dim [5, 5]
         Tensor<float> ll0_slice0 = emb.slice({0, 1}, {{0, 5}, {0, 5}}, {});
         // Run the forward pass for the layer
@@ -218,24 +226,35 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Layer output: {}", ll0_result.info()));
 
         // Create a new Normalization Layer
-        NormalizationLayer<float> nl0;
+        NormalizationLayer<float> nl0(false);
         Tensor<float> ll0_n = nl0.forward(ll0_result);
         log_message(Log_Priority::INFO, "main", std::format("Normalized layer info: {}", ll0_n.info()));
         // Take small slices of ll0_result and ll0_n and compare them
         log_message(Log_Priority::INFO, "main", std::format("Pre normalized: {}\nNormalized: {}", ll0_result.to_string(), ll0_n.to_string()));
 
         // Create a GELU activation Layer
-        GELULayer<float> gl0;
+        GELULayer<float> gl0(false);
         Tensor<float> gl0_out = gl0.forward(ll0_n);
         log_message(Log_Priority::INFO, "main", std::format("GELU activations applied: {}", gl0_out.to_string()));
 
         // Create a FeedForward block
-        FeedForward<float> ff0(768, 4);
+        FeedForward<float> ff0(768, 4, false);
         // Create a 512 token batch by embedding dimension 768
         Tensor<float> test_input({512, 768});
         test_input.random(-200, 200);
         Tensor<float> ff0_result = ff0.forward(test_input);
         log_message(Log_Priority::INFO, "main", std::format("FeedForward results: {}", ff0_result.info()));
+
+        // Create an embedding instance
+        Embedding<float> eb(5, 10);
+        AbsolutePositionalEmbedding<float> ape(5, 10);
+
+        // Create a TransformerBlock
+        TransformerBlock<float> tb(768, 1024, 0.3, 8, false);
+        Tensor<float> tb_input({1024, 768});
+        tb_input.random(-5, 5);
+        Tensor<float> tb_out = tb.forward(tb_input);
+        log_message(Log_Priority::INFO, "main", std::format("TransformerBlock output: {}",  tb_out.info()));
 
     } catch (const std::exception& e) {
 

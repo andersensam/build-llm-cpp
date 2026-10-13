@@ -63,12 +63,17 @@ private:
      */
     static constexpr T _scale_const = 0.5;
 
+    /**
+     * Whether a shortcut connection comes after this layer
+     */
+    bool c_shortcut = false;
+
 /* Public functions */
 public:
     /**
      * Default constructor for GELULayer
      */
-    GELULayer() {
+    explicit GELULayer(bool shortcut) : c_shortcut(shortcut) {
         // Do nothing
     }
 
@@ -138,6 +143,13 @@ public:
         // Multiply dest * x to get the final result
         dest *= x;
         return dest;
+    }
+
+    /**
+     * Check to see if a layer has a shortcut
+     */
+    bool has_shortcut() const override {
+        return c_shortcut;
     }
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)

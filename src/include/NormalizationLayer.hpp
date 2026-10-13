@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-09
+ * @version: 2026-10-12
  *
  * Notes:
  * NormalizationLayer.hpp
@@ -66,6 +66,11 @@ private:
     static constexpr T eps = 0.00001;
 
     /**
+     * Whether a shortcut connection comes after this layer
+     */
+    bool c_shortcut = false;
+
+    /**
      * Scale Tensor, used for scaling the output up or down
      */
     T m_scale = 1;
@@ -83,7 +88,7 @@ public:
      * @param in_dim Input dimension
      * @param out_dim Output dimension
      */
-    NormalizationLayer() {
+    explicit NormalizationLayer(bool shortcut) : c_shortcut(shortcut) {
         // Do nothing
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)
@@ -188,6 +193,13 @@ public:
         dest *= m_scale;
         dest += m_shift;
         return dest;
+    }
+
+    /**
+     * Check to see if a layer has a shortcut
+     */
+    bool has_shortcut() const override {
+        return c_shortcut;
     }
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)

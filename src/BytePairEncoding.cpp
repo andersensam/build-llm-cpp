@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-12
  *
  * General Notes:
  *
@@ -19,6 +19,7 @@
 
 #include "include/BytePairEncoding.hpp"
 
+using AbstractTensor_NS::AbstractTensor;
 using BytePairEncoding_NS::BytePairEncodingTokenizer;
 using BytePairEncoding_NS::BytePositionInfo;
 using Log_NS::log_message;
@@ -295,6 +296,25 @@ std::string BytePairEncodingTokenizer::detokenize_to_string(const std::vector<si
         }
     }
 
+    return output;
+}
+
+std::string BytePairEncodingTokenizer::detokenize_to_string(const AbstractTensor<size_t>& t) const {
+    // Ensure that we have a rank-1 Tensor
+    if (t.rank() != 1) {
+        throw std::invalid_argument("BytePairEncodingTokenizer.detokenize_to_string: Input Tensor must have rank == 1.\n");
+    }
+    // The Tensor constructor ensures that we always have a least one element, so we don't need to do a size
+    // check to validate that it's not empty
+    // Reserve space for the decoded string
+    std::string output;
+    output.reserve(t.elements());
+    // Use the token ids and convert to bytes --> char
+    for (size_t i = 0; i < t.elements(); ++i) {
+        for (const std::byte& b : unpack_bytes(m_token_ids.at(t.at({i})))) {
+            output.push_back(static_cast<char>(b));
+        }
+    }
     return output;
 }
 

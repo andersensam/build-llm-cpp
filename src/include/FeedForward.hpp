@@ -70,6 +70,11 @@ private:
     size_t c_scale_dim = 0;
 
     /**
+     * Whether a shortcut connection comes after this layer
+     */
+    bool c_shortcut = false;
+
+    /**
      * First Linear Layer, where we scale up the dims input
      */
     LinearLayer<T> linear_0;
@@ -89,8 +94,9 @@ public:
     /**
      * Default constructor for FeedForward
      */
-    FeedForward(size_t emb_dim, size_t scale_dim) : c_emb_dim(emb_dim), c_scale_dim(scale_dim), linear_0(emb_dim, scale_dim * emb_dim),
-                                                    gelu(), linear_1(scale_dim * emb_dim, emb_dim) {
+    FeedForward(size_t emb_dim, size_t scale_dim, bool shortcut) : c_emb_dim(emb_dim), c_scale_dim(scale_dim), c_shortcut(shortcut),
+                                                                   linear_0(emb_dim, scale_dim * emb_dim, false),
+                                                                   gelu(false), linear_1(scale_dim * emb_dim, emb_dim, false) {
         // Do nothing
     }
 
@@ -152,6 +158,13 @@ public:
         Tensor<T> int_res = linear_0.forward(input);
         gelu.forward(int_res, int_res);
         return linear_1.forward(int_res, dest);
+    }
+
+    /**
+     * Check to see if a layer has a shortcut
+     */
+    bool has_shortcut() const override {
+        return c_shortcut;
     }
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)

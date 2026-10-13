@@ -195,7 +195,9 @@ cc_library(
     ),
     strip_include_prefix = "src",
     includes = [],
-    deps = []
+    deps = [
+        ":abstracttensor",
+    ]
 )
 
 # Byte Pair Encoding + BPE Tokenizer
@@ -214,6 +216,7 @@ cc_library(
     strip_include_prefix = "src",
     includes = [],
     deps = [
+        ":abstracttensor",
         ":llmlog",
         ":tokenizer",
     ]
@@ -253,6 +256,24 @@ cc_library(
     includes = [],
     deps = [
         ":abstracttensor",
+        ":layer",
+        ":tensor",
+    ]
+)
+
+# Dropout layer library
+cc_library(
+    name = "dropoutlayer",
+    hdrs = glob(
+        [
+            "src/include/DropoutLayer.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
+        ":layer",
         ":tensor",
     ]
 )
@@ -393,10 +414,62 @@ cc_library(
     includes = [],
     deps = [
         ":abstracttensor",
+        ":dropoutlayer",
         ":feedforward",
         ":layer",
         ":multiheadattention",
         ":normalizationlayer",
+        ":tensor",
+    ]
+)
+
+# AbstractEmbedding interface
+cc_library(
+    name = "abstractembedding",
+    hdrs = glob(
+        [
+            "src/include/AbstractEmbedding.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":listtensorslice",
+    ]
+)
+
+# Embedding library
+cc_library(
+    name = "embedding",
+    hdrs = glob(
+        [
+            "src/include/Embedding.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstractembedding",
+        ":listtensorslice",
+        ":sliceconfig",
+        ":tensor",
+    ]
+)
+
+# AbsolutePositionalEmbedding library
+cc_library(
+    name = "absolutepositionalembedding",
+    hdrs = glob(
+        [
+            "src/include/AbsolutePositionalEmbedding.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstractembedding",
+        ":listtensorslice",
+        ":sliceconfig",
         ":tensor",
     ]
 )
@@ -411,9 +484,11 @@ cc_binary(
     ),
     includes = [],
     deps = [
+        ":absolutepositionalembedding",
         ":bpe",
         ":causalattention",
         ":dataloader",
+        ":embedding",
         ":feedforward",
         ":gelulayer",
         ":layer",

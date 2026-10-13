@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-08
+ * @version: 2026-10-12
  *
  * Notes:
  * Layer.hpp defines the interface for all layers used throughout the LLM. All normalization, activations, etc.,
@@ -68,6 +68,11 @@ public:
      * @returns Returns a reference to the destination Tensor provided
      */
     virtual Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const = 0;
+
+    /**
+     * Check to see if a layer has a shortcut
+     */
+    virtual bool has_shortcut() const = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-29
+ * @version: 2026-10-12
  *
  * General Notes:
  *
@@ -26,7 +26,13 @@
 #include <vector>
 #include <string>
 
+/* Local dependencies */
+#include "AbstractTensor.hpp"
+
 namespace Tokenizer_NS {
+
+/* Use the AbstractTensor interface */
+using AbstractTensor_NS::AbstractTensor;
 
 // NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**
@@ -59,11 +65,18 @@ public:
     virtual std::vector<size_t> tokenize(const std::string& s) const = 0;
 
     /**
-     * Detokenize an input, returning a vector of char containing the decoded text
+     * Detokenize an input, returning a string containing the decoded text
      * @param v A vector of token ids to detokenize
      * @returns Returns a string containing the detokenized output
      */
     virtual std::string detokenize_to_string(const std::vector<size_t>& v) const = 0;
+
+    /**
+     * Detokenize an input, returning a string containing the decoded text
+     * @param t AbstractTensor reference containing token ids. The Tensor must have a shape of [N, 1] or [1, N]
+     * @returns Returns a string containing the detokenized output
+     */
+    virtual std::string detokenize_to_string(const AbstractTensor<size_t>& t) const = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-08
+ * @version: 2026-10-12
  *
  * General Notes:
  *
@@ -72,6 +72,11 @@ private:
     float c_dropout = 0.0;
 
     /**
+     * Whether a shortcut connection comes after this layer
+     */
+    bool c_shortcut = false;
+
+    /**
      * Query weights
      */
     Tensor<T> m_w_query;
@@ -95,9 +100,11 @@ public:
      * @param output_dim Output dimension
      * @param dropout Float >= 0, < 1 (set to 0 to disable)
      */
-    CausalAttention(size_t emb_dim, size_t output_dim, float dropout) : c_emb_dim(emb_dim), c_output_dim(output_dim), c_dropout(dropout),
-                                                                        m_w_query({emb_dim, output_dim}), m_w_key({emb_dim, output_dim}),
-                                                                        m_w_value({emb_dim, output_dim}) {
+    CausalAttention(size_t emb_dim, size_t output_dim, float dropout, bool shortcut) : c_emb_dim(emb_dim), c_output_dim(output_dim), 
+                                                                                       c_dropout(dropout), c_shortcut(shortcut),
+                                                                                       m_w_query({emb_dim, output_dim}),
+                                                                                       m_w_key({emb_dim, output_dim}),
+                                                                                       m_w_value({emb_dim, output_dim}) {
         // Ensure we get a dropout within the acceptable range
         if (dropout < 0 || dropout >= 1) {
             throw std::invalid_argument("CausalAttention.CausalAttention: Dropout must be >= 0, < 1.\n");
@@ -166,7 +173,7 @@ public:
         attn_scores.ninf_tri(CausalMaskType::UPPER);
         // Divide each value by the embedding dim, using unsafe_uniform_op to still vectorize
         // without checking for INF of NaN
-        Tensor_NS::unsafe_uniform_op(attn_scores, std::sqrtf(static_cast<T>(c_output_dim)), attn_scores, Tensor_NS::SqueezedOpType::DIV);
+        Tensor_NS::unsafe_uniform_op(attn_scores, std::sqrt(static_cast<T>(c_output_dim)), attn_scores, Tensor_NS::SqueezedOpType::DIV);
         // Apply softmax on dim 0
         attn_scores.softmax(0);
         // Apply dropout if enabled
@@ -175,6 +182,13 @@ public:
         }
         // Return the context
         return matmul(attn_scores, values, dest);
+    }
+
+    /**
+     * Check to see if a layer has a shortcut
+     */
+    bool has_shortcut() const override {
+        return c_shortcut;
     }
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)

@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-08
+ * @version: 2026-10-12
  *
  * Notes:
  * LinearLayer.hpp defines a standard linear layer for use in the feed forward network (FFN)
@@ -65,6 +65,11 @@ private:
     size_t c_output_dim = 0;
 
     /**
+     * Whether a shortcut connection comes after this layer
+     */
+    bool c_shortcut = false;
+
+    /**
      * Weight Tensor
      */
     Tensor<T> m_w;
@@ -77,7 +82,8 @@ public:
      * @param in_dim Input dimension
      * @param out_dim Output dimension
      */
-    LinearLayer(size_t in_dim, size_t out_dim) : c_input_dim(in_dim), c_output_dim(out_dim), m_w({c_input_dim, c_output_dim}) {
+    LinearLayer(size_t in_dim, size_t out_dim, bool shortcut) : c_input_dim(in_dim), c_output_dim(out_dim), c_shortcut(shortcut),
+                                                                m_w({c_input_dim, c_output_dim}) {
         // Initialize the Tensor to have random weights
         if constexpr (std::is_unsigned_v<T>) {
             m_w.random(0, 2);
@@ -151,6 +157,13 @@ public:
         }
         // Execute the matmul
         return TensorMatmul_NS::matmul(input, m_w, dest);
+    }
+
+    /**
+     * Check to see if a layer has a shortcut
+     */
+    bool has_shortcut() const override {
+        return c_shortcut;
     }
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
