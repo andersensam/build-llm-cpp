@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-12
+ * @version: 2026-10-13
  *
  * Notes: TransformerBlock.hpp
  *
@@ -29,7 +29,6 @@
 #include "AbstractTensor.hpp"
 #include "DropoutLayer.hpp"
 #include "FeedForward.hpp"
-#include "TransformerBlock.hpp"
 #include "Layer.hpp"
 #include "MultiHeadAttention.hpp"
 #include "NormalizationLayer.hpp"
@@ -186,15 +185,15 @@ public:
             throw std::invalid_argument("TransformerBlock.forward: Input and destination Tensors must be unique.\n");
         }
         // Iterate over the layers
-        const AbstractTensor<T>& layer_input = input;
-        // Make a shallow copy of dest before we overwrite it
-        Tensor<T> layer_output = dest.clone();
+        // Copy input --> layer_output and then use it as input / dest for layer iterations
+        Tensor<T> layer_output(input.shape());
+        layer_output.copy_from(input);
         // Shortcut input
         Tensor<T> shortcut_input(input.shape());
         shortcut_input.copy_from(input);
         // Enable polymorphic behavior
         for (const auto& layer : m_layers) {
-            layer->forward(layer_input, layer_output);
+            layer->forward(layer_output, layer_output);
             if (layer->has_shortcut()) {
                 layer_output += shortcut_input;
                 shortcut_input.copy_from(layer_output);

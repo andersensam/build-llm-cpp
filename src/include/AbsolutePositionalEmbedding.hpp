@@ -10,15 +10,15 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-12
+ * @version: 2026-10-13
  *
  * General Notes:
  *
  * AbsolutePositionalEmbedding.hpp: Get the absolute positional embedding of a sequence of token ids
  */
 
-#ifndef EMBEDDINGS_HPP
-#define EMBEDDINGS_HPP
+#ifndef ABSOLUTE_POSITIONAL_EMBEDDING_HPP
+#define ABSOLUTE_POSITIONAL_EMBEDDING_HPP
 
 /* Standard dependencies */
 #include <algorithm>
@@ -113,7 +113,7 @@ public:
         if (input.empty()) {
             throw std::invalid_argument("AbsolutePositionalEmbedding.get_embeddings: Input cannot be empty.\n");
         }
-        if (input.size() >= c_max_seq_len) {
+        if (input.size() > c_max_seq_len) {
             throw std::invalid_argument("AbsolutePositionalEmbedding.get_embeddings: Invalid position id provided.\n");
         }
         // Check the input to ensure don't have a positional id larger than max_seq_len

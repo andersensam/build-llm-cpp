@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-12
+ * @version: 2026-10-13
  *
  * General Notes:
  *
@@ -73,7 +73,7 @@ public:
 
     /**
      * Detokenize an input, returning a string containing the decoded text
-     * @param t AbstractTensor reference containing token ids. The Tensor must have a shape of [N, 1] or [1, N]
+     * @param t AbstractTensor reference containing token ids. The Tensor must have a shape of [N]
      * @returns Returns a string containing the detokenized output
      */
     virtual std::string detokenize_to_string(const AbstractTensor<size_t>& t) const = 0;

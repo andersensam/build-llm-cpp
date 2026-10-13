@@ -101,8 +101,11 @@ public:
      */
     Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const override {
         // Ensure we have a rank 2 Tensor
-        if (input.rank() != 2) {
-            throw std::invalid_argument("DropoutLayer.forward: Input Tensor must have rank == 2.\n");
+        if (input.rank() != 2 || dest.rank() != 2) {
+            throw std::invalid_argument("DropoutLayer.forward: Input and dest Tensors must have rank == 2.\n");
+        }
+        if (input.shape() != dest.shape()) {
+            throw std::invalid_argument("DropoutLayer.forward: Input and dest Tensor shapes must match.\n");
         }
         // Since dropout is an in-place operation, we might have input == dest. To ensure we aren't
         // overwriting the input, create a temp destination and then copy the result back

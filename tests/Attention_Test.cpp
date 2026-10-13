@@ -21,10 +21,10 @@ using Tensor_NS::Tensor;
 // ============================================================================
 
 TEST(AttentionTest, CausalAttentionConstructorValidation) {
-  EXPECT_THROW((CausalAttention<float>(16, 16, -0.1f)), std::invalid_argument);
-  EXPECT_THROW((CausalAttention<float>(16, 16, 1.0f)), std::invalid_argument);
-  EXPECT_NO_THROW((CausalAttention<float>(16, 16, 0.0f)));
-  EXPECT_NO_THROW((CausalAttention<float>(16, 8, 0.2f)));
+  EXPECT_THROW((CausalAttention<float>(16, 16, -0.1f, false)), std::invalid_argument);
+  EXPECT_THROW((CausalAttention<float>(16, 16, 1.0f, false)), std::invalid_argument);
+  EXPECT_NO_THROW((CausalAttention<float>(16, 16, 0.0f, false)));
+  EXPECT_NO_THROW((CausalAttention<float>(16, 8, 0.2f, false)));
 }
 
 TEST(AttentionTest, CausalAttentionForwardProducesExpectedShapeAndFiniteValues) {
@@ -32,7 +32,7 @@ TEST(AttentionTest, CausalAttentionForwardProducesExpectedShapeAndFiniteValues) 
   const size_t emb_dim = 16;
   const size_t out_dim = 8;
 
-  CausalAttention<float> ca(emb_dim, out_dim, 0.0f);
+  CausalAttention<float> ca(emb_dim, out_dim, 0.0f, false);
   Tensor<float> input({seq_len, emb_dim});
   input.random(-1.0f, 1.0f);
 
@@ -62,12 +62,12 @@ TEST(AttentionTest, AttentionHeadShardsWeightMatricesCorrectly) {
 
 TEST(AttentionTest, MultiHeadAttentionConstructorValidation) {
   // Invalid dropout
-  EXPECT_THROW((MultiHeadAttention<float>(16, 16, 32, -0.1f, 4)), std::invalid_argument);
-  EXPECT_THROW((MultiHeadAttention<float>(16, 16, 32, 1.0f, 4)), std::invalid_argument);
+  EXPECT_THROW((MultiHeadAttention<float>(16, 16, 32, -0.1f, 4, false)), std::invalid_argument);
+  EXPECT_THROW((MultiHeadAttention<float>(16, 16, 32, 1.0f, 4, false)), std::invalid_argument);
   // Output dim not divisible by num_heads
-  EXPECT_THROW((MultiHeadAttention<float>(16, 15, 32, 0.0f, 4)), std::invalid_argument);
+  EXPECT_THROW((MultiHeadAttention<float>(16, 15, 32, 0.0f, 4, false)), std::invalid_argument);
   // Valid configuration
-  EXPECT_NO_THROW((MultiHeadAttention<float>(16, 16, 32, 0.0f, 4)));
+  EXPECT_NO_THROW((MultiHeadAttention<float>(16, 16, 32, 0.0f, 4, false)));
 }
 
 TEST(AttentionTest, MultiHeadAttentionForwardProducesExpectedShapeAndFiniteValues) {
@@ -76,7 +76,7 @@ TEST(AttentionTest, MultiHeadAttentionForwardProducesExpectedShapeAndFiniteValue
   const size_t out_dim = 32;
   const size_t num_heads = 4;
 
-  MultiHeadAttention<float> mha(emb_dim, out_dim, 64, 0.0f, num_heads);
+  MultiHeadAttention<float> mha(emb_dim, out_dim, 64, 0.0f, num_heads, false);
   Tensor<float> input({seq_len, emb_dim});
   input.random(-1.0f, 1.0f);
 
@@ -95,7 +95,7 @@ TEST(AttentionTest, MultiHeadAttentionForwardProducesExpectedShapeAndFiniteValue
 
 TEST(AttentionTest, MultiHeadAttentionNonSquareEmbAndOutDimAndSingleToken) {
   // emb_dim (24) != out_dim (16), seq_len = 1
-  MultiHeadAttention<float> mha(24, 16, 32, 0.0f, 4);
+  MultiHeadAttention<float> mha(24, 16, 32, 0.0f, 4, false);
   Tensor<float> single_token({1, 24});
   single_token.random(-1.0f, 1.0f);
 
@@ -113,7 +113,7 @@ TEST(AttentionTest, CausalAttentionDoesNotLeakFutureTokensIntoPastOutputs) {
   const size_t emb_dim = 8;
   const size_t out_dim = 8;
 
-  CausalAttention<float> ca(emb_dim, out_dim, 0.0f);
+  CausalAttention<float> ca(emb_dim, out_dim, 0.0f, false);
 
   Tensor<float> input_a({seq_len, emb_dim});
   for (size_t i = 0; i < seq_len; ++i) {
@@ -146,7 +146,7 @@ TEST(AttentionTest, MultiHeadAttentionDoesNotLeakFutureTokensIntoPastOutputs) {
   const size_t out_dim = 16;
   const size_t num_heads = 4;
 
-  MultiHeadAttention<float> mha(emb_dim, out_dim, 32, 0.0f, num_heads);
+  MultiHeadAttention<float> mha(emb_dim, out_dim, 32, 0.0f, num_heads, false);
 
   Tensor<float> input_a({seq_len, emb_dim});
   for (size_t i = 0; i < seq_len; ++i) {

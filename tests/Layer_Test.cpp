@@ -34,7 +34,7 @@ using Tensor_NS::Tensor;
 // ============================================================================
 
 TEST(LayerTest, LinearLayerValidationAndShapes) {
-  LinearLayer<float> linear(8, 12);
+  LinearLayer<float> linear(8, 12, false);
 
   // Rank != 2 throws
   Tensor<float> rank1({8});
@@ -65,7 +65,7 @@ TEST(LayerTest, LinearLayerValidationAndShapes) {
 }
 
 TEST(LayerTest, LinearLayerSupportsSignedUnsignedAndInPlaceSquareForward) {
-  LinearLayer<int32_t> signed_linear(4, 4);
+  LinearLayer<int32_t> signed_linear(4, 4, false);
   Tensor<int32_t> x_i32({3, 4});
   for (size_t i = 0; i < x_i32.elements(); ++i) {
     x_i32.at(i) = static_cast<int32_t>((i % 3) + 1);
@@ -76,7 +76,7 @@ TEST(LayerTest, LinearLayerSupportsSignedUnsignedAndInPlaceSquareForward) {
     EXPECT_EQ(x_i32.at(i), expected_i32.at(i));
   }
 
-  LinearLayer<uint32_t> unsigned_linear(4, 3);
+  LinearLayer<uint32_t> unsigned_linear(4, 3, false);
   Tensor<uint32_t> x_u32({2, 4});
   x_u32.fill(1);
   Tensor<uint32_t> out_u32 = unsigned_linear.forward(x_u32);
@@ -88,7 +88,7 @@ TEST(LayerTest, LinearLayerSupportsSignedUnsignedAndInPlaceSquareForward) {
 // ============================================================================
 
 TEST(LayerTest, NormalizationLayerMatchesAnalyticalRowWiseLayerNorm) {
-  NormalizationLayer<float> norm;
+  NormalizationLayer<float> norm(false);
   Tensor<float> input({2, 4});
   // Row 0: [1, 2, 3, 4] -> mean = 2.5, var = 1.25
   input.at({0, 0}) = 1.0f;
@@ -125,7 +125,7 @@ TEST(LayerTest, NormalizationLayerMatchesAnalyticalRowWiseLayerNorm) {
 }
 
 TEST(LayerTest, NormalizationLayerSupportsInPlaceAliasingAndListTensorSlice) {
-  NormalizationLayer<float> norm;
+  NormalizationLayer<float> norm(false);
   auto backing = std::make_shared<Tensor<float>>(std::initializer_list<size_t>{3, 4});
   for (size_t i = 0; i < backing->elements(); ++i) {
     backing->at(i) = static_cast<float>(i * 0.5f - 2.0f);
@@ -163,7 +163,7 @@ TEST(LayerTest, NormalizationLayerSupportsInPlaceAliasingAndListTensorSlice) {
 // ============================================================================
 
 TEST(LayerTest, GELULayerMatchesTanhApproximationFormulaAndInPlaceAliasing) {
-  GELULayer<float> gelu;
+  GELULayer<float> gelu(false);
   Tensor<float> input({2, 5});
   const std::vector<float> test_vals = {
       -3.0f, -1.0f, -0.5f, 0.0f, 0.5f,
@@ -206,7 +206,7 @@ TEST(LayerTest, GELULayerMatchesTanhApproximationFormulaAndInPlaceAliasing) {
 TEST(LayerTest, FeedForwardValidationInPlaceAndRowIndependence) {
   const size_t emb_dim = 8;
   const size_t scale_dim = 4;
-  FeedForward<float> ffn(emb_dim, scale_dim);
+  FeedForward<float> ffn(emb_dim, scale_dim, false);
 
   // Validation checks
   Tensor<float> rank1({emb_dim});
@@ -253,9 +253,9 @@ TEST(LayerTest, FeedForwardValidationInPlaceAndRowIndependence) {
 
 TEST(LayerTest, PolymorphicLayerInterfacePipeline) {
   std::vector<std::unique_ptr<Layer<float>>> pipeline;
-  pipeline.push_back(std::make_unique<NormalizationLayer<float>>());
-  pipeline.push_back(std::make_unique<FeedForward<float>>(8, 4));
-  pipeline.push_back(std::make_unique<NormalizationLayer<float>>());
+  pipeline.push_back(std::make_unique<NormalizationLayer<float>>(false));
+  pipeline.push_back(std::make_unique<FeedForward<float>>(8, 4, false));
+  pipeline.push_back(std::make_unique<NormalizationLayer<float>>(false));
 
   Tensor<float> x({4, 8});
   x.random(-1.0f, 1.0f);
