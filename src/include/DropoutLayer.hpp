@@ -45,7 +45,7 @@ using Tensor_NS::Tensor;
  * Dropout layer
  */
 template <typename T>
-requires std::is_arithmetic_v<T>
+requires std::is_floating_point_v<T>
 class DropoutLayer final : public Layer<T> {
 /* Private data elements */
 private:

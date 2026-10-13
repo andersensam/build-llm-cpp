@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-08
+ * @version: 2026-10-13
  *
  * General Notes:
  *
@@ -1304,7 +1304,7 @@ public:
             }
             return result;
         }
-        else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
+        else if constexpr (std::is_signed_v<T>) {
             const T* data = _data();
             bool overflow = false;
             for (size_t i = 0; i < c_elements; ++i) {
@@ -1398,37 +1398,40 @@ public:
      * @returns Returns a reference to this Tensor
      */
     Tensor<T>& apply_dropout(float dropout) {
+        // Ensure dropout can only run on float dtype Tensors
+        if constexpr (!std::is_floating_point_v<T>) {
+            throw std::runtime_error("Tensor.apply_dropout: Dropout can only run on Tensors with dtype=float (and related).\n");
+        }
         // Ensure dropout is in the range of > 0, < 1.0
-        if (dropout < 0 || dropout >= 1.0f) {
+        if (dropout < 0.0f || dropout >= 1.0f) {
             throw std::invalid_argument("Tensor.apply_dropout: Dropout factor cannot be negative or >= 1.\n");
         }
         // If dropout == 0, return without making any changes
-        if (dropout == 0) {
+        if (dropout == 0.0f) {
             return *this;
         }
-        // Calculate the number of elements that should be zeroed out
-        size_t target_elements = static_cast<size_t>(static_cast<float>(c_elements) * dropout);
         // Calculate the scale factor for the remaining elements
         T scale_factor = static_cast<T>(1.0f / (1.0f - dropout));
         // Prepare to generate random values
         std::random_device rd;
         std::mt19937 gen(rd());
-        // Set the range to be from 0 to c_elements - 1
-        std::uniform_int_distribution<size_t> distrib(0, c_elements - 1);
-        // Use an ordered set to force unique values to be stored
-        std::unordered_set<size_t> target_idxs;
-        target_idxs.reserve(target_elements);
-        // Generate enough unique indices to satisfy target_elements
-        while (target_idxs.size() < target_elements) {
-            target_idxs.insert(distrib(gen));
+        // Create a Bernoulli Distribution with a % of causing dropout
+        std::bernoulli_distribution distrib(dropout);
+        // Iterate over the Tensor and generate a random number per element 
+        // if the random < dropout, zero out the element, otherwise scale
+        // the element by scale_factor
+        T* self_data = _data();
+        if (c_contiguous) {
+            for (size_t i = 0; i < c_elements; ++i) {
+                self_data[c_offset + i] = distrib(gen) ? static_cast<T>(0) : self_data[c_offset + i] * scale_factor;
+            }
         }
-        // Traverse the indices in the set and zero them out
-        T* data = _data();
-        for (const auto& idx : target_idxs) {
-            data[_get_offset(idx)] = 0;
+        else {
+            for (size_t i = 0; i < c_elements; ++i) {
+                const size_t target_idx = _get_offset(i);
+                self_data[target_idx] = distrib(gen) ? static_cast<T>(0) : self_data[target_idx] * scale_factor;
+            }
         }
-        // Apply the scaling factor to the rest of the Tensor
-        *this *= scale_factor;
         return *this;
     }
 

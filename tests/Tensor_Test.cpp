@@ -383,7 +383,7 @@ TEST(TensorTest, TriangularAndCausalMasks) {
 }
 
 TEST(TensorTest, ApplyDropoutValidatesBoundsAndScalesSurvivingElements) {
-  Tensor<float> t({10, 10});
+  Tensor<float> t({100, 100});
   t.fill(2.0f);
 
   // Invalid dropout bounds must throw
@@ -393,10 +393,10 @@ TEST(TensorTest, ApplyDropoutValidatesBoundsAndScalesSurvivingElements) {
 
   // Zero dropout is a no-op
   t.apply_dropout(0.0f);
-  EXPECT_FLOAT_EQ(t.sum(), 200.0f);
+  EXPECT_FLOAT_EQ(t.sum(), 20000.0f);
 
-  // 25% dropout on 100 elements drops exactly 25 elements to 0.0f
-  // and scales the remaining 75 elements by 1 / (1 - 0.25) = 4/3
+  // Independent Bernoulli(0.25) inverted dropout on 10,000 elements:
+  // Every eleement must be either 0.0.f or 2.0f * (1 / (1 - 0.25)) = 8/3
   const float p = 0.25f;
   const float expected_surviving_val = 2.0f * (1.0f / (1.0f - p));
   t.apply_dropout(p);
@@ -411,10 +411,12 @@ TEST(TensorTest, ApplyDropoutValidatesBoundsAndScalesSurvivingElements) {
       ++scaled_count;
     }
   }
-  EXPECT_EQ(zero_count, 25U);
-  EXPECT_EQ(scaled_count, 75U);
+  EXPECT_EQ(zero_count + scaled_count, t.elements());
+  // Binomial(10000, 0.25) has mean 2500 and std dev ~43.3; [2150, 2850] is > 8 sigma
+  EXPECT_GE(zero_count, 2150U);
+  EXPECT_LE(zero_count, 2850U);
   // Because exact fraction p is dropped and rest scaled by 1/(1-p), total sum is preserved!
-  EXPECT_NEAR(t.sum(), 200.0f, 1e-3f);
+  EXPECT_NEAR(t.sum(), static_cast<float>(scaled_count) * expected_surviving_val, 1e-1f);
 }
 
 // ============================================================================
