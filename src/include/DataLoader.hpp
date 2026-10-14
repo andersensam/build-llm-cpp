@@ -38,7 +38,14 @@
 
 namespace DataLoader_NS {
 
+/* Use logging */
+using Log_NS::Log_Priority;
+using Log_NS::log_message;
+
+/* Use the Tokenizer interface */
 using Tokenizer_NS::Tokenizer;
+
+/* Use Tensor */
 using Tensor_NS::Tensor;
 
 /**

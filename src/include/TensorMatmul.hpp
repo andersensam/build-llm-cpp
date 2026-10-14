@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-09
+ * @version: 2026-10-14
  *
  * Notes:
  * TensorMatmul.hpp contains kernels for running matrix multiplications on Tensors and TensorSlices
@@ -58,7 +58,7 @@ inline constexpr bool TENSORMATMUL_NAIVE_MATMUL_V2_PREFER_TEMP_INPUT_COPY = true
 inline constexpr bool TENSORMATMUL_PREFER_TEMP_DESTINATION_OVER_EXCEPTION = false;
 
 /* Control whether or not to log the creation of temporary Tensors (see above)*/
-inline constexpr bool TENSORMATMUL_NAIVE_MATMUL_V2_LOG_TEMP = true;
+inline constexpr bool TENSORMATMUL_NAIVE_MATMUL_V2_LOG_TEMP = false;
 
 /* Control whether or not to allow running .contiguous() on the destination Tensor for matmuls */
 inline constexpr bool TENSORMATMUL_ENABLE_DESTINATION_TENSOR_CONTIGUOUS = true;

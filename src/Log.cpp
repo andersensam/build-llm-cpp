@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-14
  *
  * General Notes:
  *
@@ -18,6 +18,7 @@
  */
 
 #include "include/Log.hpp"
+
 using Log_NS::log_message;
 using Log_NS::Log_Priority;
 using Log_NS::get_log_priority;

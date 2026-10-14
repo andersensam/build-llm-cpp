@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-13
+ * @version: 2026-10-14
  *
  * General Notes:
  *
@@ -1454,6 +1454,27 @@ public:
     }
 
     /**
+     * Find the index of the maximum value in a Tensor
+     * @returns Returns the index of the element
+     */
+    size_t max_idx() const {
+        if (c_contiguous) {
+            // NOLINTNEXTLINE(bugprone-sizeof-expression)
+            auto max_p = std::max_element(_data() + c_offset, _data() + c_offset + c_elements);
+            return std::distance(_data() + c_offset, max_p);
+        }
+        T result = std::numeric_limits<T>::lowest();
+        size_t result_idx = 0;
+        const T* self_data = _data();
+        for (size_t i = 0; i < c_elements; ++i) {
+            T val = self_data[_get_offset(i)];
+            result = val > result ? val : result;
+            result_idx = val == result ? i : result_idx;
+        }
+        return result_idx;
+    }
+
+    /**
      * Find the minimum value in a Tensor
      * @returns Returns the minimum value
      */
@@ -1661,6 +1682,64 @@ public:
                     }
                 }
                 dim_max = std::numeric_limits<T>::lowest();
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Get the index / indices of the maximum values across a dim of a Tensor
+     * @param dim The dimension to search for the max across
+     * @param squeeze True to reduce to a 1-D Tensor with one entry per index on the specified dim,
+     * e.g. if finding a max across a [3, 3] Tensor, the squeezed Tensor will have dim [3, 1]
+     * @returns Returns a Tensor containing the index / indices
+     */
+    Tensor<size_t> max_idx(size_t dim, bool squeeze) const {
+        // Ensure this can only run on 2-D Tensors
+        if (c_rank != 2) {
+            throw std::logic_error("Tensor.max_idx: sum(dim, squeeze) cannot be called on a non rank-2 Tensor.\n");
+        }
+        Tensor<size_t> result = (squeeze ? Tensor<size_t>({m_dims.at(dim)}) : Tensor<size_t>({rows(), cols()}));
+        // Store the max value
+        T dim_max = std::numeric_limits<T>::lowest();
+        size_t dim_max_idx = 0;
+        // Iterate across the rows if dim == 0
+        if (dim == 0) {
+            for (size_t i = 0; i < rows(); ++i) {
+                for (size_t j = 0; j < cols(); ++j) {
+                    const auto& test_val = at({i, j});
+                    dim_max = dim_max < test_val ? test_val : dim_max;
+                    dim_max_idx = (dim_max == test_val) ? j : dim_max_idx;
+                }
+                if (squeeze) {
+                    result.at({i}) = dim_max_idx;
+                }
+                else {
+                    for (size_t j = 0; j < cols(); ++j) {
+                        result.at({i, j}) = dim_max_idx;
+                    }
+                }
+                dim_max = std::numeric_limits<T>::lowest();
+                dim_max_idx = 0;
+            }
+        }
+        else {
+            for (size_t i = 0; i < cols(); ++i) {
+                for (size_t j = 0; j < rows(); ++j) {
+                    const auto& test_val = at({j, i});
+                    dim_max = dim_max < test_val ? test_val : dim_max;
+                    dim_max_idx = (dim_max == test_val) ? i: dim_max_idx;
+                }
+                if (squeeze) {
+                    result.at({i}) = dim_max_idx;
+                }
+                else {
+                    for (size_t j = 0; j < rows(); ++j) {
+                        result.at({j, i}) = dim_max_idx;
+                    }
+                }
+                dim_max = std::numeric_limits<T>::lowest();
+                dim_max_idx = 0;
             }
         }
         return result;
@@ -2173,6 +2252,69 @@ public:
         // Always check for contiguity before returning
         result._update_contiguous();
         return result;
+    }
+
+    /**
+     * Convert a rank-1 or rank-2 Tensor into a vector
+     * @returns Returns a new vector with the contents of the Tensor
+     * NOTE: Using this function with a rank-2 Tensor requires the shape to be [1, N] or [N, 1]
+     */
+    std::vector<T> to_vector() const {
+        if (c_rank == 0 || c_rank > 2) {
+            throw std::runtime_error("Tensor.to_vector: to_vector can only be called on a rank-1 or rank-2 Tensor.\n");
+        }
+        if (c_rank == 2) {
+            if (extent(0) != 1 && extent(1) != 1) {
+                throw std::runtime_error("Tensor.to_vector: Tensor must have shape [1, N] or [N, 1].\n");
+            }
+        }
+        std::vector<T> result(c_elements);
+        const T* self_data = _data();
+        // Fast copy if contiguous
+        if (c_contiguous) {
+            for (size_t i = 0; i < c_elements; ++i) {
+                result[i] = self_data[c_offset + i];
+            }
+        }
+        else {
+            for (size_t i = 0; i < c_elements; ++i) {
+                result[i] = self_data[_get_offset(i)];
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Convert a rank-1 or rank-2 Tensor into a vector
+     * @param dest Vector to write to
+     * @returns Returns a reference to the dest vector, with the contents of the Tensor
+     * NOTE: Using this function with a rank-2 Tensor requires the shape to be [1, N] or [N, 1]
+     */
+    std::vector<T>& to_vector(std::vector<T>& dest) const {
+        if (c_rank == 0 || c_rank > 2) {
+            throw std::runtime_error("Tensor.to_vector: to_vector can only be called on a rank-1 or rank-2 Tensor.\n");
+        }
+        if (c_rank == 2) {
+            if (extent(0) != 1 && extent(1) != 1) {
+                throw std::runtime_error("Tensor.to_vector: Tensor must have shape [1, N] or [N, 1].\n");
+            }
+        }
+        if (dest.size() != c_elements) {
+            dest.resize(c_elements);
+        }
+        const T* self_data = _data();
+        // Fast copy if contiguous
+        if (c_contiguous) {
+            for (size_t i = 0; i < c_elements; ++i) {
+                dest[i] = self_data[c_offset + i];
+            }
+        }
+        else {
+            for (size_t i = 0; i < c_elements; ++i) {
+                dest[i] = self_data[_get_offset(i)];
+            }
+        }
+        return dest;
     }
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)

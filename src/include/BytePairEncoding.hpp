@@ -68,6 +68,13 @@ inline const uint32_t BPE_END_MAGIC_NUMBER = 0x885179;
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
 
+/* Use logging */
+using Log_NS::log_message;
+using Log_NS::Log_Priority;
+
+/* Use the Tokenzier interface */
+using Tokenizer_NS::Tokenizer;
+
 /**
  * Object for storing information about a specific byte pair, including its contents
  * and list of positions of its occurrence within a specific string / vector
@@ -163,7 +170,7 @@ public:
 /**
  * Tokenizer for Byte Pair Encoding (BPE)
  */
-class BytePairEncodingTokenizer : public Tokenizer_NS::Tokenizer {
+class BytePairEncodingTokenizer : public Tokenizer {
 /* Private data elements */
 private:
     /**

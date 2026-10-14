@@ -137,6 +137,47 @@ void copy_tensor_to_high_rank_tensor(const Tensor<T>& src, size_t src_dim0, size
 }
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, bugprone-easily-swappable-parameters)
 
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+/**
+ * Copy a row or a column of a 2-D Tensor into a 1-D Tensor (similar to VectorSlice in ListTensorSlice)
+ * @param src Const ref to the source Tensor
+ * @param src_filter_dim Dimension to apply the filter to
+ * @param src_filter_idx Index on to filter on
+ * @param dest Reference to the destination Tensor
+ */
+template <typename T>
+requires std::is_arithmetic_v<T>
+void copy_2d_tensor_filtered_dim(const Tensor<T>& src, size_t src_filter_dim, size_t src_filter_idx, Tensor<T>& dest) {
+    if (src.rank() != 2) {
+        throw std::invalid_argument("TensorUtils::copy_filtered_dim: Source Tensor must have rank == 2.\n");
+    }
+    if (src_filter_dim > 1) {
+        throw std::invalid_argument("TensorUtils::copy_filtered_dim: Invalid filter dim provided.\n");
+    }
+    if (src_filter_idx >= src.extent(src_filter_dim)) {
+        throw std::invalid_argument("TensorUtils::copy_filtered_dim: Invalid filter index provided.\n");
+    }
+    if (dest.rank() != 1) {
+        throw std::invalid_argument("TensorUtils::copy_filtered_dim: Destination Tensor must have rank == 1.\n");
+    }
+    if (src_filter_dim == 0) {
+        if (dest.extent(0) != src.extent(1)) {
+            throw std::invalid_argument("TensorUtils::copy_filtered_dim: Destination Tensor must have the same size as src's dim1.\n");
+        }
+        for (size_t i = 0; i < src.extent(1); ++i) {
+            dest.at(i) = src.at({src_filter_idx, i});
+        }
+        return;
+    }
+    if (dest.extent(0) != src.extent(0)) {
+        throw std::invalid_argument("TensorUtils::copy_filtered_dim: Destination Tensor must have the same size as src's dim0.\n");
+    }
+    for (size_t i = 0; i < src.extent(0); ++i) {
+        dest.at(i) = src.at({i, src_filter_idx});
+    }
+}
+// NOLINTEND(bugprone-easily-swappable-parameters)
+
 }; // namespace TensorUtils_NS
 
 #endif

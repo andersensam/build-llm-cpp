@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-09
+ * @version: 2026-10-14
  *
  * General Notes:
  *
@@ -25,11 +25,15 @@
 
 /* Local dependencies */
 #include "ListTensorSlice.hpp"
+#include "Tensor.hpp"
 
 namespace AbstractEmbedding_NS {
 
 /* Use ListTensorSlice */
 using ListTensorSlice_NS::ListTensorSlice;
+
+/* Use Tensor */
+using Tensor_NS::Tensor;
 
 // NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**
@@ -47,8 +51,17 @@ public:
 
     /**
      * Get the embeddings for an input, returning a ListTensorSlice from the underlying weight Tensor
+     * @param input Const ref to a vector containing the token ids
+     * @returns Returns a zero-copy ListTensorSlice with the token embeddings
      */
     virtual const ListTensorSlice<T> get_embeddings(const std::vector<size_t>& input) const = 0;
+
+    /**
+     * Get the embeddings for an input, returning a ListTensorSlice from the underlying weight Tensor
+     * @param input Const ref to a Tensor containing the token ids
+     * @returns Returns a zero-copy ListTensorSlice with the token embeddings
+     */
+    virtual const ListTensorSlice<T> get_embeddings(const Tensor<size_t>& input) const = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

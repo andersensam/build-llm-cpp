@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-13
+ * @version: 2026-10-14
  *
  * Notes: TransformerBlock.hpp
  *
@@ -58,6 +58,7 @@ using NormalizationLayer_NS::NormalizationLayer;
 /* Use Tensor */
 using Tensor_NS::Tensor;
 
+// NOLINTBEGIN(cppcoreguidelines-special-member-functions)
 /**
  * The Transformer Block backbone of the LLM
  */
@@ -113,7 +114,7 @@ public:
         }
         // Ensure the output dimension is divisible by the number of heads
         if (c_emb_dim % c_attn_heads != 0) {
-            throw std::invalid_argument("TransformerBlock.TransformerBlock: Output dim must be divisible by number of heads.\n");
+            throw std::invalid_argument("TransformerBlock.TransformerBlock: Embedding dim must be divisible by number of heads.\n");
         }
         // Ensure we get a dropout within the acceptable range
         if (dropout < 0 || dropout >= 1) {
@@ -136,6 +137,13 @@ public:
         m_layers.push_back(std::make_unique<DropoutLayer<T>>(c_dropout, true));
     }
     // NOLINTEND(bugprone-easily-swappable-parameters, cppcoreguidelines-avoid-magic-numbers)
+
+    /**
+     * Default destructor for TransformerBlock
+     */
+    ~TransformerBlock() override {
+        // Do nothing
+    }
 
     /**
      * Forward function, performing the forward pass on the layer and returning a reference
@@ -210,6 +218,7 @@ public:
         return c_shortcut;
     }
 };
+// NOLINTEND(cppcoreguidelines-special-member-functions)
 
 }; // namespace TransformerBlock_NS
 

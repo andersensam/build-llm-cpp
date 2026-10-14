@@ -435,6 +435,7 @@ cc_library(
     includes = [],
     deps = [
         ":listtensorslice",
+        ":tensor",
     ]
 )
 
@@ -474,6 +475,52 @@ cc_library(
     ]
 )
 
+# Model interface
+cc_library(
+    name = "model",
+    hdrs = glob(
+        [
+            "src/include/Model.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstracttensor",
+        ":tensor",
+    ]
+)
+
+# GPT model library
+cc_library(
+    name = "gptmodel",
+    hdrs = glob(
+        [
+            "src/include/GPTModel.hpp"
+        ]
+    ),
+    srcs = glob(
+        [
+            "src/GPTModel.cpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":absolutepositionalembedding",
+        ":abstracttensor",
+        ":dropoutlayer",
+        ":embedding",
+        ":linearlayer",
+        ":listtensorslice",
+        ":model",
+        ":normalizationlayer",
+        ":tensor",
+        ":tensorutils",
+        ":transformerblock",
+    ]
+)
+
 # Main binary for execution
 cc_binary(
     name = "build-llm-cpp",
@@ -484,22 +531,11 @@ cc_binary(
     ),
     includes = [],
     deps = [
-        ":absolutepositionalembedding",
         ":bpe",
-        ":causalattention",
         ":dataloader",
-        ":embedding",
-        ":feedforward",
-        ":gelulayer",
-        ":layer",
-        ":linearlayer",
+        ":gptmodel",
         ":llmlog",
-        ":multiheadattention",
-        ":normalizationlayer",
         ":tensor",
-        ":tensormatmul",
-        ":listtensorslice",
-        ":transformerblock",
     ]
 )
 
