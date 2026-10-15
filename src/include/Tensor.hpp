@@ -1517,33 +1517,41 @@ public:
     }
 
     /**
-     * Convert a Matrix to a string representation, similar to the << operator above
-     * @returns Returns a string representation of the Matrix
+     * Convert a Tensor to a string representation
+     * @returns Returns a string representation of the Tensor
      */
     std::string to_string() const {
         // Ensure this can only run on 2-D Tensors
-        if (c_rank != 2) {
-            throw std::logic_error("Tensor.to_string: to_string() cannot be called on a non rank-2 Tensor.\n");
+        if (c_rank == 0 || c_rank > 2) {
+            throw std::logic_error("Tensor.to_string: to_string() can only be called on a rank 1 or 2 Tensor.\n");
         }
         // Create a blank string that we will return
         std::string result = "\n";
         // Wrap the Tensor in brackets, with each row properly enclosed too
         result += "[";
-        for (size_t i = 0; i < rows(); ++i) {
-            result += "[";
-            for (size_t j = 0; j < cols(); ++j) {
-                // Add the value in the Matrix
-                result += std::format("{}", at({i, j}));
-                if (j + 1 < cols()) {
-                    // Separate the values by tabs, for readability
-                    result += "\t";
-                }
+        if (c_rank == 1) {
+            for (size_t i = 0; i < c_elements - 1; ++i) {
+                result += std::format("{}\t", at(i));
             }
-            // Close out each row with a corresponding ]
-            result += "]";
-            // Add a new line after each row if we aren't at the end
-            if (i + 1 < rows()) {
-                result += "\n";
+            result += std::format("{}", at(c_elements - 1));
+        }
+        else {
+            for (size_t i = 0; i < rows(); ++i) {
+                result += "[";
+                for (size_t j = 0; j < cols(); ++j) {
+                    // Add the value in the Matrix
+                    result += std::format("{}", at({i, j}));
+                    if (j + 1 < cols()) {
+                        // Separate the values by tabs, for readability
+                        result += "\t";
+                    }
+                }
+                // Close out each row with a corresponding ]
+                result += "]";
+                // Add a new line after each row if we aren't at the end
+                if (i + 1 < rows()) {
+                    result += "\n";
+                }
             }
         }
         // Close out the Tensor final bracket and print out the info (dims and dtype)
@@ -1697,7 +1705,11 @@ public:
     Tensor<size_t> max_idx(size_t dim, bool squeeze) const {
         // Ensure this can only run on 2-D Tensors
         if (c_rank != 2) {
-            throw std::logic_error("Tensor.max_idx: sum(dim, squeeze) cannot be called on a non rank-2 Tensor.\n");
+            throw std::logic_error("Tensor.max_idx: max_idx(dim, squeeze) cannot be called on a non rank-2 Tensor.\n");
+        }
+        // Ensure we get a valid dim
+        if (dim > 1) {
+            throw std::logic_error("Tensor.max_idx: Invalid dim provided to max_idx.\n");
         }
         Tensor<size_t> result = (squeeze ? Tensor<size_t>({m_dims.at(dim)}) : Tensor<size_t>({rows(), cols()}));
         // Store the max value
@@ -1728,7 +1740,7 @@ public:
                 for (size_t j = 0; j < rows(); ++j) {
                     const auto& test_val = at({j, i});
                     dim_max = dim_max < test_val ? test_val : dim_max;
-                    dim_max_idx = (dim_max == test_val) ? i: dim_max_idx;
+                    dim_max_idx = (dim_max == test_val) ? j : dim_max_idx;
                 }
                 if (squeeze) {
                     result.at({i}) = dim_max_idx;
@@ -2315,6 +2327,34 @@ public:
             }
         }
         return dest;
+    }
+
+    /**
+     * Squeeze a Tensor, flattening its dims. If called on a non-contiguous Tensor, it will
+     * run contiguous() first and then flatten
+     * @param enable_contiguous If set to true, contiguous() will execute if the Tensor isn't
+     * contiguous already
+     * @returns Returns a reference to this Tensor
+     */
+    Tensor<T>& squeeze(bool enable_contiguous) {
+        // Squeeze can only run on Tensors with rank >= 2
+        if (c_rank < 2) {
+            throw std::logic_error("Tensor.squeeze: Squeeze is not supported on Tensors with rank < 2.\n");
+        }
+        if (!c_contiguous) {
+            if (enable_contiguous) {
+                contiguous();
+            }
+            else {
+                throw std::runtime_error("Tensor.squeeze: Tensor is not contiguous and enable_contiguous is set to false.\n");
+            }
+        }
+        m_dims.resize(1);
+        m_dims[0] = c_elements;
+        m_stride.resize(1);
+        m_stride[0] = 1;
+        c_rank = 1;
+        return *this;
     }
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)

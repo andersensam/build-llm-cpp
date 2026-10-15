@@ -114,7 +114,7 @@ public:
             throw std::invalid_argument("AbsolutePositionalEmbedding.get_embeddings: Input cannot be empty.\n");
         }
         if (input.size() > c_max_seq_len) {
-            throw std::invalid_argument("AbsolutePositionalEmbedding.get_embeddings: Invalid position id provided.\n");
+            throw std::invalid_argument("AbsolutePositionalEmbedding.get_embeddings: Too many elements in input vector.\n");
         }
         // Check the input to ensure don't have a positional id larger than max_seq_len
         auto max_pos_id = std::max_element(input.begin(), input.end());
@@ -150,8 +150,8 @@ public:
             }
         }
         // Ensure we don't get more elements than c_max_seq_len
-        if (input.elements() >= c_max_seq_len) {
-            throw std::invalid_argument("AbsolutePositionalEmbedding.get_embeddings: Invalid position id provided.\n");
+        if (input.elements() > c_max_seq_len) {
+            throw std::invalid_argument("AbsolutePositionalEmbedding.get_embeddings: Too many elements in input Tensor.\n");
         }
         // Check the input to ensure don't have a positional id larger than max_seq_len
         size_t max_pos_id = input.max();

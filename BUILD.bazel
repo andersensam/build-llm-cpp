@@ -536,6 +536,7 @@ cc_binary(
         ":gptmodel",
         ":llmlog",
         ":tensor",
+        ":tensorutils",
     ]
 )
 

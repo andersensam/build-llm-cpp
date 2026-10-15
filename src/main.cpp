@@ -34,6 +34,7 @@
 #include "include/GPTModel.hpp"
 #include "include/Log.hpp"
 #include "include/Tensor.hpp"
+#include "include/TensorUtils.hpp"
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
 int main() {
@@ -59,28 +60,32 @@ int main() {
         size_t emb_dim = 1536;
 
         // Create a data loader using a shared ptr to the tokenizer
-        DataLoader d(tokenizer_ptr, 4, 1, 4);
+        DataLoader d(tokenizer_ptr, 8, 4, 8);
         d.ingest("./data/the-verdict.txt");
         // Get the first input batch and then target batch (shifted by one token)
         const Tensor<size_t>& input_batch = d.next_input();
         const Tensor<size_t>& target_batch = d.next_target();
         log_message(Log_Priority::INFO, "main", std::format("Input batch info: {}\nTarget batch info: {}", input_batch.to_string(), target_batch.to_string()));
 
-        // Instantiate the GPT Model
-        GPTModel model(vocab_size, 12, emb_dim, 12, 1024, 0.1);
+        // Instantiate the GPT Model, disabling dropout since this is forward pass only
+        GPTModel model(vocab_size, 12, emb_dim, 12, 1024, 0);
         log_message(Log_Priority::INFO, "main", std::format("{}", model.info()));
-        // Put the input batch from the dataloader into the model
+        // Put the input batch from the dataloader into the model, input = [4, 8], output = [4, 8, vocab_size]
         Tensor<float> logits = model.forward(input_batch);
-        // Slice the logits to get only the first batch out
-        Tensor<float> logits_slice = logits.slice({1, 2}, {}, {{0, 0}});
-        // Skip running softmax since finding the max idx across the batch does essentially the same thing
-        Tensor<size_t> selected = logits_slice.max_idx(0, true);
-        std::vector<size_t> selected_tokens = selected.to_vector();
-        // Convert the input_back to a vector
-        std::vector<size_t> input_tokens = input_batch.to_vector();
-        log_message(Log_Priority::INFO, "main", std::format("Input batch: {}\nSelected output: {}\nLogits: {}.", 
-            BPET.detokenize_to_string(input_tokens), BPET.detokenize_to_string(selected_tokens),
-            logits.info()));
+        // Create a Tensor to dump each batch's token ids into
+        Tensor<size_t> batch_tokens({8});
+        // Iterate over the batches
+        for (size_t i = 0; i < logits.extent(0); ++i) {
+            // Extract the input batch token ids
+            TensorUtils_NS::copy_2d_tensor_filtered_dim(input_batch, 0, i, batch_tokens);
+            // Slice the logits Tensor along the batch dim
+            Tensor<float> logits_slice = logits.slice({1, 2}, {}, {{0, i}});
+            // Run argmax on the logits slice, giving the next token across the batch
+            Tensor<size_t> argmax = logits_slice.max_idx(0, true);
+            log_message(Log_Priority::INFO, "main",
+                std::format("Batch {}:\nToken ids: {}\nDetokenized input: {}\nOutput token ids: {}\nDetokenized output: {}",
+                    i, batch_tokens.to_string(), BPET.detokenize_to_string(batch_tokens), argmax.to_string(), BPET.detokenize_to_string(argmax)));
+        }
 
     } catch (const std::exception& e) {
 
