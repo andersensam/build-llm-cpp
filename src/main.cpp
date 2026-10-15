@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-14
+ * @version: 2026-10-15
  *
  * General Notes:
  *
@@ -18,7 +18,6 @@
  */
 
 /* Standard dependencies */
-#include <cstdint>
 #include <cstddef>
 #include <exception>
 #include <format>
@@ -60,7 +59,10 @@ int main() {
         size_t emb_dim = 1536;
 
         // Create a data loader using a shared ptr to the tokenizer
-        DataLoader d(tokenizer_ptr, 8, 4, 8);
+        size_t dataloader_max_len = 8;
+        size_t dataloader_batch_size = 2;
+        size_t dataloader_stride = 8;
+        DataLoader d(tokenizer_ptr, dataloader_max_len, dataloader_batch_size, dataloader_stride);
         d.ingest("./data/the-verdict.txt");
         // Get the first input batch and then target batch (shifted by one token)
         const Tensor<size_t>& input_batch = d.next_input();
@@ -68,23 +70,43 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Input batch info: {}\nTarget batch info: {}", input_batch.to_string(), target_batch.to_string()));
 
         // Instantiate the GPT Model, disabling dropout since this is forward pass only
-        GPTModel model(vocab_size, 12, emb_dim, 12, 1024, 0);
+        size_t gptmodel_num_layers = 12;
+        size_t gptmodel_attn_heads = 12;
+        size_t gptmodel_max_seq_len = 1024;
+        float gptmodel_dropout = 0.0f;
+        GPTModel model(vocab_size, gptmodel_num_layers, emb_dim, gptmodel_attn_heads, gptmodel_max_seq_len, gptmodel_dropout);
         log_message(Log_Priority::INFO, "main", std::format("{}", model.info()));
-        // Put the input batch from the dataloader into the model, input = [4, 8], output = [4, 8, vocab_size]
-        Tensor<float> logits = model.forward(input_batch);
-        // Create a Tensor to dump each batch's token ids into
-        Tensor<size_t> batch_tokens({8});
-        // Iterate over the batches
-        for (size_t i = 0; i < logits.extent(0); ++i) {
-            // Extract the input batch token ids
-            TensorUtils_NS::copy_2d_tensor_filtered_dim(input_batch, 0, i, batch_tokens);
-            // Slice the logits Tensor along the batch dim
-            Tensor<float> logits_slice = logits.slice({1, 2}, {}, {{0, i}});
-            // Run argmax on the logits slice, giving the next token across the batch
+        // Define the number of tokens we want out from the model
+        size_t target_num_tokens = 8;
+        // Create an output Tensor that is of dim [batch_size, dataloader_max_len + target_num_tokens]
+        Tensor<size_t> final_input({dataloader_batch_size, dataloader_max_len + target_num_tokens});
+        // Create a slice of size [batch_size, dataloader_max_len] and copy the token ids into it
+        Tensor<size_t> model_input = final_input.slice({0, 1}, {{0, 0}, {0, dataloader_max_len}}, {});
+        model_input.copy_from(input_batch);
+        for (size_t i = 0; i < target_num_tokens; ++i) {
+            // Create a slice from final_input of shape [batch_size, dataloader_max_len + i (up to target_num_tokens)]
+            // when i = 0, this is a no-op
+            Tensor<size_t> current_input = final_input.slice({0, 1}, {{0, 0}, {0, dataloader_max_len + i}}, {});
+            // Run the forward pass and generate the logits of shape [batch_size, dataloader_max_len + i, vocab_size]
+            Tensor<float> logits = model.forward(current_input);
+            // Create a slice to grab the last token across all batches with shape [batch_size, vocab_size], indexing on only the final token output
+            Tensor<float> logits_slice = logits.slice({0, 2}, {}, {{1, logits.extent(1) - 1}});
+            // Calculate the argmax for all batches, shape [batch_size]
             Tensor<size_t> argmax = logits_slice.max_idx(0, true);
+            for (size_t j = 0; j < argmax.elements(); ++j) {
+                final_input.at({j, dataloader_max_len + i}) = argmax.at(j);
+            }
+        }
+        for (size_t i = 0; i < dataloader_batch_size; ++i) {
+            Tensor<size_t> input_slice = input_batch.slice({1}, {}, {{0, i}});
+            Tensor<size_t> output_slice = final_input.slice({1}, {}, {{0, i}});
             log_message(Log_Priority::INFO, "main",
-                std::format("Batch {}:\nToken ids: {}\nDetokenized input: {}\nOutput token ids: {}\nDetokenized output: {}",
-                    i, batch_tokens.to_string(), BPET.detokenize_to_string(batch_tokens), argmax.to_string(), BPET.detokenize_to_string(argmax)));
+                std::format(
+                    "[Batch {}]: Input token ids: {}\nDecoded input: {}\nDesired tokens: {}\nOutput token ids: {}\nDecoded output: {}",
+                        i, input_slice.to_string(), BPET.detokenize_to_string(input_slice), target_num_tokens,
+                        output_slice.to_string(), BPET.detokenize_to_string(output_slice)
+                )
+            );
         }
 
     } catch (const std::exception& e) {

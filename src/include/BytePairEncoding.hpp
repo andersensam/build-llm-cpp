@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-13
+ * @version: 2026-10-15
  *
  * General Notes:
  *
@@ -30,8 +30,6 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
-#include <limits>
-#include <numeric>
 #include <span>
 #include <stdexcept>
 #include <string>

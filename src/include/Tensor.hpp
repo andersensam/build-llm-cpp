@@ -1697,7 +1697,8 @@ public:
 
     /**
      * Get the index / indices of the maximum values across a dim of a Tensor
-     * @param dim The dimension to search for the max across
+     * @param dim Search each entry of this dim, across the other dim, for example: dim=0
+     * looks at each entry in dim0 and finds its max in dim1 (highest column per row)
      * @param squeeze True to reduce to a 1-D Tensor with one entry per index on the specified dim,
      * e.g. if finding a max across a [3, 3] Tensor, the squeezed Tensor will have dim [3, 1]
      * @returns Returns a Tensor containing the index / indices
