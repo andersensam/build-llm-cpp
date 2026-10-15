@@ -4,6 +4,10 @@ build --test_output=errors
 
 # For release, build with maximum optimizations
 build:release --cxxopt=-O3
+build:release --cxxopt=-Rpass=loop-vectorize
+build:release --cxxopt=-fno-omit-frame-pointer
+build:release --cxxopt=-mno-omit-leaf-frame-pointer
+build:release --build_tag_filters=-no-clang-tidy
 
 # Debug settings, disabling most compiler optimizations 
 build:debug --cxxopt=-O0 

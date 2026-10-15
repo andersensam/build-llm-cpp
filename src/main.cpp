@@ -82,13 +82,21 @@ int main() {
         Tensor<size_t> final_input({dataloader_batch_size, dataloader_max_len + target_num_tokens});
         // Create a slice of size [batch_size, dataloader_max_len] and copy the token ids into it
         Tensor<size_t> model_input = final_input.slice({0, 1}, {{0, 0}, {0, dataloader_max_len}}, {});
+        // We know the final ouput from logits will have size [batch_size, dataloader_max_len + target_num_tokens, vocab_size]
+        Tensor<float> final_logits({dataloader_batch_size, dataloader_max_len + target_num_tokens, vocab_size});
         model_input.copy_from(input_batch);
+        log_message(Log_Priority::INFO, "main", "Starting forward pass.");
         for (size_t i = 0; i < target_num_tokens; ++i) {
+            // Handle the case where we hit the max_seq_len
+            size_t seq_end = dataloader_max_len + i;
+            size_t seq_begin = seq_end > gptmodel_max_seq_len ? (seq_end - gptmodel_max_seq_len) : 0;
             // Create a slice from final_input of shape [batch_size, dataloader_max_len + i (up to target_num_tokens)]
             // when i = 0, this is a no-op
-            Tensor<size_t> current_input = final_input.slice({0, 1}, {{0, 0}, {0, dataloader_max_len + i}}, {});
+            Tensor<size_t> current_input = final_input.slice({0, 1}, {{0, 0}, {seq_begin, seq_end}}, {});
+            // We can slice the final_logits Tensor and use it as a destination to avoid reallocating memory
+            Tensor<float> logits = final_logits.slice({0, 1, 2}, {{0, 0}, {0, dataloader_max_len + i}, {0, 0}}, {});
+            model.forward(current_input, logits);
             // Run the forward pass and generate the logits of shape [batch_size, dataloader_max_len + i, vocab_size]
-            Tensor<float> logits = model.forward(current_input);
             // Create a slice to grab the last token across all batches with shape [batch_size, vocab_size], indexing on only the final token output
             Tensor<float> logits_slice = logits.slice({0, 2}, {}, {{1, logits.extent(1) - 1}});
             // Calculate the argmax for all batches, shape [batch_size]
@@ -97,6 +105,7 @@ int main() {
                 final_input.at({j, dataloader_max_len + i}) = argmax.at(j);
             }
         }
+        log_message(Log_Priority::INFO, "main", "Finished forward pass.");
         for (size_t i = 0; i < dataloader_batch_size; ++i) {
             Tensor<size_t> input_slice = input_batch.slice({1}, {}, {{0, i}});
             Tensor<size_t> output_slice = final_input.slice({1}, {}, {{0, i}});

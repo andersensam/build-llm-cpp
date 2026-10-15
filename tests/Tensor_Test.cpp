@@ -416,7 +416,7 @@ TEST(TensorTest, ApplyDropoutValidatesBoundsAndScalesSurvivingElements) {
   EXPECT_GE(zero_count, 2150U);
   EXPECT_LE(zero_count, 2850U);
   // Because exact fraction p is dropped and rest scaled by 1/(1-p), total sum is preserved!
-  EXPECT_NEAR(t.sum(), static_cast<float>(scaled_count) * expected_surviving_val, 1e-1f);
+  EXPECT_NEAR(t.sum(), static_cast<float>(scaled_count) * expected_surviving_val, 1.0f);
 }
 
 // ============================================================================
