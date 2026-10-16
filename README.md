@@ -9,25 +9,37 @@ graph TD
     subgraph "Main Application"
         main[main.cpp]
     end
+
+    subgraph "Interfaces"
+        abstract_embedding[AbstractEmbedding.hpp]
+        abstract_tensor[AbstractTensor.hpp]
+        attention[Attention.hpp]
+        layer[Layer.hpp]
+        model[Model.hpp]
+        tokenizer[Tokenizer.hpp]
+    end
     
     subgraph "Model Layer"
-        model[Model.hpp]
         gpt[GPTModel.hpp]
     end
     
     subgraph "Core Tensor Library"
-        abstract_tensor[AbstractTensor.hpp]
         storage[Storage.hpp]
         tensor[Tensor.hpp]
+        diminfo[DimInfo.hpp]
+        slice_config[SliceConfig.hpp]
+        list_slice[ListTensorSlice.hpp]
+    end
+
+    subgraph "Tensor Kernels"
         tensor_math[TensorMath.hpp]
         tensor_matmul[TensorMatmul.hpp]
-        tensor_utils[TensorUtils.hpp]
+        numerics[Numerics.hpp]
     end
     
     subgraph "Transformer Components"
-        layer[Layer.hpp]
         transformer[TransformerBlock.hpp]
-        attention[MultiHeadAttention.hpp]
+        mha[MultiHeadAttention.hpp]
         feedforward[FeedForward.hpp]
         linear[LinearLayer.hpp]
     end
@@ -36,29 +48,25 @@ graph TD
         norm[NormalizationLayer.hpp]
         dropout[DropoutLayer.hpp]
         gelu[GELULayer.hpp]
-        abs_pos[AbsolutePositionalEmbedding.hpp]
     end
     
     subgraph "Embedding & Tokenization"
         embedding[Embedding.hpp]
         bpe[BytePairEncoding.hpp]
-        tokenizer[Tokenizer.hpp]
+        abs_pos[AbsolutePositionalEmbedding.hpp]
     end
     
     subgraph "Data Handling"
         dataloader[DataLoader.hpp]
-        slice_config[SliceConfig.hpp]
-        list_slice[ListTensorSlice.hpp]
     end
     
     subgraph "Utilities"
         log[Log.hpp]
-        numerics[Numerics.hpp]
-        diminfo[DimInfo.hpp]
+        tensor_utils[TensorUtils.hpp]
     end
-    
+
     %% Main application dependencies
-    main --> model
+    main --> gpt
     main --> bpe
     main --> dataloader
     main --> tensor
@@ -76,18 +84,21 @@ graph TD
     
     %% Transformer block dependencies
     transformer --> layer
-    transformer --> attention
+    transformer --> mha
     transformer --> feedforward
     transformer --> norm
     transformer --> dropout
     transformer --> abstract_tensor
     transformer --> tensor
     
-    %% Attention dependencies
-    attention --> layer
+    %% MultiHeadAttention dependencies
+    mha --> attention
+    mha --> abstract_tensor
+    mha --> tensor
+    mha --> tensor_matmul
     attention --> abstract_tensor
+    attention --> layer
     attention --> tensor
-    attention --> tensor_matmul
     
     %% FeedForward dependencies
     feedforward --> layer
@@ -102,7 +113,6 @@ graph TD
     layer --> tensor_math
     
     %% Tensor library dependencies
-    abstract_tensor --> storage
     tensor --> abstract_tensor
     tensor --> storage
     tensor --> log
@@ -110,6 +120,11 @@ graph TD
     tensor --> tensor_math
     tensor --> tensor_matmul
     tensor --> tensor_utils
+    slice_config --> abstract_tensor
+    slice_config --> tensor
+    slice_config --> diminfo
+    list_slice --> abstract_tensor
+    list_slice --> tensor
     
     %% TensorMath dependencies
     tensor_math --> numerics
@@ -133,9 +148,12 @@ graph TD
     abs_pos --> tensor
     
     %% Embedding dependencies
+    embedding --> abstract_embedding
     embedding --> abstract_tensor
     embedding --> tensor
     embedding --> storage
+    abstract_embedding --> list_slice
+    abstract_embedding --> tensor
     
     %% BPE tokenizer dependencies
     bpe --> tokenizer
@@ -146,12 +164,7 @@ graph TD
     dataloader --> slice_config
     dataloader --> abstract_tensor
     dataloader --> tensor
-    
-    %% Slice configuration dependencies
-    slice_config --> abstract_tensor
-    slice_config --> tensor
-    list_slice --> abstract_tensor
-    list_slice --> tensor
+        
 ```
 
 ## Detailed Class Dependencies
