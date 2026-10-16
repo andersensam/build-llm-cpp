@@ -102,9 +102,9 @@ graph TD
     layer --> tensor_math
     
     %% Tensor library dependencies
-    abstract --> storage
-    tensor --> abstract
-    tensor --> storage_tensor
+    abstract_tensor --> storage
+    tensor --> abstract_tensor
+    tensor --> storage
     tensor --> log
     tensor --> numerics
     tensor --> tensor_math
