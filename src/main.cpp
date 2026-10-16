@@ -56,7 +56,6 @@ int main() {
 
         // Define the embedding dimension and vocab size
         size_t vocab_size = BPET.vocab_size();
-        size_t emb_dim = 1536;
 
         // Create a data loader using a shared ptr to the tokenizer
         size_t dataloader_max_len = 8;
@@ -71,10 +70,11 @@ int main() {
 
         // Instantiate the GPT Model, disabling dropout since this is forward pass only
         size_t gptmodel_num_layers = 12;
+        size_t gptmodel_emb_dim = 768;
         size_t gptmodel_attn_heads = 12;
         size_t gptmodel_max_seq_len = 1024;
         float gptmodel_dropout = 0.0f;
-        GPTModel model(vocab_size, gptmodel_num_layers, emb_dim, gptmodel_attn_heads, gptmodel_max_seq_len, gptmodel_dropout);
+        GPTModel model(vocab_size, gptmodel_num_layers, gptmodel_emb_dim, gptmodel_attn_heads, gptmodel_max_seq_len, gptmodel_dropout);
         log_message(Log_Priority::INFO, "main", std::format("{}", model.info()));
         // Define the number of tokens we want out from the model
         size_t target_num_tokens = 8;
