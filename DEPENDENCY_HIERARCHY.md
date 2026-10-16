@@ -7,78 +7,80 @@ This document provides a comprehensive view of all dependencies, including abstr
 ```mermaid
 graph TD
     subgraph "Storage Layer"
-        storage[Storage<T>]
+        storage["Storage<T>"]
     end
 
     subgraph "Abstract Tensor Interface"
-        abstract_tensor[AbstractTensor<T>]
+        abstract_tensor["AbstractTensor<T>"]
     end
 
     subgraph "Tensor Implementations"
-        tensor[Tensor<T>]
-        list_slice[ListTensorSlice<T>]
+        tensor["Tensor<T>"]
+        list_slice["ListTensorSlice<T>"]
     end
 
     subgraph "Abstract Embedding Interface"
-        abstract_embedding[AbstractEmbedding<T>]
+        abstract_embedding["AbstractEmbedding<T>"]
     end
 
     subgraph "Embedding Implementations"
-        embedding[Embedding<T>]
-        abs_pos[AbsolutePositionalEmbedding<T>]
+        embedding["Embedding<T>"]
+        abs_pos["AbsolutePositionalEmbedding<T>"]
     end
 
     subgraph "Tokenizer Interface"
-        tokenizer[Tokenizer]
+        tokenizer["Tokenizer"]
     end
 
     subgraph "Tokenizer Implementations"
-        bpe[BytePairEncoding<T>]
+        bpe["BytePairEncoding"]
     end
 
     subgraph "Model Interface"
-        model[Model<T>]
+        model["Model<T>"]
     end
 
     subgraph "Model Implementations"
-        gpt[GPTModel]
+        gpt["GPTModel<T>"]
     end
 
     subgraph "Layer Interface"
-        layer[Layer<T>]
+        layer["Layer<T>"]
     end
 
     subgraph "Layer Implementations"
-        norm[NormalizationLayer<T>]
-        dropout[DropoutLayer<T>]
-        gelu[GELULayer<T>]
-        linear[LinearLayer<T>]
+        norm["NormalizationLayer<T>"]
+        dropout["DropoutLayer<T>"]
+        gelu["GELULayer<T>"]
+        linear["LinearLayer<T>"]
     end
 
     subgraph "Attention Interface"
-        attention[Attention<T>]
+        attention["Attention<T>"]
     end
 
     subgraph "Attention Implementations"
-        mha[MultiHeadAttention<T>]
+        mha["MultiHeadAttention<T>"]
     end
 
     subgraph "FeedForward"
-        feedforward[FeedForward<T>]
+        feedforward["FeedForward<T>"]
     end
 
     subgraph "Transformer Block"
-        transformer[TransformerBlock<T>]
+        transformer["TransformerBlock<T>"]
+    end
+
+    subgraph "Utilities"
+        tensor_matmul["TensorMatmul<T>"]
     end
 
     %% Storage dependencies
     storage -->|owns memory| tensor
-    storage -->|used by| abstract_embedding
 
     %% Tensor hierarchy
     abstract_tensor -->|inherited by| tensor
     abstract_tensor -->|inherited by| list_slice
-    abstract_tensor -->|used by| all other components
 
     %% Embedding hierarchy
     abstract_embedding -->|inherited by| embedding
@@ -89,13 +91,7 @@ graph TD
     %% Tokenizer hierarchy
     tokenizer -->|inherited by| bpe
 
-    %% Model hierarchy
-    model -->|implemented by| gpt
-    gpt -->|uses| transformer
-    gpt -->|uses| embedding
-    gpt -->|uses| abs_pos
-
-    %% Layer hierarchy
+    %% Layer inheritance
     layer -->|inherited by| norm
     layer -->|inherited by| dropout
     layer -->|inherited by| gelu
@@ -103,34 +99,30 @@ graph TD
     layer -->|inherited by| attention
     layer -->|inherited by| feedforward
     layer -->|inherited by| transformer
-
-    %% Attention hierarchy
     attention -->|inherited by| mha
-    attention -->|inherited by| layer
 
-    %% FeedForward composition
+    %% Model inheritance
+    model -->|implemented by| gpt
+
+    %% Sub-component compositions
     feedforward -->|has| linear
     feedforward -->|has| gelu
-    feedforward -->|implements| layer
 
-    %% MultiHeadAttention composition
     mha -->|uses| tensor
     mha -->|uses| tensor_matmul
-    mha -->|implements| attention
 
-    %% TransformerBlock composition
     transformer -->|has| norm
     transformer -->|has| mha
     transformer -->|has| dropout
     transformer -->|has| feedforward
-    transformer -->|implements| layer
 
     %% GPTModel composition
     gpt -->|has| embedding
     gpt -->|has| abs_pos
     gpt -->|has| dropout
-    gpt -->|has| norm
     gpt -->|has| transformer
+    gpt -->|has| norm
+    gpt -->|has| linear
 ```
 
 ## Interface Dependencies (Abstract Classes)
@@ -154,10 +146,10 @@ AbstractEmbedding<T> (interface)
     └── AbsolutePositionalEmbedding<T> (position embedding layer)
 
 Tokenizer (interface)
-    └── BytePairEncoding<T> (BPE tokenizer implementation)
+    └── BytePairEncoding (BPE tokenizer implementation)
 
 Model<T> (interface)
-    └── GPTModel (GPT-style language model)
+    └── GPTModel<T> (GPT-style language model)
 
 Layer<T> (interface)
     ├── NormalizationLayer<T>
@@ -168,9 +160,6 @@ Layer<T> (interface)
     │   └── MultiHeadAttention<T>
     ├── FeedForward<T>
     └── TransformerBlock<T>
-
-Attention<T> (interface)
-    └── MultiHeadAttention<T> (MHA implementation)
 ```
 
 ## Concrete Instantiation Chain (GPTModel)
@@ -186,9 +175,10 @@ main.cpp
     │   └── implements Tokenizer interface
     │
     ├── creates DataLoader
-    │   └── uses BytePairEncoding for tokenization
+    │   ├── uses BytePairEncoding for tokenization
+    │   └── produces Tensor<size_t>
     │
-    └── creates GPTModel
+    └── creates GPTModel<float>
             │
             ├── m_tok_emb: Embedding<float>
             │   └── implements AbstractEmbedding<float>
@@ -199,24 +189,27 @@ main.cpp
             ├── m_drop: DropoutLayer<float>
             │   └── implements Layer<float>
             │
-            ├── m_norm: NormalizationLayer<float>
+            ├── m_layers: vector<TransformerBlock<float>> × N
+            │       │
+            │       └── each TransformerBlock contains:
+            │               ├── NormalizationLayer<float>
+            │               ├── MultiHeadAttention<float>
+            │               │   ├── implements Attention<float>
+            │               │   ├── Q/K/V weight tensors
+            │               │   └── uses TensorMatmul for projections
+            │               ├── DropoutLayer<float>
+            │               ├── NormalizationLayer<float>
+            │               ├── FeedForward<float>
+            │               │   ├── LinearLayer<float> (up-projection)
+            │               │   ├── GELULayer<float>
+            │               │   └── LinearLayer<float> (down-projection)
+            │               └── DropoutLayer<float>
+            │
+            ├── m_norm: NormalizationLayer<float> (final ln_f)
             │   └── implements Layer<float>
             │
-            └── m_layers: vector<TransformerBlock<float>> × N
-                    │
-                    └── each TransformerBlock contains:
-                            ├── NormalizationLayer<float>
-                            ├── MultiHeadAttention<float>
-                            │   ├── implements Attention<float>
-                            │   ├── Q/K/V weight tensors
-                            │   └── uses TensorMatmul for projections
-                            ├── DropoutLayer<float>
-                            ├── NormalizationLayer<float>
-                            ├── FeedForward<float>
-                            │   ├── LinearLayer<float> (up-projection)
-                            │   ├── GELULayer<float>
-                            │   └── LinearLayer<float> (down-projection)
-                            └── DropoutLayer<float>
+            └── m_head: LinearLayer<float> (lm_head / output projection)
+                └── implements Layer<float>
 ```
 
 ## Dependency Flow Diagram
@@ -267,7 +260,6 @@ main.cpp
 │   │   ├── Layer.hpp
 │   │   ├── MultiHeadAttention.hpp
 │   │   │   ├── Attention.hpp
-│   │   │   ├── MultiHeadAttention.hpp (self-reference)
 │   │   │   └── TensorMatmul.hpp
 │   │   ├── FeedForward.hpp
 │   │   │   ├── Layer.hpp
@@ -279,15 +271,19 @@ main.cpp
 │   │   └── AbstractEmbedding.hpp
 │   ├── AbsolutePositionalEmbedding.hpp
 │   ├── DropoutLayer.hpp
-│   └── NormalizationLayer.hpp
+│   ├── NormalizationLayer.hpp
+│   └── LinearLayer.hpp
 ├── BytePairEncoding.hpp
 │   ├── Tokenizer.hpp
 │   └── SliceConfig.hpp
 ├── DataLoader.hpp
 │   ├── BytePairEncoding.hpp
+│   ├── Tensor.hpp
 │   └── SliceConfig.hpp
 ├── Tensor.hpp
 │   ├── AbstractTensor.hpp
+│   ├── ListTensorSlice.hpp
+│   │   └── AbstractTensor.hpp
 │   ├── Storage.hpp
 │   ├── Log.hpp
 │   ├── Numerics.hpp
@@ -297,10 +293,10 @@ main.cpp
 │   └── TensorUtils.hpp
 └── Log.hpp
 
-All headers depend on:
-├── AbstractTensor.hpp (via tensor operations)
-├── Storage.hpp (via tensor memory management)
-└── Numerics.hpp (via math utilities)
+Core computational headers (Layer, Model, Tensor) depend on:
+├── AbstractTensor.hpp
+├── Storage.hpp
+└── Numerics.hpp
 ```
 
 ## Summary
@@ -313,17 +309,17 @@ All headers depend on:
 5. **Model Interface**: `Model<T>` defines the forward pass contract
 
 ### GPTModel Components (Instantiated)
-- `Embedding<T>` - Token embeddings
-- `AbsolutePositionalEmbedding<T>` - Position embeddings
-- `DropoutLayer<T>` - Regularization
-- `NormalizationLayer<T>` - Layer normalization
-- `TransformerBlock<T>` - Transformer block (repeated)
-  - `MultiHeadAttention<T>` - Self-attention
-  - `FeedForward<T>` - MLP with GELU activation
-- `LinearLayer<T>` - Output projection
+- `Embedding<T>`: Token embeddings
+- `AbsolutePositionalEmbedding<T>`: Position embeddings
+- `DropoutLayer<T>`: Regularization
+- `NormalizationLayer<T>`: Layer normalization
+- `TransformerBlock<T>`: Transformer block (repeated)
+- `MultiHeadAttention<T>`: Self-attention
+- `FeedForward<T>`: MLP with GELU activation
+- `LinearLayer<T>`: Output projection
 
 ### Key Dependencies
-- `Tensor<T>` - Core data structure throughout
-- `TensorMatmul<T>` - Matrix multiplication kernels
-- `TensorMath<T>` - Mathematical operations
-- `Storage<T>` - Memory management (via shared_ptr)
+- `Tensor<T>`: Core data structure throughout
+- `TensorMatmul<T>`: Matrix multiplication kernels
+- `TensorMath<T>`: Mathematical operations
+- `Storage<T>`: Memory management (via shared_ptr)
