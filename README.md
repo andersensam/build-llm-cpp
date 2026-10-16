@@ -2,7 +2,7 @@
 
 An exploration of building a large language model in C++.
 
-## High-Level Architecture
+## High-Level Architecture (GPTModel Instantiation Path)
 
 ```mermaid
 graph TD
@@ -10,59 +10,32 @@ graph TD
         main[main.cpp]
     end
 
-    subgraph "Interfaces"
-        abstract_embedding[AbstractEmbedding.hpp]
-        abstract_tensor[AbstractTensor.hpp]
-        attention[Attention.hpp]
-        layer[Layer.hpp]
-        model[Model.hpp]
-        tokenizer[Tokenizer.hpp]
+    subgraph "Instantiated Model Components"
+        gpt[GPTModel]
+        transformer[TransformerBlock]
+        mha[MultiHeadAttention]
+        feedforward[FeedForward]
+        norm[NormalizationLayer]
+        dropout[DropoutLayer]
+        gelu[GELULayer]
+        linear[LinearLayer]
+        embedding[Embedding]
+        abs_pos[AbsolutePositionalEmbedding]
     end
-    
-    subgraph "Model Layer"
-        gpt[GPTModel.hpp]
+
+    subgraph "Data Layer"
+        bpe[BytePairEncoding]
+        dataloader[DataLoader]
     end
-    
+
     subgraph "Core Tensor Library"
-        storage[Storage.hpp]
-        tensor[Tensor.hpp]
-        diminfo[DimInfo.hpp]
-        slice_config[SliceConfig.hpp]
-        list_slice[ListTensorSlice.hpp]
+        tensor[Tensor]
+        storage[Storage]
     end
 
     subgraph "Tensor Kernels"
-        tensor_math[TensorMath.hpp]
-        tensor_matmul[TensorMatmul.hpp]
-        numerics[Numerics.hpp]
-    end
-    
-    subgraph "Transformer Components"
-        transformer[TransformerBlock.hpp]
-        mha[MultiHeadAttention.hpp]
-        feedforward[FeedForward.hpp]
-        linear[LinearLayer.hpp]
-    end
-    
-    subgraph "Specialized Layers"
-        norm[NormalizationLayer.hpp]
-        dropout[DropoutLayer.hpp]
-        gelu[GELULayer.hpp]
-    end
-    
-    subgraph "Embedding & Tokenization"
-        embedding[Embedding.hpp]
-        bpe[BytePairEncoding.hpp]
-        abs_pos[AbsolutePositionalEmbedding.hpp]
-    end
-    
-    subgraph "Data Handling"
-        dataloader[DataLoader.hpp]
-    end
-    
-    subgraph "Utilities"
-        log[Log.hpp]
-        tensor_utils[TensorUtils.hpp]
+        tensor_math[TensorMath]
+        tensor_matmul[TensorMatmul]
     end
 
     %% Main application dependencies
@@ -70,190 +43,115 @@ graph TD
     main --> bpe
     main --> dataloader
     main --> tensor
-    main --> log
-    
-    %% Model layer dependencies
-    model --> abstract_tensor
-    model --> tensor
-    gpt --> model
+    main --> storage
+
+    %% GPTModel composition (what's actually instantiated)
     gpt --> transformer
     gpt --> embedding
     gpt --> abs_pos
     gpt --> dropout
     gpt --> norm
-    
-    %% Transformer block dependencies
-    transformer --> layer
+
+    %% TransformerBlock composition
     transformer --> mha
     transformer --> feedforward
     transformer --> norm
     transformer --> dropout
-    transformer --> abstract_tensor
-    transformer --> tensor
-    
-    %% MultiHeadAttention dependencies
-    mha --> attention
-    mha --> abstract_tensor
-    mha --> tensor
+
+    %% MultiHeadAttention composition
     mha --> tensor_matmul
-    attention --> abstract_tensor
-    attention --> layer
-    attention --> tensor
-    
-    %% FeedForward dependencies
-    feedforward --> layer
+    mha --> tensor
+
+    %% FeedForward composition
     feedforward --> linear
     feedforward --> gelu
-    feedforward --> abstract_tensor
     feedforward --> tensor
-    
-    %% Layer interface dependencies
-    layer --> abstract_tensor
-    layer --> tensor
-    layer --> tensor_math
-    
-    %% Tensor library dependencies
-    tensor --> abstract_tensor
-    tensor --> storage
-    tensor --> log
-    tensor --> numerics
-    tensor --> tensor_math
-    tensor --> tensor_matmul
-    tensor --> tensor_utils
-    slice_config --> abstract_tensor
-    slice_config --> tensor
-    slice_config --> diminfo
-    list_slice --> abstract_tensor
-    list_slice --> tensor
-    
-    %% TensorMath dependencies
-    tensor_math --> numerics
-    
-    %% Specialized layer dependencies
-    norm --> layer
-    norm --> abstract_tensor
-    norm --> tensor
-    norm --> tensor_math
-    
-    dropout --> layer
-    dropout --> abstract_tensor
-    dropout --> tensor
-    
-    gelu --> layer
-    gelu --> abstract_tensor
-    gelu --> tensor
+
+    %% GELU and Linear dependencies
     gelu --> tensor_math
-    
-    abs_pos --> abstract_tensor
-    abs_pos --> tensor
-    
+    gelu --> tensor
+    linear --> tensor_matmul
+    linear --> tensor
+
     %% Embedding dependencies
-    embedding --> abstract_embedding
-    embedding --> abstract_tensor
     embedding --> tensor
     embedding --> storage
-    abstract_embedding --> list_slice
-    abstract_embedding --> tensor
-    
-    %% BPE tokenizer dependencies
-    bpe --> tokenizer
-    bpe --> slice_config
-    
-    %% Data loader dependencies
+
+    %% AbsolutePositionalEmbedding dependencies
+    abs_pos --> tensor
+    abs_pos --> storage
+
+    %% Data layer dependencies
     dataloader --> bpe
-    dataloader --> slice_config
-    dataloader --> abstract_tensor
-    dataloader --> tensor
-        
+    bpe --> tensor
+
+    %% Tensor library dependencies
+    tensor --> storage
+    tensor --> tensor_math
+    tensor --> tensor_matmul
 ```
 
 ## Detailed Class Dependencies
 
 ### Core Tensor Hierarchy
 ```
-Storage<T> ──used by──▶ AbstractTensor<T>
-AbstractTensor<T> ──inherited by──▶ Tensor<T>
-AbstractTensor<T> ──inherited by──▶ ListTensorSlice<T>
-Tensor<T> ──has──▶ Storage<T> (via shared_ptr)
+Storage<T> ──used by──▶ Tensor<T>
 Tensor<T> ──uses──▶ TensorMath<T>
 Tensor<T> ──uses──▶ TensorMatmul<T>
-Tensor<T> ──uses──▶ TensorUtils<T>
 ```
 
-### Layer Architecture
+### GPTModel Instantiation Chain
 ```
-Layer<T> (interface)
-    │
-    ├──▶ NormalizationLayer<T>
-    │       └── uses TensorMath for operations
-    │
-    ├──▶ DropoutLayer<T>
-    │       └── uses Tensor for dropout operations
-    │
-    ├──▶ GELULayer<T>
-    │       └── uses TensorMath for GELU activation
-    │
-    ├──▶ LinearLayer<T>
-    │       └── uses Tensor for linear transformations
-    │
-    ├──▶ Attention<T> (interface)
-    │       │
-    │       └──▶ MultiHeadAttention<T>
-    │               └── uses TensorMatmul for QKV operations
-    │
-    └──▶ FeedForward<T>
-            └── uses LinearLayer and GELULayer
-```
-
-### Model Architecture
-```
-Model<T> (interface)
-    │
-    └──▶ GPTModel
-            ├── uses TransformerBlock
-            ├── uses Embedding
-            ├── uses AbsolutePositionalEmbedding
-            └── uses NormalizationLayer
+GPTModel
+├── Embedding (token embeddings)
+├── AbsolutePositionalEmbedding (position embeddings)
+├── DropoutLayer
+├── NormalizationLayer
+└── TransformerBlock (repeated N times)
+    ├── MultiHeadAttention
+    │   └── uses TensorMatmul for QKV operations
+    ├── FeedForward
+    │   ├── LinearLayer (scale up)
+    │   ├── GELULayer (activation)
+    │   └── LinearLayer (scale down)
+    └── NormalizationLayer + DropoutLayer (shortcut connections)
 ```
 
 ### Data Flow
 ```
-BytePairEncoding ──used by──▶ DataLoader
-DataLoader ──creates──▶ Tensor<size_t> (input batches)
-Tensor ──used by──▶ GPTModel.forward()
-GPTModel ──produces──▶ Tensor<float> (logits)
+BytePairEncoding (tokenizer)
+    ↓
+DataLoader (creates batches)
+    ↓
+Tensor<size_t> (input tokens)
+    ↓
+GPTModel.forward()
+    ↓
+Tensor<float> (logits output)
 ```
 
 ## File Structure
 
 ### Header Files (include/)
-- `AbstractTensor.hpp` - Base interface for tensor operations
-- `Storage.hpp` - Memory storage wrapper
-- `Tensor.hpp` - Core tensor implementation
-- `Model.hpp` - Model interface
-- `TransformerBlock.hpp` - Transformer block implementation
-- `MultiHeadAttention.hpp` - Multi-head attention mechanism
-- `FeedForward.hpp` - Feed-forward network layers
-- `Embedding.hpp` - Token embedding layer
-- `BytePairEncoding.hpp` - BPE tokenizer
-- `DataLoader.hpp` - Data loading functionality
-- And more utility classes...
+- **Core**: Tensor.hpp, Storage.hpp, AbstractTensor.hpp
+- **Model**: Model.hpp, GPTModel.hpp, TransformerBlock.hpp
+- **Layers**: MultiHeadAttention.hpp, FeedForward.hpp, LinearLayer.hpp
+- **Activations**: GELULayer.hpp, NormalizationLayer.hpp, DropoutLayer.hpp
+- **Embeddings**: Embedding.hpp, AbsolutePositionalEmbedding.hpp
+- **Data**: DataLoader.hpp, BytePairEncoding.hpp
+- **Utilities**: Log.hpp, Numerics.hpp, TensorMath.hpp, TensorMatmul.hpp
 
 ### Source Files (src/)
-- `main.cpp` - Application entry point
-- `GPTModel.cpp` - GPT model implementation
-- `DataLoader.cpp` - Data loader implementation
-- `BytePairEncoding.cpp` - BPE tokenizer implementation
-- `Log.cpp` - Logging utilities
-- And more...
+- main.cpp, GPTModel.cpp, DataLoader.cpp, BytePairEncoding.cpp, Log.cpp
 
 ## Key Dependencies Summary
 
-1. **Core Tensor Library**: Built on `AbstractTensor` → `Tensor` hierarchy with `Storage` for memory management
-2. **Layer System**: Interface-based architecture with `Layer<T>` as the base for all neural network layers
-3. **Transformer Components**: Modular design with `TransformerBlock` composed of `MultiHeadAttention` and `FeedForward`
-4. **Model Framework**: `Model<T>` interface implemented by `GPTModel`
-5. **Data Pipeline**: `DataLoader` uses `BytePairEncoding` tokenizer to create `Tensor` inputs
+1. **Core Tensor Library**: `Tensor<T>` with `Storage<T>` for memory management
+2. **GPTModel Composition**: `TransformerBlock` × N, `Embedding`, `AbsolutePositionalEmbedding`, `Dropout`, `Normalization`
+3. **TransformerBlock**: `MultiHeadAttention` + `FeedForward` with layer normalization and dropout
+4. **Attention**: QKV projection using `TensorMatmul` with causal masking
+5. **FeedForward**: Linear → GELU → Linear with residual connections
+6. **Data Pipeline**: `BytePairEncoding` tokenizer → `DataLoader` → `Tensor` batches
 
 ## How to build
 
