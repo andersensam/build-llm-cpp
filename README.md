@@ -58,6 +58,8 @@ graph TD
     transformer --> feedforward
     transformer --> norm
     transformer --> dropout
+    dropout --> tensor
+    norm --> tensor
 
     %% MultiHeadAttention composition
     mha --> tensor_matmul
