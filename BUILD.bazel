@@ -326,7 +326,6 @@ cc_library(
     includes = [],
     deps = [
         ":tensor",
-        ":tensormath",
     ]
 )
 
@@ -343,7 +342,6 @@ cc_library(
     deps = [
         ":layer",
         ":tensor",
-        ":tensormath",
         ":tensormatmul",
     ]
 )
@@ -518,6 +516,24 @@ cc_library(
         ":tensor",
         ":tensorutils",
         ":transformerblock",
+    ]
+)
+
+# Checkpoint library
+cc_library(
+    name = "checkpoint",
+    hdrs = glob(
+        [
+            "src/include/Checkpoint.hpp"
+        ]
+    ),
+    strip_include_prefix = "src",
+    includes = [],
+    deps = [
+        ":abstractembedding",
+        ":layer",
+        ":llmlog",
+        ":tensor",
     ]
 )
 

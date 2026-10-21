@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-15
+ * @version: 2026-10-20
  *
  * General Notes:
  *
@@ -22,7 +22,6 @@
 #include <exception>
 #include <format>
 #include <iostream>
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -94,7 +93,7 @@ int main() {
             // when i = 0, this is a no-op
             Tensor<size_t> current_input = final_input.slice({0, 1}, {{0, 0}, {seq_begin, seq_end}}, {});
             // We can slice the final_logits Tensor and use it as a destination to avoid reallocating memory
-            Tensor<float> logits = final_logits.slice({0, 1, 2}, {{0, 0}, {0, dataloader_max_len + i}, {0, 0}}, {});
+            Tensor<float> logits = final_logits.slice({0, 1, 2}, {{0, 0}, {seq_begin, seq_end}, {0, 0}}, {});
             model.forward(current_input, logits);
             // Run the forward pass and generate the logits of shape [batch_size, dataloader_max_len + i, vocab_size]
             // Create a slice to grab the last token across all batches with shape [batch_size, vocab_size], indexing on only the final token output

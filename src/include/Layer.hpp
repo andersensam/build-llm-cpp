@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-12
+ * @version: 2026-10-20
  *
  * Notes:
  * Layer.hpp defines the interface for all layers used throughout the LLM. All normalization, activations, etc.,
@@ -27,7 +27,6 @@
 /* Local dependencies */
 #include "AbstractTensor.hpp"
 #include "Tensor.hpp"
-#include "TensorMath.hpp"
 
 namespace Layer_NS {
 

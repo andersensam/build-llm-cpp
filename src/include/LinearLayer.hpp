@@ -30,7 +30,6 @@
 #include "AbstractTensor.hpp"
 #include "Layer.hpp"
 #include "Tensor.hpp"
-#include "TensorMath.hpp"
 #include "TensorMatmul.hpp"
 
 namespace LinearLayer_NS {

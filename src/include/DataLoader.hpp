@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-09-08
+ * @version: 2026-10-19
  *
  * General Notes:
  *
@@ -25,8 +25,6 @@
 #include <format>
 #include <fstream>
 #include <iostream>
-#include <memory>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -112,6 +110,9 @@ private:
 public:
     /**
      * Default constructor for DataLoader, accepting a shared_ptr to a Tokenizer
+     * @param max_len Maximum length of sequence
+     * @param batch_size Number of batches
+     * @param stride How many tokens to advance between batches
      */
     explicit DataLoader(std::shared_ptr<Tokenizer> tokenizer, size_t max_len, size_t batch_size, size_t stride);
 

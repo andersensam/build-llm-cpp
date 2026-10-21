@@ -29,7 +29,9 @@ graph TD
     end
 
     subgraph "Core Tensor Library"
+        abstract_tensor[AbstractTensor]
         tensor[Tensor]
+        list_tensor_slice[ListTensorSlice]
         storage[Storage]
     end
 
@@ -43,7 +45,6 @@ graph TD
     main --> bpe
     main --> dataloader
     main --> tensor
-    main --> storage
 
     %% GPTModel composition (what's actually instantiated)
     gpt --> transformer
@@ -68,27 +69,31 @@ graph TD
     feedforward --> tensor
 
     %% GELU and Linear dependencies
-    gelu --> tensor_math
     gelu --> tensor
     linear --> tensor_matmul
     linear --> tensor
 
     %% Embedding dependencies
     embedding --> tensor
-    embedding --> storage
+    embedding --> list_tensor_slice
 
     %% AbsolutePositionalEmbedding dependencies
     abs_pos --> tensor
-    abs_pos --> storage
+    abs_pos --> list_tensor_slice
 
     %% Data layer dependencies
     dataloader --> bpe
     bpe --> tensor
 
     %% Tensor library dependencies
+    tensor --> abstract_tensor
+    list_tensor_slice --> tensor
     tensor --> storage
     tensor --> tensor_math
     tensor --> tensor_matmul
+
+    %% Tensor kernel dependencies
+    tensor_matmul --> tensor_math
 ```
 
 ## Detailed Class Dependencies
