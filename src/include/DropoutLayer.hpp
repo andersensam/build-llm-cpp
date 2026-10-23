@@ -74,7 +74,7 @@ public:
      */
     DropoutLayer(float dropout, bool shortcut) : c_dropout(dropout), c_shortcut(shortcut) {
         // Ensure we get a dropout within the acceptable range
-        if (dropout < 0 || dropout >= 1) {
+        if (c_dropout < 0 || c_dropout >= 1) {
             throw std::invalid_argument("DropoutLayer.DropoutLayer: Dropout must be >= 0, < 1.\n");
         }
     }
@@ -105,6 +105,9 @@ public:
         // Get the dropout float
         if (index >= total_size) { throw std::runtime_error("DropoutLayer.DropoutLayer: Invalid index or total size for deserializing.\n"); }
         c_dropout = Numerics_NS::int_to_float<float>(Numerics_NS::from_bytes<Numerics_NS::Accumulator<float>::serialize_as>(s, index));
+        if (c_dropout < 0 || c_dropout >= 1 || !std::isfinite(c_dropout)) {
+            throw std::invalid_argument("DropoutLayer.DropoutLayer: Dropout must be >= 0, < 1.\n");
+        }
         // Get the shortcut bool
         if (index >= total_size) { throw std::runtime_error("DropoutLayer.DropoutLayer: Invalid index or total size for deserializing.\n"); }
         c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;

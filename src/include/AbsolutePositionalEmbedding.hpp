@@ -133,10 +133,17 @@ public:
         // Get the emb_dim
         if (index >= total_size) { throw std::runtime_error("AbsolutePositionalEmbedding.AbsolutePositionalEmbedding: Invalid index or total size for deserializing.\n"); }
         c_emb_dim = Numerics_NS::from_bytes<size_t>(s, index);
+        if (c_max_seq_len == 0 || c_emb_dim == 0) {
+            throw std::invalid_argument("AbsolutePositionalEmbedding.AbsolutePositionalEmbedding: Invalid max seq len or embedding dim provided.\n");
+        }
         // Initialize the m_w_pos_emb Tensor
         if (index >= total_size) { throw std::runtime_error("AbsolutePositionalEmbedding.AbsolutePositionalEmbedding: Invalid index or total size for deserializing.\n"); }
         m_w_pos_emb = std::make_shared<Tensor<T>>(s + index);
         index += m_w_pos_emb->s_size();
+        // Validate m_w_pos_emb Tensor has the correct properties
+        if (m_w_pos_emb->rank() != 2 || m_w_pos_emb->extent(0) != c_max_seq_len || m_w_pos_emb->extent(1) != c_emb_dim) {
+            throw std::runtime_error("AbsolutePositionalEmbedding.AbsolutePositionalEmbedding: Invalid Tensor instantiated from serialized config.\n");
+        }
         // Ensure the end magic number is valid
         if (index >= total_size) { throw std::runtime_error("AbsolutePositionalEmbedding.AbsolutePositionalEmbedding: Invalid index or total size for deserializing.\n"); }
         u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);

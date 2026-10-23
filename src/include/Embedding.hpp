@@ -134,10 +134,17 @@ public:
         // Get the emb_dim
         if (index >= total_size) { throw std::runtime_error("Embedding.Embedding: Invalid index or total size for deserializing.\n"); }
         c_emb_dim = Numerics_NS::from_bytes<size_t>(s, index);
+        if (c_vocab_size == 0 || c_emb_dim == 0) {
+            throw std::invalid_argument("Embedding.Embedding: Vocab size and embedding dim must be > 0.\n");
+        }
         // Initialize the m_w_emb Tensor
         if (index >= total_size) { throw std::runtime_error("Embedding.Embedding: Invalid index or total size for deserializing.\n"); }
         m_w_emb = std::make_shared<Tensor<T>>(s + index);
         index += m_w_emb->s_size();
+        // Validate m_w_emb Tensor has the correct properties
+        if (m_w_emb->rank() != 2 || m_w_emb->extent(0) != c_vocab_size || m_w_emb->extent(1) != c_emb_dim) {
+            throw std::runtime_error("Embedding.Embedding: Invalid Tensor instantiated from serialized config.\n");
+        }
         // Ensure the end magic number is valid
         if (index >= total_size) { throw std::runtime_error("Embedding.Embedding: Invalid index or total size for deserializing.\n"); }
         u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);

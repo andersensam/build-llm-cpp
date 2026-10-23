@@ -123,7 +123,8 @@ requires (std::is_same_v<T, size_t> && !std::is_same_v<T, uint64_t> && !std::is_
 struct Accumulator<T> {
     using type = size_t;
     using serialize_as = uint64_t;
-    static constexpr uint32_t _base_type_mn = 0x88000008;
+    // Use the same magic number as uint64_t to avoid compatibility issues between Linux and macOS
+    static constexpr uint32_t _base_type_mn = 0x88000007;
     static constexpr size_t _base_type_size = sizeof(size_t);
     static constexpr size_t _accumulator_size = sizeof(size_t);
     static constexpr size_t _s_size = sizeof(serialize_as);
@@ -159,13 +160,16 @@ template <> struct Accumulator<double> {
  */
 template <typename T>
 requires std::is_integral_v<T>
-T to_little_endian(T val) noexcept {
+typename Accumulator<T>::serialize_as to_little_endian(T val) noexcept {
+    // Get the serialization type
+    using S = typename Accumulator<T>::serialize_as;
+    S s_val = static_cast<S>(val);
     // Check the system's endian type
     if constexpr (std::endian::native == std::endian::little) {
-        return val;
+        return s_val;
     }
     else {
-        return std::byteswap(val);
+        return std::byteswap(s_val);
     }
 }
 
@@ -198,7 +202,8 @@ std::array<char, Accumulator<T>::_s_size> bytes(T val) noexcept {
         return bytes(std::bit_cast<typename Accumulator<T>::serialize_as, T>(val));
     }
     else {
-        return std::bit_cast<std::array<char, Accumulator<T>::_s_size>>(val);
+        using S = typename Accumulator<T>::serialize_as;
+        return std::bit_cast<std::array<char, Accumulator<T>::_s_size>>(static_cast<S>(val));
     }
 }
 

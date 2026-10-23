@@ -248,6 +248,10 @@ private:
      * Calculate the strides for a new / recently updated Tensor
      */
     void calculate_strides() {
+        // Don't calculate strides for rank-0 Tensors (scalar vals)
+        if (c_rank == 0) {
+            return;
+        }
         // Ensure m_stride has size == c_rank
         if (m_stride.size() != c_rank) {
             m_stride.resize(c_rank);
@@ -393,7 +397,7 @@ public:
         }
         else {
             for (size_t i = 0; i < c_elements; ++i) {
-                self_data[i] = Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<T>::serialize_as>(s, index);
+                self_data[i] = Numerics_NS::from_bytes<T>(s, index);
             }
         }
         // Validate the end of the Storage block and end of Tensor
