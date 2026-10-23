@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-12
+ * @version: 2026-10-23
  *
  * Notes:
  * Dropout.hpp defines the dropout layer, zeroing out a percentage of entries in a layer
@@ -20,15 +20,23 @@
 #define DROPOUT_LAYER_HPP
 
 /* Standard dependencies */
+#include <array>
+#include <cstdint>
 #include <stdexcept>
 #include <type_traits>
+#include <vector>
 
 /* Local dependencies */
 #include "AbstractTensor.hpp"
 #include "Layer.hpp"
+#include "Numerics.hpp"
 #include "Tensor.hpp"
 
 namespace DropoutLayer_NS {
+
+/* Magic numbers for serialization */
+inline constexpr uint32_t DROPOUT_LAYER_START_MAGIC_NUMBER = 0x88800040;
+inline constexpr uint32_t DROPOUT_LAYER_END_MAGIC_NUMBER = 0x88800041;
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
@@ -70,6 +78,47 @@ public:
             throw std::invalid_argument("DropoutLayer.DropoutLayer: Dropout must be >= 0, < 1.\n");
         }
     }
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    /**
+     * Constructor for DropoutLayer, accepting a pointer to char (bytes) and reading in the data
+     * @param s Pointer to the a serialized DropoutLayer (char)
+     */
+    explicit DropoutLayer(const char* s) {
+        // Ensure we have a valid pointer to serialized data
+        if (s == nullptr) {
+            throw std::invalid_argument("DropoutLayer.DropoutLayer: Invalid pointer provided.\n");
+        }
+        size_t index = 0;
+        // Check that the magic number is correct
+        uint32_t u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != DROPOUT_LAYER_START_MAGIC_NUMBER) {
+            throw std::invalid_argument("DropoutLayer.DropoutLayer: Invalid start magic number.\n");
+        }
+        // Get the target size of the LinearLayer
+        size_t total_size = Numerics_NS::from_bytes<size_t>(s, index);
+        // Validate the dtype matches the template parameter
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
+            throw std::runtime_error("DropoutLayer.DropoutLayer: Template parameter does not match serialized dtype.\n");
+        }
+        // Get the dropout float
+        if (index >= total_size) { throw std::runtime_error("DropoutLayer.DropoutLayer: Invalid index or total size for deserializing.\n"); }
+        c_dropout = Numerics_NS::int_to_float<float>(Numerics_NS::from_bytes<Numerics_NS::Accumulator<float>::serialize_as>(s, index));
+        // Get the shortcut bool
+        if (index >= total_size) { throw std::runtime_error("DropoutLayer.DropoutLayer: Invalid index or total size for deserializing.\n"); }
+        c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
+        // Ensure the end magic number is valid
+        if (index >= total_size) { throw std::runtime_error("DropoutLayer.DropoutLayer: Invalid index or total size for deserializing.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != DROPOUT_LAYER_END_MAGIC_NUMBER) {
+            throw std::runtime_error("DropoutLayer.DropoutLayer: Invalid end magic number.\n");   
+        }
+        if (index != total_size) {
+            throw std::runtime_error("DropoutLayer.DropoutLayer: Reached end of object but total_size indicates there is more data to be read.\n");
+        }
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
     /**
      * DropoutLayer destructor
@@ -130,6 +179,92 @@ public:
     bool has_shortcut() const override {
         return c_shortcut;
     }
+
+    /**
+     * Calculate the size for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with total serialized size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    size_t s_size() const {
+        // Start with the magic numbers and dtype
+        size_t result = 3 * Numerics_NS::Accumulator<uint32_t>::_s_size;
+        // Total size
+        result += Numerics_NS::Accumulator<size_t>::_s_size;
+        // Add the dropout float
+        result += Numerics_NS::Accumulator<float>::_s_size;
+        // Add the shortcut bool (cast to uint8_t)
+        result += Numerics_NS::Accumulator<uint8_t>::_s_size;
+        return result;
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    /**
+     * Serialize DropoutLayer
+     * @returns Returns a vector of bytes / char containing the layer
+     */
+    std::vector<char> serialize() const {
+        // Persist the target size since we will do bounds checking
+        size_t target_size = s_size();
+        // Allocate memory using unsigned char (same as std::byte)
+        std::vector<char> result(target_size);
+        // Grab a pointer to the underlying data
+        char* data = result.data();
+        // Keep track of the index
+        size_t index = 0;
+        // As an extra safety check, ensure that index will never exceed s_size
+        // Write the start magic number
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("DropoutLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(DROPOUT_LAYER_START_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the serialized size size
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("DropoutLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(target_size))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the dtype
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("DropoutLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::Accumulator<T>::_base_type_mn))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the dropout float
+        if (index + Numerics_NS::Accumulator<float>::_s_size >= target_size) {
+            throw std::runtime_error("DropoutLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::float_to_int(c_dropout)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the shortcut bool
+        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
+            throw std::runtime_error("DropoutLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the end magic number
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
+            throw std::runtime_error("DropoutLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(DROPOUT_LAYER_END_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        return result;
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

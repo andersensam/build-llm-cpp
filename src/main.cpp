@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-22
+ * @version: 2026-10-23
  *
  * General Notes:
  *
@@ -31,7 +31,6 @@
 #include "include/BytePairEncoding.hpp"
 #include "include/DataLoader.hpp"
 #include "include/GPTModel.hpp"
-#include "include/LinearLayer.hpp"
 #include "include/Log.hpp"
 #include "include/Tensor.hpp"
 #include "include/TensorUtils.hpp"
@@ -118,6 +117,7 @@ int main() {
                 )
             );
         }
+        
         Tensor<double> s_tensor({3, 2});
         s_tensor.set({1.123, 2.345, 3.567, 4.789, 5.901, 6.123});
         log_message(Log_Priority::INFO, "main", std::format("Size of s_tensor: {}", s_tensor.s_size()));
@@ -129,14 +129,6 @@ int main() {
 
         Tensor<double> from_s_tensor(by.data());
         log_message(Log_Priority::INFO, "main", std::format("from_s_tensor: {}", from_s_tensor.to_string()));
-
-        LinearLayer_NS::LinearLayer<float> ll(2, 4, true);
-        log_message(Log_Priority::INFO, "main", std::format("Size of ll: {}", ll.s_size()));
-        std::vector<char> ll_b = ll.serialize();
-        for (auto b : ll_b) {
-            std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b & 0xFF) << " ";
-        }
-        std::cout << '\n';
 
     } catch (const std::exception& e) {
 

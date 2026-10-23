@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-22
+ * @version: 2026-10-23
  *
  * General Notes:
  *
@@ -326,8 +326,8 @@ public:
     }
 
     /**
-     * Constructor for Tensor, accepting a pointer to unsigned char and reading in the data
-     * @param s Pointer to the a serialized Tensor (unsigned char)
+     * Constructor for Tensor, accepting a pointer to char (bytes) and reading in the data
+     * @param s Pointer to the a serialized Tensor (char)
      */
     explicit Tensor(const char* s) {
         // Ensure we have a valid pointer to serialized data
@@ -341,6 +341,12 @@ public:
             throw std::invalid_argument("Tensor.Tensor: Invalid Tensor magic number.\n");
         }
         size_t total_size = Numerics_NS::from_bytes<size_t>(s, index);
+        // Ensure the specified Tensor dtype matches the template
+        if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
+            throw std::runtime_error("Tensor.Tensor: Tensor dtype magic number does not match templated type.\n");
+        }
         // Populate the rank
         if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
         c_rank = Numerics_NS::from_bytes<size_t>(s, index);
@@ -364,12 +370,6 @@ public:
         }
         if (elements != c_elements) {
             throw std::runtime_error("Tensor.Tensor: Number of elements in serialized Tensor does not match calculated elements.\n");
-        }
-        // Ensure the specified Tensor dtype matches the template
-        if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
-        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
-        if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
-            throw std::runtime_error("Tensor.Tensor: Tensor dtype magic number does not match templated type.\n");
         }
         // Check that the Storage magic number is correct
         if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
@@ -444,7 +444,6 @@ public:
         if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
             log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy assignment called");
         }
-
         return *this;
     }
 
@@ -489,7 +488,6 @@ public:
         if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
             log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move assignment operator called");
         }
-
         return *this;
     }
 
@@ -2454,8 +2452,8 @@ public:
     }
 
     /**
-     * Calculate the size of a Tensor for serialization, including the raw data and any metadata
-     * @returns Returns a size_t with the Tensor's total size
+     * Calculate the size for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with total serialized size
      * NOTE: Due to inconsistencies with size_t representation across systems,
      * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
      * the size returned by size() may not reflect what is being used in memory
@@ -2507,6 +2505,14 @@ public:
             data[index] = b;
             ++index;
         }
+        // Write the dtype of the Tensor
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::Accumulator<T>::_base_type_mn))) {
+            data[index] = b;
+            ++index;
+        }
         // Write the rank of the Tensor
         if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
             throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
@@ -2530,14 +2536,6 @@ public:
             throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
         }
         for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_elements))) {
-            data[index] = b;
-            ++index;
-        }
-        // Write the dtype of the Tensor
-        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
-            throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::Accumulator<T>::_base_type_mn))) {
             data[index] = b;
             ++index;
         }

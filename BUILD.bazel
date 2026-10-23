@@ -275,6 +275,7 @@ cc_library(
     deps = [
         ":abstracttensor",
         ":layer",
+        ":numerics",
         ":tensor",
     ]
 )
@@ -452,6 +453,7 @@ cc_library(
     deps = [
         ":abstractembedding",
         ":listtensorslice",
+        ":numerics",
         ":sliceconfig",
         ":tensor",
     ]
@@ -470,6 +472,7 @@ cc_library(
     deps = [
         ":abstractembedding",
         ":listtensorslice",
+        ":numerics",
         ":sliceconfig",
         ":tensor",
     ]
@@ -552,7 +555,6 @@ cc_binary(
         ":bpe",
         ":dataloader",
         ":gptmodel",
-        ":linearlayer",
         ":llmlog",
         ":tensor",
         ":tensorutils",

@@ -21,6 +21,7 @@
 #define ABSTRACT_EMBEDDING_HPP
 
 /* Standard dependencies */
+#include <cstddef>
 #include <vector>
 
 /* Local dependencies */
@@ -62,6 +63,21 @@ public:
      * @returns Returns a zero-copy ListTensorSlice with the token embeddings
      */
     virtual const ListTensorSlice<T> get_embeddings(const Tensor<size_t>& input) const = 0;
+
+    /**
+     * Calculate the size for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with total serialized size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    virtual size_t s_size() const = 0;
+
+    /**
+     * Serialize an object
+     * @returns Returns a vector of bytes / char containing the layer
+     */
+    virtual std::vector<char> serialize() const = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

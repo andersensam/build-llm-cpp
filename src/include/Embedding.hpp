@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-14
+ * @version: 2026-10-23
  *
  * General Notes:
  *
@@ -22,7 +22,10 @@
 
 /* Standard dependencies */
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -30,10 +33,15 @@
 /* Local dependencies */
 #include "AbstractEmbedding.hpp"
 #include "ListTensorSlice.hpp"
+#include "Numerics.hpp"
 #include "SliceConfig.hpp"
 #include "Tensor.hpp"
 
 namespace Embedding_NS {
+
+/* Magic numbers for serialization */
+inline constexpr uint32_t EMBEDDING_START_MAGIC_NUMBER = 0x88800030;
+inline constexpr uint32_t EMBEDDING_END_MAGIC_NUMBER = 0x88800031;
 
 /* Use the AbstractEmbedding interface */
 using AbstractEmbedding_NS::AbstractEmbedding;
@@ -70,7 +78,7 @@ private:
     /**
      * Shared pointer to a Tensor containing the embedding weights 
      */
-    std::shared_ptr<Tensor<T>> m_w_emb;
+    std::shared_ptr<Tensor<T>> m_w_emb = nullptr;
 
 /* Public functions */
 public:
@@ -96,6 +104,51 @@ public:
         }
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    /**
+     * Constructor for Embedding, accepting a pointer to char (bytes) and reading in the data
+     * @param s Pointer to the a serialized Embedding (char)
+     */
+    explicit Embedding(const char* s) {
+        // Ensure we have a valid pointer to serialized data
+        if (s == nullptr) {
+            throw std::invalid_argument("Embedding.Embedding: Invalid pointer provided.\n");
+        }
+        size_t index = 0;
+        // Check that the magic number is correct
+        uint32_t u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != EMBEDDING_START_MAGIC_NUMBER) {
+            throw std::invalid_argument("Embedding.Embedding: Invalid start magic number.\n");
+        }
+        // Get the target size of the LinearLayer
+        size_t total_size = Numerics_NS::from_bytes<size_t>(s, index);
+        // Validate the dtype matches the template parameter
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
+            throw std::runtime_error("Embedding.Embedding: Template parameter does not match serialized dtype.\n");
+        }
+        // Get the vocab_size
+        if (index >= total_size) { throw std::runtime_error("Embedding.Embedding: Invalid index or total size for deserializing.\n"); }
+        c_vocab_size = Numerics_NS::from_bytes<size_t>(s, index);
+        // Get the emb_dim
+        if (index >= total_size) { throw std::runtime_error("Embedding.Embedding: Invalid index or total size for deserializing.\n"); }
+        c_emb_dim = Numerics_NS::from_bytes<size_t>(s, index);
+        // Initialize the m_w_emb Tensor
+        if (index >= total_size) { throw std::runtime_error("Embedding.Embedding: Invalid index or total size for deserializing.\n"); }
+        m_w_emb = std::make_shared<Tensor<T>>(s + index);
+        index += m_w_emb->s_size();
+        // Ensure the end magic number is valid
+        if (index >= total_size) { throw std::runtime_error("Embedding.Embedding: Invalid index or total size for deserializing.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != EMBEDDING_END_MAGIC_NUMBER) {
+            throw std::runtime_error("Embedding.Embedding: Invalid end magic number.\n");   
+        }
+        if (index != total_size) {
+            throw std::runtime_error("Embedding.Embedding: Reached end of object but total_size indicates there is more data to be read.\n");
+        }
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
     /**
      * Default destructor for Embedding
@@ -160,6 +213,97 @@ public:
         ListTensorSlice<T> result(m_w_emb, msc);
         return result;
     }
+
+    /**
+     * Calculate the size for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with total serialized size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    size_t s_size() const override {
+        // Start with the magic numbers and dtype
+        size_t result = 3 * Numerics_NS::Accumulator<uint32_t>::_s_size;
+        // Add the max seq len, emb dim, and total size
+        result += 3 * Numerics_NS::Accumulator<size_t>::_s_size;
+        // Add the weights Tensor
+        result += m_w_emb->s_size();
+        return result;
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    /**
+     * Serialize Embedding
+     * @returns Returns a vector of bytes / char containing the layer
+     */
+    std::vector<char> serialize() const override {
+        // Persist the target size since we will do bounds checking
+        size_t target_size = s_size();
+        // Allocate memory using unsigned char (same as std::byte)
+        std::vector<char> result(target_size);
+        // Grab a pointer to the underlying data
+        char* data = result.data();
+        // Keep track of the index
+        size_t index = 0;
+        // As an extra safety check, ensure that index will never exceed s_size
+        // Write the start magic number
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("Embedding.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(EMBEDDING_START_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the serialized size size
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("Embedding.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(target_size))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the dtype
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("Embedding.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::Accumulator<T>::_base_type_mn))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the vocab_size
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("Embedding.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_vocab_size))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the emb_dim
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("Embedding.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_emb_dim))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the embedding weight Tensor
+        if (index + m_w_emb->s_size() >= target_size) {
+            throw std::runtime_error("Embedding.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        std::vector<char> ts = m_w_emb->serialize();
+        std::memcpy(data + index, ts.data(), ts.size());
+        index += ts.size();
+        // Write the end magic number
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
+            throw std::runtime_error("Embedding.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(EMBEDDING_END_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        return result;
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 
