@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-12
+ * @version: 2026-10-22
  *
  * General Notes:
  *
@@ -24,6 +24,11 @@ using BytePairEncoding_NS::BytePairEncodingTokenizer;
 using BytePairEncoding_NS::BytePositionInfo;
 using Log_NS::log_message;
 using Log_NS::Log_Priority;
+using Numerics_NS::Accumulator;
+using Numerics_NS::bytes;
+using Numerics_NS::from_bytes;
+using Numerics_NS::to_big_endian;
+using Numerics_NS::to_little_endian;
 
 BytePositionInfo::BytePositionInfo() {
     // Blank since we already set defaults in the class header
@@ -117,11 +122,14 @@ BytePairEncodingTokenizer::BytePairEncodingTokenizer(const std::string& path) {
         throw std::invalid_argument("BytePairEncodingTokenizer.BytePairEncodingTokenizer: Invalid model file provided\n");
     }
     // Create temporary uint32_t and size_t (using uint64_t) to convert to after reading
+    std::array<char, sizeof(uint32_t)> u32_b{};
     uint32_t u_val = 0;
+    std::array<char, sizeof(uint64_t)> u64_b{};
     uint64_t s_val = 0;
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-avoid-goto)
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast, cppcoreguidelines-avoid-goto)
     // Verify we have the correct magic number for a BytePairEncodingTokenizer model
-    model.read(reinterpret_cast<char*>(&u_val), sizeof(uint32_t));
+    model.read(u32_b.data(), u32_b.size());
+    u_val = from_bytes<uint32_t>(u32_b.data());
     if (model.fail()) goto file_failed;
     if (u_val != BPE_START_MAGIC_NUMBER) {
         log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.BytePairEncodingTokenizer",
@@ -129,7 +137,8 @@ BytePairEncodingTokenizer::BytePairEncodingTokenizer(const std::string& path) {
         goto file_failed;
     }
     // Verify the magic number for the number of elements we expect to read in
-    model.read(reinterpret_cast<char*>(&u_val), sizeof(uint32_t));
+    model.read(u32_b.data(), u32_b.size());
+    u_val = from_bytes<uint32_t>(u32_b.data());
     if (model.fail()) goto file_failed;
     if (u_val != BPE_NUM_VOCAB_MAGIC_NUMBER) {
         log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.BytePairEncodingTokenizer",
@@ -137,12 +146,14 @@ BytePairEncodingTokenizer::BytePairEncodingTokenizer(const std::string& path) {
         goto file_failed;
     }
     // Read in the expected number of elements
-    model.read(reinterpret_cast<char*>(&s_val), sizeof(uint64_t));
+    model.read(u64_b.data(), u64_b.size());
+    s_val = from_bytes<uint64_t>(u64_b.data());
     if (model.fail()) goto file_failed;
     // Set the model's vocab size to what the model has
     m_vocab_size = static_cast<size_t>(s_val);
     // Validate we are about to start reading in the tokens
-    model.read(reinterpret_cast<char*>(&u_val), sizeof(uint32_t));
+    model.read(u32_b.data(), u32_b.size());
+    u_val = from_bytes<uint32_t>(u32_b.data());
     if (model.fail()) goto file_failed;
     if (u_val != BPE_TOKEN_START_MAGIC_NUMBER) {
         log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.BytePairEncodingTokenizer",
@@ -155,13 +166,15 @@ BytePairEncodingTokenizer::BytePairEncodingTokenizer(const std::string& path) {
     // Iterate over the number of tokens we expect
     for (size_t i = 0; i < m_vocab_size; ++i) {
         // Read in the token itself
-        model.read(reinterpret_cast<char*>(&(m_token_ids.at(i))), sizeof(uint32_t));
+        model.read(u32_b.data(), u32_b.size());
+        m_token_ids.at(i) = from_bytes<uint32_t>(u32_b.data());
         if (model.fail()) goto file_failed;
         // Create the mapping of token to token id
         m_vocab[m_token_ids.at(i)] = i;
     }
     // Ensure we are at the end of the tokens
-    model.read(reinterpret_cast<char*>(&u_val), sizeof(uint32_t));
+    model.read(u32_b.data(), u32_b.size());
+    u_val = from_bytes<uint32_t>(u32_b.data());
     if (model.fail()) goto file_failed;
     if (u_val != BPE_TOKEN_END_MAGIC_NUMBER) {
         log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.BytePairEncodingTokenizer",
@@ -169,14 +182,15 @@ BytePairEncodingTokenizer::BytePairEncodingTokenizer(const std::string& path) {
         goto file_failed;
     }
     // Ensure we are at the end of the model file
-    model.read(reinterpret_cast<char*>(&u_val), sizeof(uint32_t));
+    model.read(u32_b.data(), u32_b.size());
+    u_val = from_bytes<uint32_t>(u32_b.data());
     if (model.fail()) goto file_failed;
     if (u_val != BPE_END_MAGIC_NUMBER) {
         log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.BytePairEncodingTokenizer",
             std::format("Invalid end magic number for BytePairEncodingTokenizer. Got {} but expected {}.", u_val, BPE_END_MAGIC_NUMBER));
         goto file_failed;
     }
-    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-avoid-goto)
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast, cppcoreguidelines-avoid-goto)
     // Explicitly close the model file
     model.close();
     return;
@@ -327,31 +341,41 @@ bool BytePairEncodingTokenizer::export_to_file(const std::string& path) const {
     }
     // Convert size_t --> uint64_t since its size may be different between platforms (Linux and macOS)
     uint64_t _vocab_size = static_cast<uint64_t>(m_vocab_size);
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-avoid-goto)
+    // Create arrays to use as our buffers
+    std::array<char, sizeof(uint32_t)> u32_b{};
+    std::array<char, sizeof(uint64_t)> u64_b{};
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast, cppcoreguidelines-avoid-goto)
     // Write the magic number to indicate this is a BytePairEncodingTokenizer model
-    model.write(reinterpret_cast<const char*>(&BPE_START_MAGIC_NUMBER), sizeof(uint32_t));
+    u32_b = bytes(to_little_endian(BPE_START_MAGIC_NUMBER));
+    model.write(u32_b.data(), u32_b.size());
     if (model.fail()) goto file_failed;
     // Write the magic number to indicate the expected number of tokens and token ids
-    model.write(reinterpret_cast<const char*>(&BPE_NUM_VOCAB_MAGIC_NUMBER), sizeof(uint32_t));
+    u32_b = bytes(to_little_endian(BPE_NUM_VOCAB_MAGIC_NUMBER));
+    model.write(u32_b.data(), u32_b.size());
     if (model.fail()) goto file_failed;
     // Write the number of tokens
-    model.write(reinterpret_cast<const char*>(&_vocab_size), sizeof(uint64_t));
+    u64_b = bytes(to_little_endian(_vocab_size));
+    model.write(u64_b.data(), u64_b.size());
     if (model.fail()) goto file_failed;
     // Write the start number for the tokens themselves
-    model.write(reinterpret_cast<const char*>(&BPE_TOKEN_START_MAGIC_NUMBER), sizeof(uint32_t));
+    u32_b = bytes(to_little_endian(BPE_TOKEN_START_MAGIC_NUMBER));
+    model.write(u32_b.data(), u32_b.size());
     if (model.fail()) goto file_failed;
     // Since m_token_ids is the std::vector representation of all tokens, use it instead of the map
     for (uint32_t t : m_token_ids) {
-        model.write(reinterpret_cast<const char*>(&t), sizeof(uint32_t));
+        u32_b = bytes(to_little_endian(t));
+        model.write(u32_b.data(), u32_b.size());
         if (model.fail()) goto file_failed;
     }
     // Write the end number for the tokens
-    model.write(reinterpret_cast<const char*>(&BPE_TOKEN_END_MAGIC_NUMBER), sizeof(uint32_t));
+    u32_b = bytes(to_little_endian(BPE_TOKEN_END_MAGIC_NUMBER));
+    model.write(u32_b.data(), u32_b.size());
     if (model.fail()) goto file_failed;
     // End of model
-    model.write(reinterpret_cast<const char*>(&BPE_END_MAGIC_NUMBER), sizeof(uint32_t));
+    u32_b = bytes(to_little_endian(BPE_END_MAGIC_NUMBER));
+    model.write(u32_b.data(), u32_b.size());
     if (model.fail()) goto file_failed;
-    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-avoid-goto)
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast, cppcoreguidelines-avoid-goto)
     // Explicitly close the file
     model.close();
     return true;

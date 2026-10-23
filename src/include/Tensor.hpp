@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-14
+ * @version: 2026-10-22
  *
  * General Notes:
  *
@@ -32,7 +32,6 @@
 /* Standard dependencies */
 #include <algorithm>
 #include <array>
-#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -40,6 +39,7 @@
 #include <cxxabi.h>
 #include <expected>
 #include <format>
+#include <fstream>
 #include <functional>
 #include <initializer_list>
 #include <map>
@@ -64,12 +64,21 @@ namespace Tensor_NS {
 
 /* Control verbose copy / move constructor logging, useful for debugging. Does not apply to default constructors */
 inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = true;
+
 /* Store the maximum length for a type name from the demangler API */
 inline constexpr size_t TENSOR_MAX_DEMANGLED_NAME_LEN = 32;
+
 /* Control logging for softmax warnings (NAN, inf, divide by 0) */
 inline constexpr bool TENSOR_ENABLE_SOFTMAX_WARNINGS = true;
+
 /* Control logging about contiguous() being called on already contiguous Tensors (with dim_stride == 1 in outer dim) */
 inline constexpr bool TENSOR_ENABLE_UNNECESSARY_CONTIGUOUS_LOGGING = true;
+
+/* Magic numbers for Tensor serialization */
+inline constexpr uint32_t TENSOR_START_MAGIC_NUMBER = 0x88800000;
+inline constexpr uint32_t TENSOR_END_MAGIC_NUMBER = 0x88800001;
+inline constexpr uint32_t TENSOR_STORAGE_START_MAGIC_NUMBER = 0x88800002;
+inline constexpr uint32_t TENSOR_STORAGE_END_MAGIC_NUMBER = 0x88800003;
 
 /* Use Logging functions */
 using Log_NS::Log_Priority;
@@ -225,12 +234,38 @@ private:
     bool c_contiguous = true;
 
 /* Private functions */
+
     /**
      * Private constructor for Tensor, used only when creating Tensor slices as we only need
      * the shared_ptr to m_data and calculate the rest of the values on the fly
+     * @param data_ptr Shared pointer to Storage<T>
      */
     explicit Tensor(std::shared_ptr<Storage<T>> data_ptr): m_data(std::move(data_ptr)) {
         // Handle the rest of the setup in the slice() function
+    }
+
+    /**
+     * Calculate the strides for a new / recently updated Tensor
+     */
+    void calculate_strides() {
+        // Ensure m_stride has size == c_rank
+        if (m_stride.size() != c_rank) {
+            m_stride.resize(c_rank);
+        }
+        // Calculate the stides needed to get between dims
+        if (c_rank == 1) {
+            m_stride[0] = 1;
+        }
+        else if (c_rank == 2) {
+            m_stride[0] = m_dims[1];
+            m_stride[1] = 1;
+        }
+        else {
+            m_stride[c_rank - 1] = 1;
+            for (size_t i = c_rank - 1; i > 0; --i) {
+                m_stride[i - 1] = m_stride[i] * m_dims[i];
+            }
+        }
     }
     
 /* Public functions */
@@ -262,19 +297,7 @@ public:
         // Allocate the block of memory for the Tensor
         m_data = std::make_shared<Storage<T>>(c_elements);
         // Calculate the stides needed to get between dims
-        if (c_rank == 1) {
-            m_stride.at(0) = 1;
-        }
-        else if (c_rank == 2) {
-            m_stride.at(0) = m_dims.at(1);
-            m_stride.at(1) = 1;
-        }
-        else {
-            m_stride.at(c_rank - 1) = 1;
-            for (size_t i = c_rank - 1; i > 0; --i) {
-                m_stride.at(i - 1) = m_stride.at(i) * m_dims.at(i);
-            }
-        }
+        calculate_strides();
     }
 
     /**
@@ -299,18 +322,90 @@ public:
         // Allocate the block of memory for the Tensor
         m_data = std::make_shared<Storage<T>>(c_elements);
         // Calculate the stides needed to get between dims
-        if (c_rank == 1) {
-            m_stride.at(0) = 1;
+        calculate_strides();
+    }
+
+    /**
+     * Constructor for Tensor, accepting a pointer to unsigned char and reading in the data
+     * @param s Pointer to the a serialized Tensor (unsigned char)
+     */
+    explicit Tensor(const char* s) {
+        // Ensure we have a valid pointer to serialized data
+        if (s == nullptr) {
+            throw std::invalid_argument("Tensor.Tensor: Invalid pointer provided.\n");
         }
-        else if (c_rank == 2) {
-            m_stride.at(0) = m_dims.at(1);
-            m_stride.at(1) = 1;
+        size_t index = 0;
+        // Check that the Tensor magic number is correct
+        uint32_t u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != TENSOR_START_MAGIC_NUMBER) {
+            throw std::invalid_argument("Tensor.Tensor: Invalid Tensor magic number.\n");
+        }
+        size_t total_size = Numerics_NS::from_bytes<size_t>(s, index);
+        // Populate the rank
+        if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
+        c_rank = Numerics_NS::from_bytes<size_t>(s, index);
+        // Resize dims and strides to account for the rank
+        m_dims.resize(c_rank);
+        m_stride.resize(c_rank);
+        // Pull each dim
+        for (size_t i = 0; i < c_rank; ++i) {
+            if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
+            m_dims[i] = Numerics_NS::from_bytes<size_t>(s, index);
+        }
+        // Calculate the strides
+        calculate_strides();
+        // Get the number of elements in the Tensor
+        if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
+        c_elements = Numerics_NS::from_bytes<size_t>(s, index);
+        // Validate the number of elements
+        size_t elements = 1;
+        for (size_t d : m_dims) {
+            elements *= d;
+        }
+        if (elements != c_elements) {
+            throw std::runtime_error("Tensor.Tensor: Number of elements in serialized Tensor does not match calculated elements.\n");
+        }
+        // Ensure the specified Tensor dtype matches the template
+        if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
+            throw std::runtime_error("Tensor.Tensor: Tensor dtype magic number does not match templated type.\n");
+        }
+        // Check that the Storage magic number is correct
+        if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != TENSOR_STORAGE_START_MAGIC_NUMBER) {
+            throw std::runtime_error("Tensor.Tensor: Invalid Storage start magic number.\n");
+        }
+        // Once the magic number is validated and the other Tensor metadata is correct, allocate a new Storage block
+        m_data = std::make_shared<Storage<T>>(c_elements);
+        T* self_data = _data();
+        // Ensure reading in data doesn't exceed the total size
+        if ((index + (c_elements * Numerics_NS::Accumulator<T>::_s_size) >= total_size)) {
+            throw std::runtime_error("Tensor.Tensor: Unable to read Tensor data. Reading in data would extend past end of Tensor data block.\n");
+        }
+        // Iterate over the elements in the Tensor and convert / cast where necessary
+        // Handle the case where we may need to convert uint32_t / uint64_t --> float / double
+        if constexpr (std::is_floating_point_v<T>) {
+            for (size_t i = 0; i < c_elements; ++i) {
+                self_data[i] = Numerics_NS::int_to_float<T>(Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<T>::serialize_as>(s, index));
+            }
         }
         else {
-            m_stride.at(c_rank - 1) = 1;
-            for (size_t i = c_rank - 1; i > 0; --i) {
-                m_stride.at(i - 1) = m_stride.at(i) * m_dims.at(i);
+            for (size_t i = 0; i < c_elements; ++i) {
+                self_data[i] = Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<T>::serialize_as>(s, index);
             }
+        }
+        // Validate the end of the Storage block and end of Tensor
+        if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
+        uint32_t tensor_end = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != TENSOR_STORAGE_END_MAGIC_NUMBER || tensor_end != TENSOR_END_MAGIC_NUMBER) {
+            throw std::runtime_error("Tensor.Tensor: Invalid magic number for end of Storage or end of Tensor.\n");
+        }
+        if (index != total_size) {
+            throw std::runtime_error("Tensor.Tensor: Reached end of Tensor but total_size indicates there is more data to be read.\n");
         }
     }
 
@@ -2356,6 +2451,142 @@ public:
         m_stride[0] = 1;
         c_rank = 1;
         return *this;
+    }
+
+    /**
+     * Calculate the size of a Tensor for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with the Tensor's total size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    size_t s_size() const {
+        // Size of c_elements and c_rank. We skip c_offset since we will
+        // create a new Storage<T> when deserializing (also means no c_contiguous)
+        // Also add a size_t right at the beginning to know how much to read
+        size_t result = 3 * Numerics_NS::Accumulator<size_t>::_s_size;
+        // m_dims.size() == c_rank. We don't write strides since we will allocate
+        // a new, contiguous Tensor when ingesting the serialized definition
+        result += c_rank * Numerics_NS::Accumulator<size_t>::_s_size;
+        // Get c_elements * sizeof(T)
+        result += c_elements * Numerics_NS::Accumulator<T>::_s_size;
+        // Add space for the magic header numbers (4) and type id for the Tensor dtype (1)
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+        result += 5 * sizeof(uint32_t);
+        return result;
+    }
+
+    /**
+     * Serialize a Tensor
+     * @returns Returns a vector of unsigned char, representing the raw bytes making
+     * up the Tensor
+     */
+    std::vector<char> serialize() const {
+        // Persist the target size since we will do bounds checking
+        size_t target_size = s_size();
+        // Allocate memory using unsigned char (same as std::byte)
+        std::vector<char> result(target_size);
+        // Grab a pointer to the underlying data
+        char* data = result.data();
+        // Keep track of the index
+        size_t index = 0;
+        // As an extra safety check, ensure that index will never exceed s_size
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+        }
+        // Write the Tensor start magic number
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(TENSOR_START_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+        }
+        // Write the size of the object, so we know how much to read later
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(target_size))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the rank of the Tensor
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_rank))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the dims of the Tensor
+        for (size_t d : m_dims) {
+            if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+                throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+            }
+            for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(d))) {
+                data[index] = b;
+                ++index;
+            }
+        }
+        // Write the number of elements in the Tensor
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_elements))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the dtype of the Tensor
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::Accumulator<T>::_base_type_mn))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the start of the Storage block
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(TENSOR_STORAGE_START_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        // Iterate over the elements in the Tensor
+        const T* self_data = _data();
+        if constexpr (std::is_floating_point_v<T>) {
+            for (size_t i = 0; i < c_elements; ++i) {
+                if (index + Numerics_NS::Accumulator<T>::_s_size >= target_size) {
+                    throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+                }
+                for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::float_to_int(self_data[_get_offset(i)])))) {
+                    data[index] = b;
+                    ++index;
+                }
+            }
+        }
+        else {
+            for (size_t i = 0; i < c_elements; ++i) {
+                if (index + Numerics_NS::Accumulator<T>::_s_size >= target_size) {
+                    throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+                }
+                for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(self_data[_get_offset(i)]))) {
+                    data[index] = b;
+                    ++index;
+                }
+            }
+        }
+        // Write the end of the Storage block and end of the Tensor
+        if (index + (2 * Numerics_NS::Accumulator<uint32_t>::_s_size) > target_size) {
+            throw std::runtime_error("Tensor.serialize: Error serializing Tensor -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(TENSOR_STORAGE_END_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(TENSOR_END_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        // Return the final result
+        return result;
     }
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays, cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)

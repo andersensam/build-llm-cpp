@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-15
+ * @version: 2026-10-22
  *
  * General Notes:
  *
@@ -39,6 +39,7 @@
 /* Local dependencies */
 #include "AbstractTensor.hpp"
 #include "Log.hpp"
+#include "Numerics.hpp"
 #include "Tokenizer.hpp"
 
 namespace BytePairEncoding_NS {
@@ -55,13 +56,12 @@ inline constexpr unsigned FOURTH_BYTE_SHIFT = 24;
 inline constexpr unsigned BYTE_MASK = (1 << 8) - 1;
 // The maximum possible vocabulary size
 inline constexpr unsigned MAX_VOCAB_SIZE = 65535;
-// Magic numbers for BPE model, not using constexpr since we need the memory addresses
-// of the numbers for file io
-inline const uint32_t BPE_START_MAGIC_NUMBER = 0x885173;
-inline const uint32_t BPE_NUM_VOCAB_MAGIC_NUMBER = 0x885174;
-inline const uint32_t BPE_TOKEN_START_MAGIC_NUMBER = 0x885175;
-inline const uint32_t BPE_TOKEN_END_MAGIC_NUMBER = 0x885176;
-inline const uint32_t BPE_END_MAGIC_NUMBER = 0x885179;
+// Magic numbers for BPE model
+inline constexpr uint32_t BPE_START_MAGIC_NUMBER = 0x885173;
+inline constexpr uint32_t BPE_NUM_VOCAB_MAGIC_NUMBER = 0x885174;
+inline constexpr uint32_t BPE_TOKEN_START_MAGIC_NUMBER = 0x885175;
+inline constexpr uint32_t BPE_TOKEN_END_MAGIC_NUMBER = 0x885176;
+inline constexpr uint32_t BPE_END_MAGIC_NUMBER = 0x885179;
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
@@ -69,6 +69,13 @@ using AbstractTensor_NS::AbstractTensor;
 /* Use logging */
 using Log_NS::log_message;
 using Log_NS::Log_Priority;
+
+/* Use Numerics utilities */
+using Numerics_NS::Accumulator;
+using Numerics_NS::bytes;
+using Numerics_NS::from_bytes;
+using Numerics_NS::to_big_endian;
+using Numerics_NS::to_little_endian;
 
 /* Use the Tokenzier interface */
 using Tokenizer_NS::Tokenizer;

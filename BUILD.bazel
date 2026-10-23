@@ -218,6 +218,7 @@ cc_library(
     deps = [
         ":abstracttensor",
         ":llmlog",
+        ":numerics",
         ":tokenizer",
     ]
 )
@@ -341,6 +342,7 @@ cc_library(
     includes = [],
     deps = [
         ":layer",
+        ":numerics",
         ":tensor",
         ":tensormatmul",
     ]
@@ -550,6 +552,7 @@ cc_binary(
         ":bpe",
         ":dataloader",
         ":gptmodel",
+        ":linearlayer",
         ":llmlog",
         ":tensor",
         ":tensorutils",

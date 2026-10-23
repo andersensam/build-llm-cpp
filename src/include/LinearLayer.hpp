@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-12
+ * @version: 2026-10-22
  *
  * Notes:
  * LinearLayer.hpp defines a standard linear layer for use in the feed forward network (FFN)
@@ -29,10 +29,15 @@
 /* Local dependencies */
 #include "AbstractTensor.hpp"
 #include "Layer.hpp"
+#include "Numerics.hpp"
 #include "Tensor.hpp"
 #include "TensorMatmul.hpp"
 
 namespace LinearLayer_NS {
+
+/* Magic numbers for serialization */
+inline constexpr uint32_t LINEAR_LAYER_START_MAGIC_NUMBER = 0x88800010;
+inline constexpr uint32_t LINEAR_LAYER_END_MAGIC_NUMBER = 0x88800020;
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
@@ -164,6 +169,86 @@ public:
     bool has_shortcut() const override {
         return c_shortcut;
     }
+
+    /**
+     * Calculate the size of a Tensor for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with the Tensor's total size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    size_t s_size() const {
+        // Store the magic numbers
+        size_t result = 2 * Numerics_NS::Accumulator<uint32_t>::_s_size;
+        // Store the input and output dims 
+        result += 2 * Numerics_NS::Accumulator<size_t>::_s_size;
+        // Store c_shortcut
+        result += Numerics_NS::Accumulator<uint8_t>::_s_size;
+        // Store m_w
+        result += m_w.s_size();
+        return result;
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    /**
+     * Serialize a Linear Layer
+     * @returns Returns a vector of bytes / char containing the layer
+     */
+    std::vector<char> serialize() const {
+        // Persist the target size since we will do bounds checking
+        size_t target_size = s_size();
+        // Allocate memory using unsigned char (same as std::byte)
+        std::vector<char> result(target_size);
+        // Grab a pointer to the underlying data
+        char* data = result.data();
+        // Keep track of the index
+        size_t index = 0;
+        // As an extra safety check, ensure that index will never exceed s_size
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("LinearLayer.serialize: Error serializing LinearLayer -- invalid index or s_size.\n");
+        }
+        // Write the LinearLayer start magic number
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(LINEAR_LAYER_START_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("LinearLayer.serialize: Error serializing LinearLayer -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_input_dim))) {
+            data[index] = b;
+            ++index;
+        }
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("LinearLayer.serialize: Error serializing LinearLayer -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_output_dim))) {
+            data[index] = b;
+            ++index;
+        }
+        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
+            throw std::runtime_error("LinearLayer.serialize: Error serializing LinearLayer -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Add the m_w Tensor
+        std::vector<char> m_w_vector = m_w.serialize();
+        // Copy the contents into our output
+        std::memcpy(data + index, m_w_vector.data(), m_w_vector.size());
+        index += m_w_vector.size();
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
+            throw std::runtime_error("LinearLayer.serialize: Error serializing LinearLayer -- invalid index or s_size.\n");
+        }
+        // Write the LinearLayer start magic number
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(LINEAR_LAYER_END_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        return result;
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 
