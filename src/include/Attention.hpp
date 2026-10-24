@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-12
+ * @version: 2026-10-23
  *
  * General Notes:
  *
@@ -21,7 +21,9 @@
 #define ATTENTION_HPP
 
 /* Standard dependencies */
+#include <cstddef>
 #include <type_traits>
+#include <vector>
 
 /* Local dependencies */
 #include "AbstractTensor.hpp"
@@ -75,6 +77,21 @@ public:
      * Check to see if a layer has a shortcut
      */
     bool has_shortcut() const override = 0;
+
+    /**
+     * Calculate the size for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with total serialized size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    size_t s_size() const override = 0;
+
+    /**
+     * Serialize an object
+     * @returns Returns a vector of bytes / char containing the layer
+     */
+    std::vector<char> serialize() const override = 0;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

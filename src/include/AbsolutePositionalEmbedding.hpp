@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-14
+ * @version: 2026-10-23
  *
  * General Notes:
  *
@@ -120,9 +120,10 @@ public:
         if (u32_b != ABSOLUTE_POSITIONAL_EMBEDDING_START_MAGIC_NUMBER) {
             throw std::invalid_argument("AbsolutePositionalEmbedding.AbsolutePositionalEmbedding: Invalid start magic number.\n");
         }
-        // Get the target size of the LinearLayer
+        // Get the target size
         size_t total_size = Numerics_NS::from_bytes<size_t>(s, index);
         // Validate the dtype matches the template parameter
+        if (index >= total_size) { throw std::runtime_error("AbsolutePositionalEmbedding.AbsolutePositionalEmbedding: Invalid index or total size for deserializing.\n"); }
         u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
         if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
             throw std::runtime_error("AbsolutePositionalEmbedding.AbsolutePositionalEmbedding: Template parameter does not match serialized dtype.\n");

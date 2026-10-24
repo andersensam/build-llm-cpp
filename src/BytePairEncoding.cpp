@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-22
+ * @version: 2026-10-23
  *
  * General Notes:
  *
@@ -332,11 +332,11 @@ std::string BytePairEncodingTokenizer::detokenize_to_string(const AbstractTensor
     return output;
 }
 
-bool BytePairEncodingTokenizer::export_to_file(const std::string& path) const {
+bool BytePairEncodingTokenizer::save_to_file(const std::string& path) const {
     // Open the file for writing
     std::ofstream model(path, std::ios::binary);
     if (!model) {
-        log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.export_to_file", "Unable to open model file for writing");
+        log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.save_to_file", "Unable to open model file for writing");
         return false;
     }
     // Convert size_t --> uint64_t since its size may be different between platforms (Linux and macOS)
@@ -381,7 +381,7 @@ bool BytePairEncodingTokenizer::export_to_file(const std::string& path) const {
     return true;
 
     file_failed:
-        log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.export_to_file", "Error while writing model file");
+        log_message(Log_Priority::ERROR, "BytePairEncodingTokenizer.save_to_file", "Error while writing model file");
         model.close();
         return false;
 }

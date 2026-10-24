@@ -69,12 +69,17 @@ int main() {
         log_message(Log_Priority::INFO, "main", std::format("Input batch info: {}\nTarget batch info: {}", input_batch.to_string(), target_batch.to_string()));
 
         // Instantiate the GPT Model, disabling dropout since this is forward pass only
+        // Use the below if you do not have a presaved model checkpoint
+        /*
         size_t gptmodel_num_layers = 12;
         size_t gptmodel_emb_dim = 768;
         size_t gptmodel_attn_heads = 12;
         size_t gptmodel_max_seq_len = 1024;
         float gptmodel_dropout = 0.0f;
         GPTModel model(vocab_size, gptmodel_num_layers, gptmodel_emb_dim, gptmodel_attn_heads, gptmodel_max_seq_len, gptmodel_dropout);
+        */
+        // Use the below to load a checkpoint
+        GPTModel model("./models/GPT2-124M.model");
         log_message(Log_Priority::INFO, "main", std::format("{}", model.info()));
         // Define the number of tokens we want out from the model
         size_t target_num_tokens = 8;
@@ -89,7 +94,7 @@ int main() {
         for (size_t i = 0; i < target_num_tokens; ++i) {
             // Handle the case where we hit the max_seq_len
             size_t seq_end = dataloader_max_len + i;
-            size_t seq_begin = seq_end > gptmodel_max_seq_len ? (seq_end - gptmodel_max_seq_len) : 0;
+            size_t seq_begin = seq_end > model.context_len() ? (seq_end - model.context_len()) : 0;
             // Create a slice from final_input of shape [batch_size, dataloader_max_len + i (up to target_num_tokens)]
             // when i = 0, this is a no-op
             Tensor<size_t> current_input = final_input.slice({0, 1}, {{0, 0}, {seq_begin, seq_end}}, {});
@@ -117,18 +122,12 @@ int main() {
                 )
             );
         }
-        
-        Tensor<double> s_tensor({3, 2});
-        s_tensor.set({1.123, 2.345, 3.567, 4.789, 5.901, 6.123});
-        log_message(Log_Priority::INFO, "main", std::format("Size of s_tensor: {}", s_tensor.s_size()));
-        std::vector<char> by = s_tensor.serialize();
-        for (auto b : by) {
-            std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b & 0xFF) << " ";
+        // Save the model
+        /*
+        if (!model.save_to_file("./models/GPT2-124M.model")) {
+            log_message(Log_Priority::ERROR, "main", "Failed to save model.");
         }
-        std::cout << '\n';
-
-        Tensor<double> from_s_tensor(by.data());
-        log_message(Log_Priority::INFO, "main", std::format("from_s_tensor: {}", from_s_tensor.to_string()));
+        */
 
     } catch (const std::exception& e) {
 

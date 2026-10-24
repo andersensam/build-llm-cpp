@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-22
+ * @version: 2026-10-23
  *
  * General Notes:
  *
@@ -278,11 +278,11 @@ public:
     std::string detokenize_to_string(const AbstractTensor<size_t>& t) const override;
 
     /**
-     * Export BytePairEncoding to a model file
+     * Save BytePairEncoding to a model file
      * @param path Path to save the BPE model to
      * @returns True if successful, false otherwise
      */
-    bool export_to_file(const std::string& path) const;
+    bool save_to_file(const std::string& path) const;
 };
 
 /**

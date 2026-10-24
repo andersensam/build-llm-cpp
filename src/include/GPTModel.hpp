@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-14
+ * @version: 2026-10-23
  *
  * GPTModel.hpp: A GPT-like model implementation
  */
@@ -19,8 +19,12 @@
 #define GPT_MODEL_HPP
 
 /* Standard dependencies */
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <format>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -34,13 +38,19 @@
 #include "Embedding.hpp"
 #include "LinearLayer.hpp"
 #include "ListTensorSlice.hpp"
+#include "Log.hpp"
 #include "Model.hpp"
 #include "NormalizationLayer.hpp"
+#include "Numerics.hpp"
 #include "Tensor.hpp"
 #include "TensorUtils.hpp"
 #include "TransformerBlock.hpp"
 
 namespace GPTModel_NS {
+
+/* Magic numbers for serialization */
+inline constexpr uint32_t GPT_MODEL_START_MAGIC_NUMBER = 0x88800090;
+inline constexpr uint32_t GPT_MODEL_END_MAGIC_NUMBER = 0x88800091;
 
 /* Use AbsolutePositionalEmbedding */
 using AbsolutePositionalEmbedding_NS::AbsolutePositionalEmbedding;
@@ -112,17 +122,17 @@ private:
     /**
      * Token embedding layer
      */
-    std::unique_ptr<Embedding<float>> m_tok_emb;
+    std::unique_ptr<Embedding<float>> m_tok_emb = nullptr;
 
     /**
      * AbsolutePositionalEmbedding layer
      */
-    std::unique_ptr<AbsolutePositionalEmbedding<float>> m_pos_emb;
+    std::unique_ptr<AbsolutePositionalEmbedding<float>> m_pos_emb = nullptr;
 
     /**
      * Dropout layer
      */
-    std::unique_ptr<DropoutLayer<float>> m_drop;
+    std::unique_ptr<DropoutLayer<float>> m_drop = nullptr;
 
     /**
      * TransformerBlocks, matching num_layers
@@ -132,12 +142,12 @@ private:
     /**
      * Normalization layer
      */
-    std::unique_ptr<NormalizationLayer<float>> m_norm;
+    std::unique_ptr<NormalizationLayer<float>> m_norm = nullptr;
 
     /**
      * Final linear output layer
      */
-    std::unique_ptr<LinearLayer<float>> m_linear_output;
+    std::unique_ptr<LinearLayer<float>> m_linear_output = nullptr;
 
     /**
      * Model name
@@ -163,8 +173,14 @@ public:
      */
     GPTModel(size_t vocab_size, size_t num_layers, size_t emb_dim, size_t attn_heads, size_t context_len, float dropout);
     // NOLINTEND(bugprone-easily-swappable-parameters)
+
+    /**
+     * Constructor to import a GPTModel from a file
+     * @param path Path to the model file
+     */
+    explicit GPTModel(const std::string& path);
     
-        /**
+    /**
      * Default destructor for GPTModel
      */
     ~GPTModel() override;
@@ -200,6 +216,33 @@ public:
      * @returns Returns a string containing information about the model
      */
     std::string info() const override;
+
+    /**
+     * Get the context / max sequence length of the model
+     * @returns Returns the context / max sequence length
+     */
+    size_t context_len() const override;
+
+    /**
+     * Calculate the size for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with total serialized size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    size_t s_size() const override;
+
+    /**
+     * Serialize GPTModel
+     * @returns Returns a vector of bytes / char containing the layer
+     */
+    std::vector<char> serialize() const override;
+
+    /**
+     * Save a model to a file
+     * @returns Returns true if the model was saved successfully
+     */
+    bool save_to_file(const std::string& path) const override;
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

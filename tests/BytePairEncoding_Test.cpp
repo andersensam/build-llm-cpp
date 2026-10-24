@@ -89,7 +89,7 @@ TEST(BPETest, TokenizerExportAndReloadModelFilePreservesVocab) {
   const std::filesystem::path temp_model =
       std::filesystem::temp_directory_path() / "bpe_unit_test_model.bin";
 
-  ASSERT_TRUE(tokenizer.export_to_file(temp_model.string()));
+  ASSERT_TRUE(tokenizer.save_to_file(temp_model.string()));
 
   BytePairEncodingTokenizer loaded(temp_model.string());
   std::filesystem::remove(temp_model);

@@ -293,6 +293,7 @@ cc_library(
     deps = [
         ":abstracttensor",
         ":attention",
+        ":numerics",
         ":tensor",
         ":tensormatmul",
     ]
@@ -311,6 +312,7 @@ cc_library(
     deps = [
         ":abstracttensor",
         ":attention",
+        ":numerics",
         ":tensor",
         ":tensormatmul",
     ]
@@ -362,8 +364,9 @@ cc_library(
     deps = [
         ":abstracttensor",
         ":layer",
-        ":tensor",
         ":listtensorslice",
+        ":numerics",
+        ":tensor",
     ]
 )
 
@@ -380,6 +383,7 @@ cc_library(
     deps = [
         ":abstracttensor",
         ":layer",
+        ":numerics",
         ":tensor",
     ]
 )
@@ -399,6 +403,7 @@ cc_library(
         ":gelulayer",
         ":layer",
         ":linearlayer",
+        ":numerics",
         ":tensor",
     ]
 )
@@ -420,6 +425,7 @@ cc_library(
         ":layer",
         ":multiheadattention",
         ":normalizationlayer",
+        ":numerics",
         ":tensor",
     ]
 )
@@ -518,6 +524,7 @@ cc_library(
         ":listtensorslice",
         ":model",
         ":normalizationlayer",
+        ":numerics",
         ":tensor",
         ":tensorutils",
         ":transformerblock",

@@ -95,9 +95,10 @@ public:
         if (u32_b != DROPOUT_LAYER_START_MAGIC_NUMBER) {
             throw std::invalid_argument("DropoutLayer.DropoutLayer: Invalid start magic number.\n");
         }
-        // Get the target size of the LinearLayer
+        // Get the target size
         size_t total_size = Numerics_NS::from_bytes<size_t>(s, index);
         // Validate the dtype matches the template parameter
+        if (index >= total_size) { throw std::runtime_error("DropoutLayer.DropoutLayer: Invalid index or total size for deserializing.\n"); }
         u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
         if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
             throw std::runtime_error("DropoutLayer.DropoutLayer: Template parameter does not match serialized dtype.\n");
@@ -190,7 +191,7 @@ public:
      * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
      * the size returned by size() may not reflect what is being used in memory
      */
-    size_t s_size() const {
+    size_t s_size() const override {
         // Start with the magic numbers and dtype
         size_t result = 3 * Numerics_NS::Accumulator<uint32_t>::_s_size;
         // Total size
@@ -207,7 +208,7 @@ public:
      * Serialize DropoutLayer
      * @returns Returns a vector of bytes / char containing the layer
      */
-    std::vector<char> serialize() const {
+    std::vector<char> serialize() const override {
         // Persist the target size since we will do bounds checking
         size_t target_size = s_size();
         // Allocate memory using unsigned char (same as std::byte)

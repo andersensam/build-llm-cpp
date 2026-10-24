@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-14
+ * @version: 2026-10-23
  *
  * Notes: TransformerBlock.hpp
  *
@@ -20,7 +20,10 @@
 #define TRANSFORMER_BLOCK_HPP
 
 /* Standard dependencies */
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -31,10 +34,15 @@
 #include "FeedForward.hpp"
 #include "Layer.hpp"
 #include "MultiHeadAttention.hpp"
+#include "Numerics.hpp"
 #include "NormalizationLayer.hpp"
 #include "Tensor.hpp"
 
 namespace TransformerBlock_NS {
+
+/* Magic numbers for serialization */
+inline constexpr uint32_t TRANSFORMER_BLOCK_START_MAGIC_NUMBER = 0x88800080;
+inline constexpr uint32_t TRANSFORMER_BLOCK_END_MAGIC_NUMBER = 0x88800081;
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
@@ -138,6 +146,95 @@ public:
     }
     // NOLINTEND(bugprone-easily-swappable-parameters, cppcoreguidelines-avoid-magic-numbers)
 
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-avoid-magic-numbers)
+    /**
+     * Constructor for TransformerBlock, accepting a pointer to char (bytes) and reading in the data
+     * @param s Pointer to the a serialized TransformerBlock (char)
+     */
+    explicit TransformerBlock(const char* s) {
+        // Ensure we have a valid pointer to serialized data
+        if (s == nullptr) {
+            throw std::invalid_argument("TransformerBlock.TransformerBlock: Invalid pointer provided.\n");
+        }
+        size_t index = 0;
+        // Check that the magic number is correct
+        uint32_t u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != TRANSFORMER_BLOCK_START_MAGIC_NUMBER) {
+            throw std::invalid_argument("TransformerBlock.TransformerBlock: Invalid start magic number.\n");
+        }
+        // Get the target size
+        size_t total_size = Numerics_NS::from_bytes<size_t>(s, index);
+        // Validate the dtype matches the template parameter
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
+            throw std::runtime_error("TransformerBlock.TransformerBlock: Template parameter does not match serialized dtype.\n");
+        }
+        // Get emb_dim
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        c_emb_dim = Numerics_NS::from_bytes<size_t>(s, index);
+        // Get context_len
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        c_context_len = Numerics_NS::from_bytes<size_t>(s, index);
+        // Get dropout
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        c_dropout = Numerics_NS::int_to_float<float>(Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<float>::serialize_as>(s, index));
+        // Get attn_heads
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        c_attn_heads = Numerics_NS::from_bytes<size_t>(s, index);
+        // Get the shortcut bool
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
+        // Validate the configuration before loading the layers
+        if (c_emb_dim == 0 || c_context_len == 0 || c_attn_heads == 0) {
+            throw std::invalid_argument("TransformerBlock.TransformerBlock: emb_dim, context_len, and attn_head cannot be zero.\n");
+        }
+        // Ensure the output dimension is divisible by the number of heads
+        if (c_emb_dim % c_attn_heads != 0) {
+            throw std::invalid_argument("TransformerBlock.TransformerBlock: Embedding dim must be divisible by number of heads.\n");
+        }
+        // Ensure we get a dropout within the acceptable range
+        if (c_dropout < 0 || c_dropout >= 1 || !std::isfinite(c_dropout)) {
+            throw std::invalid_argument("TransformerBlock.TransformerBlock: Dropout must be >= 0, < 1.\n");
+        }
+        // Reserve space and load the layers
+        m_layers.reserve(6);
+        // Start with a normalization layer
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        m_layers.push_back(std::make_unique<NormalizationLayer<T>>(s + index));
+        index += m_layers.back()->s_size();
+        // Add MultiHeadAttention
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        m_layers.push_back(std::make_unique<MultiHeadAttention<T>>(s + index));
+        index += m_layers.back()->s_size();
+        // Add the first dropout
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        m_layers.push_back(std::make_unique<DropoutLayer<T>>(s + index));
+        index += m_layers.back()->s_size();
+        // Create another normalization layer
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        m_layers.push_back(std::make_unique<NormalizationLayer<T>>(s + index));
+        index += m_layers.back()->s_size();
+        // Create a feed forward network (FFN)
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        m_layers.push_back(std::make_unique<FeedForward<T>>(s + index));
+        index += m_layers.back()->s_size();
+        // Finish the Transformer Block with a final dropout
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        m_layers.push_back(std::make_unique<DropoutLayer<T>>(s + index));
+        index += m_layers.back()->s_size();
+        // Ensure the end magic number is valid
+        if (index >= total_size) { throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid index or total size for deserializing.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != TRANSFORMER_BLOCK_END_MAGIC_NUMBER) {
+            throw std::runtime_error("TransformerBlock.TransformerBlock: Invalid end magic number.\n");   
+        }
+        if (index != total_size) {
+            throw std::runtime_error("TransformerBlock.TransformerBlock: Reached end of object but total_size indicates there is more data to be read.\n");
+        }
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-avoid-magic-numbers)
+
     /**
      * Default destructor for TransformerBlock
      */
@@ -217,6 +314,130 @@ public:
     bool has_shortcut() const override {
         return c_shortcut;
     }
+
+    /**
+     * Calculate the size for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with total serialized size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    size_t s_size() const override {
+        // Start with the magic numbers and dtype
+        size_t result = 3 * Numerics_NS::Accumulator<uint32_t>::_s_size;
+        // Add the total size, emb_dim, context_len, attn_heads
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+        result += 4 * Numerics_NS::Accumulator<size_t>::_s_size;
+        // Add the shortcut bool --> uint8_t
+        result += Numerics_NS::Accumulator<uint8_t>::_s_size;
+        // Add dropout
+        result += Numerics_NS::Accumulator<float>::_s_size;
+        // Add the layers
+        for (const auto& layer : m_layers) {
+            result += layer->s_size();
+        }
+        return result;
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    /**
+     * Serialize TransformerBlock
+     * @returns Returns a vector of bytes / char containing the layer
+     */
+    std::vector<char> serialize() const override {
+        // Persist the target size since we will do bounds checking
+        size_t target_size = s_size();
+        // Allocate memory using unsigned char (same as std::byte)
+        std::vector<char> result(target_size);
+        // Grab a pointer to the underlying data
+        char* data = result.data();
+        // Keep track of the index
+        size_t index = 0;
+        // As an extra safety check, ensure that index will never exceed s_size
+        // Write the start magic number
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(TRANSFORMER_BLOCK_START_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the serialized size size
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(target_size))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the dtype
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::Accumulator<T>::_base_type_mn))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the emb_dim
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_emb_dim))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the context_len
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_context_len))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the dropout rate
+        if (index + Numerics_NS::Accumulator<float>::_s_size >= target_size) {
+            throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::float_to_int(c_dropout)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the attn_heads
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_attn_heads))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the shortcut bool
+        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
+            throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the layers
+        for (const auto& layer : m_layers) {
+            if (index + layer->s_size() >= target_size) {
+                throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+            }
+            std::vector<char> sl = layer->serialize();
+            std::memcpy(data + index, sl.data(), sl.size());
+            index += sl.size();
+        }
+        // Write the end magic number
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
+            throw std::runtime_error("TransformerBlock.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(TRANSFORMER_BLOCK_END_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        return result;
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

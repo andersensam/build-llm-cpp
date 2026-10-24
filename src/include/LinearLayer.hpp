@@ -93,6 +93,10 @@ public:
      */
     LinearLayer(size_t in_dim, size_t out_dim, bool shortcut) : c_input_dim(in_dim), c_output_dim(out_dim), c_shortcut(shortcut),
                                                                 m_w({c_input_dim, c_output_dim}) {
+        // Ensure we have proper in and out dims
+        if (c_input_dim == 0 || c_output_dim == 0) {
+            throw std::invalid_argument("LinearLayer.LinearLayer: Input and output dims cannot be 0.\n");
+        }
         // Initialize the Tensor to have random weights
         if constexpr (std::is_unsigned_v<T>) {
             m_w.random(0, 2);
@@ -119,9 +123,10 @@ public:
         if (u32_b != LINEAR_LAYER_START_MAGIC_NUMBER) {
             throw std::invalid_argument("LinearLayer.LinearLayer: Invalid start magic number.\n");
         }
-        // Get the target size of the LinearLayer
+        // Get the target size
         size_t total_size = Numerics_NS::from_bytes<size_t>(s, index);
         // Validate the dtype matches the template parameter
+        if (index >= total_size) { throw std::runtime_error("LinearLayer.LinearLayer: Invalid index or total size for deserializing.\n"); }
         u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
         if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
             throw std::runtime_error("LinearLayer.LinearLayer: Template parameter does not match serialized dtype.\n");
@@ -132,6 +137,9 @@ public:
         // Get the output dim
         if (index >= total_size) { throw std::runtime_error("LinearLayer.LinearLayer: Invalid index or total size for deserializing.\n"); }
         c_output_dim = Numerics_NS::from_bytes<size_t>(s, index);
+        if (c_input_dim == 0 || c_output_dim == 0) {
+            throw std::invalid_argument("LinearLayer.LinearLayer: Input and output dims cannot be 0.\n");
+        }
         // Get c_shortcut and cast to bool
         if (index >= total_size) { throw std::runtime_error("LinearLayer.LinearLayer: Invalid index or total size for deserializing.\n"); }
         c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
@@ -139,6 +147,10 @@ public:
         if (index >= total_size) { throw std::runtime_error("LinearLayer.LinearLayer: Invalid index or total size for deserializing.\n"); }
         m_w = Tensor<T>(s + index);
         index += m_w.s_size();
+        // Validate m_w_pos_emb Tensor has the correct properties
+        if (m_w.rank() != 2 || m_w.extent(0) != c_input_dim || m_w.extent(1) != c_output_dim) {
+            throw std::runtime_error("LinearLayer.LinearLayer: Invalid Tensor instantiated from serialized config.\n");
+        }
         // Ensure the end magic number is valid
         if (index >= total_size) { throw std::runtime_error("LinearLayer.LinearLayer: Invalid index or total size for deserializing.\n"); }
         u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
@@ -230,7 +242,7 @@ public:
      * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
      * the size returned by size() may not reflect what is being used in memory
      */
-    size_t s_size() const {
+    size_t s_size() const override {
         // Store the magic numbers, total expected size, and dtype
         size_t result = 3 * Numerics_NS::Accumulator<uint32_t>::_s_size;
         // Store the input and output dims and total expected size
@@ -247,7 +259,7 @@ public:
      * Serialize a Linear Layer
      * @returns Returns a vector of bytes / char containing the layer
      */
-    std::vector<char> serialize() const {
+    std::vector<char> serialize() const override {
         // Persist the target size since we will do bounds checking
         size_t target_size = s_size();
         // Allocate memory using unsigned char (same as std::byte)

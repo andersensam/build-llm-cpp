@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-12
+ * @version: 2026-10-23
  *
  * Notes:
  * NormalizationLayer.hpp
@@ -20,19 +20,28 @@
 #define NORMALIZATION_LAYER_HPP
 
 /* Standard dependencies */
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 /* Local dependencies */
 #include "AbstractTensor.hpp"
 #include "Layer.hpp"
 #include "ListTensorSlice.hpp"
+#include "Numerics.hpp"
 #include "Tensor.hpp"
 
 namespace NormalizationLayer_NS {
+
+/* Magic numbers for serialization */
+inline constexpr uint32_t NORMALIZATION_LAYER_START_MAGIC_NUMBER = 0x88800060;
+inline constexpr uint32_t NORMALIZATION_LAYER_END_MAGIC_NUMBER = 0x88800061;
 
 /* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
@@ -71,12 +80,12 @@ private:
     bool c_shortcut = false;
 
     /**
-     * Scale Tensor, used for scaling the output up or down
+     * Scale scalar, used for scaling the output up or down
      */
     T m_scale = 1;
 
     /**
-     * Shift Tensor, used for shifting the output closer to / further from zero
+     * Shift scalar, used for shifting the output closer to / further from zero
      */
     T m_shift = 0;
 
@@ -92,6 +101,51 @@ public:
         // Do nothing
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    /**
+     * Constructor for NormalizationLayer, accepting a pointer to char (bytes) and reading in the data
+     * @param s Pointer to the a serialized NormalizationLayer (char)
+     */
+    explicit NormalizationLayer(const char* s) {
+        // Ensure we have a valid pointer to serialized data
+        if (s == nullptr) {
+            throw std::invalid_argument("NormalizationLayer.NormalizationLayer: Invalid pointer provided.\n");
+        }
+        size_t index = 0;
+        // Check that the magic number is correct
+        uint32_t u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != NORMALIZATION_LAYER_START_MAGIC_NUMBER) {
+            throw std::invalid_argument("NormalizationLayer.NormalizationLayer: Invalid start magic number.\n");
+        }
+        // Get the target size
+        size_t total_size = Numerics_NS::from_bytes<size_t>(s, index);
+        // Validate the dtype matches the template parameter
+        if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
+            throw std::runtime_error("NormalizationLayer.NormalizationLayer: Template parameter does not match serialized dtype.\n");
+        }
+        // Get the shortcut bool
+        if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
+        c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
+        // Get the scale scalar
+        if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
+        m_scale = Numerics_NS::int_to_float<T>(Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<T>::serialize_as>(s, index));
+        // Get the shift scalar
+        if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
+        m_shift = Numerics_NS::int_to_float<T>(Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<T>::serialize_as>(s, index));
+        // Ensure the end magic number is valid
+        if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
+        u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
+        if (u32_b != NORMALIZATION_LAYER_END_MAGIC_NUMBER) {
+            throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid end magic number.\n");   
+        }
+        if (index != total_size) {
+            throw std::runtime_error("NormalizationLayer.NormalizationLayer: Reached end of object but total_size indicates there is more data to be read.\n");
+        }
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
     /**
      * NormalizationLayer destructor
@@ -201,6 +255,100 @@ public:
     bool has_shortcut() const override {
         return c_shortcut;
     }
+
+    /**
+     * Calculate the size for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with total serialized size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    size_t s_size() const override {
+        // Start with the magic numbers and dtype
+        size_t result = 3 * Numerics_NS::Accumulator<uint32_t>::_s_size;
+        // Add the total size
+        result += Numerics_NS::Accumulator<size_t>::_s_size;
+        // Add the shortcut bool --> uint8_t
+        result += Numerics_NS::Accumulator<uint8_t>::_s_size;
+        // Add the two scalars
+        result += 2 * Numerics_NS::Accumulator<T>::_s_size;
+        return result;
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    /**
+     * Serialize NormalizationLayer
+     * @returns Returns a vector of bytes / char containing the layer
+     */
+    std::vector<char> serialize() const override {
+        // Persist the target size since we will do bounds checking
+        size_t target_size = s_size();
+        // Allocate memory using unsigned char (same as std::byte)
+        std::vector<char> result(target_size);
+        // Grab a pointer to the underlying data
+        char* data = result.data();
+        // Keep track of the index
+        size_t index = 0;
+        // As an extra safety check, ensure that index will never exceed s_size
+        // Write the start magic number
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(NORMALIZATION_LAYER_START_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the serialized size size
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(target_size))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the dtype
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
+            throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::Accumulator<T>::_base_type_mn))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the shortcut bool
+        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
+            throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the scale scalar
+        if (index + Numerics_NS::Accumulator<T>::_s_size >= target_size) {
+            throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::float_to_int(m_scale)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the shift scalar
+        if (index + Numerics_NS::Accumulator<T>::_s_size >= target_size) {
+            throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::float_to_int(m_shift)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the end magic number
+        if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
+            throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(NORMALIZATION_LAYER_END_MAGIC_NUMBER))) {
+            data[index] = b;
+            ++index;
+        }
+        return result;
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

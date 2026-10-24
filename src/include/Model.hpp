@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-14
+ * @version: 2026-10-23
  *
  * Model.hpp: Model interface that all models must implement
  */
@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 /* Local dependencies */
 #include "AbstractTensor.hpp"
@@ -71,6 +72,34 @@ public:
      * @returns Returns a string containing information about the model
      */
     virtual std::string info() const = 0;
+
+    /**
+     * Get the context / max sequence length of the model
+     * @returns Returns the context / max sequence length
+     */
+    virtual size_t context_len() const = 0;
+
+    /**
+     * Calculate the size for serialization, including the raw data and any metadata
+     * @returns Returns a size_t with total serialized size
+     * NOTE: Due to inconsistencies with size_t representation across systems,
+     * we use Numerics.hpp to calculate the conversion to fixed-width types, thus
+     * the size returned by size() may not reflect what is being used in memory
+     */
+    virtual size_t s_size() const = 0;
+
+    /**
+     * Serialize an object
+     * @returns Returns a vector of bytes / char containing the layer
+     */
+    virtual std::vector<char> serialize() const = 0;
+
+    /**
+     * Save a model to a file
+     * @returns Returns true if the model was saved successfully
+     */
+    virtual bool save_to_file(const std::string& path) const = 0;
+
 };
 // NOLINTEND(cppcoreguidelines-special-member-functions)
 

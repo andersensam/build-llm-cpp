@@ -63,7 +63,7 @@
 namespace Tensor_NS {
 
 /* Control verbose copy / move constructor logging, useful for debugging. Does not apply to default constructors */
-inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = true;
+inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = false;
 
 /* Store the maximum length for a type name from the demangler API */
 inline constexpr size_t TENSOR_MAX_DEMANGLED_NAME_LEN = 32;
@@ -361,6 +361,9 @@ public:
         for (size_t i = 0; i < c_rank; ++i) {
             if (index >= total_size) { throw std::runtime_error("Tensor.Tensor: Invalid index or total size for constructing Tensor.\n"); }
             m_dims[i] = Numerics_NS::from_bytes<size_t>(s, index);
+            if (m_dims[i] == 0) {
+                throw std::invalid_argument(std::format("Tensor.Tensor: invalid dim ({}) provided to Tensor. Dims must be >= 1 or should be omitted.", m_dims[i]));
+            }
         }
         // Calculate the strides
         calculate_strides();
