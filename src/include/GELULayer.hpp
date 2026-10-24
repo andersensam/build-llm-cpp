@@ -234,7 +234,7 @@ public:
         // As an extra safety check, ensure that index will never exceed s_size
         // Write the start magic number
         if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
-            throw std::runtime_error("AbsolutePositionalEmbedding.serialize: Error serializing -- invalid index or s_size.\n");
+            throw std::runtime_error("GELULayer.serialize: Error serializing -- invalid index or s_size.\n");
         }
         for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(GELU_LAYER_START_MAGIC_NUMBER))) {
             data[index] = b;
@@ -242,7 +242,7 @@ public:
         }
         // Write the serialized size size
         if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
-            throw std::runtime_error("AbsolutePositionalEmbedding.serialize: Error serializing -- invalid index or s_size.\n");
+            throw std::runtime_error("GELULayer.serialize: Error serializing -- invalid index or s_size.\n");
         }
         for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(target_size))) {
             data[index] = b;
@@ -250,7 +250,7 @@ public:
         }
         // Write the dtype
         if (index + Numerics_NS::Accumulator<uint32_t>::_s_size >= target_size) {
-            throw std::runtime_error("AbsolutePositionalEmbedding.serialize: Error serializing -- invalid index or s_size.\n");
+            throw std::runtime_error("GELULayer.serialize: Error serializing -- invalid index or s_size.\n");
         }
         for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::Accumulator<T>::_base_type_mn))) {
             data[index] = b;
@@ -258,7 +258,7 @@ public:
         }
         // Write the shortcut bool
         if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
-            throw std::runtime_error("AbsolutePositionalEmbedding.serialize: Error serializing -- invalid index or s_size.\n");
+            throw std::runtime_error("GELULayer.serialize: Error serializing -- invalid index or s_size.\n");
         }
         for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
             data[index] = b;
@@ -266,7 +266,7 @@ public:
         }
         // Write the end magic number
         if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
-            throw std::runtime_error("AbsolutePositionalEmbedding.serialize: Error serializing -- invalid index or s_size.\n");
+            throw std::runtime_error("GELULayer.serialize: Error serializing -- invalid index or s_size.\n");
         }
         for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(GELU_LAYER_END_MAGIC_NUMBER))) {
             data[index] = b;

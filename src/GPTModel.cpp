@@ -86,7 +86,13 @@ GPTModel::GPTModel(const std::string& path) {
     size_t total_size = Numerics_NS::from_bytes<size_t>(s_buf.data());
     // Allocate a new char* buffer and read in the rest of the model definition, ensuring that
     // we strip out the start magic number and the size
-    total_size -= u_buf.size() + s_buf.size();
+    if (total_size <= u_buf.size() + s_buf.size()) {
+        total_size -= u_buf.size() + s_buf.size();
+    }
+    else {
+        model.close();
+        throw std::runtime_error("GPTModel.GPTModel: Corrupted size in model file.\n");
+    }
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
     auto s_ptr = std::make_unique<char[]>(total_size);
     char* s = s_ptr.get();

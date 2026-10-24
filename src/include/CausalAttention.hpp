@@ -88,17 +88,17 @@ private:
     /**
      * Query weights
      */
-    Tensor<T> m_w_query;
+    Tensor<T> m_w_query = Tensor<T>({1});
 
     /**
      * Key weights
      */
-    Tensor<T> m_w_key;
+    Tensor<T> m_w_key = Tensor<T>({1});
 
     /**
      * Value weights
      */
-    Tensor<T> m_w_value;
+    Tensor<T> m_w_value = Tensor<T>({1});
 
 /* Public functions */
 public:
@@ -173,7 +173,7 @@ public:
         // Get m_w_query
         if (index >= total_size) { throw std::runtime_error("CausalAttention.CausalAttention: Invalid index or total size for deserializing.\n"); }
         m_w_query = Tensor<T>(s + index);
-        index += m_w_key.s_size();
+        index += m_w_query.s_size();
         // Validate m_w_query
         if (m_w_query.rank() != 2 || m_w_query.extent(0) != c_emb_dim || m_w_query.extent(1) != c_output_dim) {
             throw std::runtime_error("CausalAttention.CausalAttention: Invalid Tensor instantiated from serialized config.\n");
@@ -189,7 +189,7 @@ public:
         // Get m_w_value
         if (index >= total_size) { throw std::runtime_error("CausalAttention.CausalAttention: Invalid index or total size for deserializing.\n"); }
         m_w_value = Tensor<T>(s + index);
-        index += m_w_key.s_size();
+        index += m_w_value.s_size();
         // Validate m_w_value
         if (m_w_value.rank() != 2 || m_w_value.extent(0) != c_emb_dim || m_w_value.extent(1) != c_output_dim) {
             throw std::runtime_error("CausalAttention.CausalAttention: Invalid Tensor instantiated from serialized config.\n");
