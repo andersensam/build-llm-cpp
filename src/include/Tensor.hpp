@@ -63,7 +63,8 @@
 namespace Tensor_NS {
 
 /* Control verbose copy / move constructor logging, useful for debugging. Does not apply to default constructors */
-inline constexpr bool TENSOR_ENABLE_CONSTRUCTOR_LOGGING = false;
+inline constexpr bool TENSOR_ENABLE_COPY_CONSTRUCTOR_LOGGING = true;
+inline constexpr bool TENSOR_ENABLE_MOVE_CONSTRUCTOR_LOGGING = false;
 
 /* Store the maximum length for a type name from the demangler API */
 inline constexpr size_t TENSOR_MAX_DEMANGLED_NAME_LEN = 32;
@@ -424,7 +425,7 @@ public:
     Tensor(const Tensor<T>& target) : m_data(target.m_data), c_offset(target.c_offset), c_elements(target.c_elements), 
                                       c_rank(target.c_rank), m_stride(target.m_stride), m_dims(target.m_dims), c_contiguous(target.c_contiguous) {
         // Debug logging
-        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+        if (TENSOR_ENABLE_COPY_CONSTRUCTOR_LOGGING) {
             log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy constructor called");
         }
     }
@@ -448,7 +449,7 @@ public:
         m_dims = std::vector<size_t>(target.m_dims);
         c_contiguous = target.c_contiguous;
         // Debug logging
-        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+        if (TENSOR_ENABLE_COPY_CONSTRUCTOR_LOGGING) {
             log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Copy assignment called");
         }
         return *this;
@@ -464,7 +465,7 @@ public:
         // Set target.m_data to nullptr
         target.m_data = nullptr;
         // Debug logging
-        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+        if (TENSOR_ENABLE_MOVE_CONSTRUCTOR_LOGGING) {
             log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move constructor called");
         }
     }
@@ -492,7 +493,7 @@ public:
         // Set target.m_data to nullptr for good measure
         target.m_data = nullptr;
         // Debug logging
-        if (TENSOR_ENABLE_CONSTRUCTOR_LOGGING) {
+        if (TENSOR_ENABLE_MOVE_CONSTRUCTOR_LOGGING) {
             log_message(Log_Priority::DEBUG, "Tensor.Tensor", "Move assignment operator called");
         }
         return *this;
