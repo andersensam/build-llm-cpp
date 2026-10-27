@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-23
+ * @version: 2026-10-26
  *
  * General Notes:
  *
@@ -21,12 +21,14 @@
 #define MULTI_HEAD_ATTENTION_HPP
 
 /* Standard dependencies */
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
+#include <memory>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 /* Local dependencies */
@@ -66,6 +68,31 @@ class MultiHeadAttention final : public Attention<T> {
 /* Private data elements */
 private:
     /**
+     * Query weights
+     */
+    Tensor<T> m_w_query = Tensor<T>({1});
+
+    /**
+     * Key weights
+     */
+    Tensor<T> m_w_key = Tensor<T>({1});
+
+    /**
+     * Value weights
+     */
+    Tensor<T> m_w_value = Tensor<T>({1});
+
+    /**
+     * Output of the layer, used in training
+     */
+    std::unique_ptr<Tensor<T>> m_out = nullptr;
+
+    /**
+     * Start and stop dims for each attention head
+     */
+    std::vector<std::pair<size_t, size_t>> c_heads = std::vector<std::pair<size_t, size_t>>();
+
+    /**
      * Embedding dimension
      */
     size_t c_emb_dim = 0;
@@ -74,11 +101,6 @@ private:
      * Output dimension for the attention head
      */
     size_t c_output_dim = 0;
-
-    /**
-     * Dropout percentage (>= 0, < 1)
-     */
-    float c_dropout = 0.0;
 
     /**
      * Context length for inputs
@@ -96,29 +118,14 @@ private:
     size_t c_head_dim = 0;
 
     /**
+     * Dropout percentage (>= 0, < 1)
+     */
+    float c_dropout = 0.0;
+
+    /**
      * Whether a shortcut connection comes after this layer
      */
     bool c_shortcut = false;
-
-    /**
-     * Query weights
-     */
-    Tensor<T> m_w_query = Tensor<T>({1});
-
-    /**
-     * Key weights
-     */
-    Tensor<T> m_w_key = Tensor<T>({1});
-
-    /**
-     * Value weights
-     */
-    Tensor<T> m_w_value = Tensor<T>({1});
-
-    /**
-     * Start and stop dims for each attention head
-     */
-    std::vector<std::pair<size_t, size_t>> c_heads = std::vector<std::pair<size_t, size_t>>();
 
 /* Public functions */
 public:
@@ -132,13 +139,12 @@ public:
      * @param num_heads Number of heads
      */
     MultiHeadAttention(size_t emb_dim, size_t output_dim, size_t context_len,
-                       float dropout, size_t num_heads, bool shortcut) :
-                                                                        c_emb_dim(emb_dim), c_output_dim(output_dim), 
-                                                                        c_dropout(dropout), c_context_len(context_len),
-                                                                        c_num_heads(num_heads), c_shortcut(shortcut),
-                                                                        m_w_query({c_emb_dim, c_output_dim}),
-                                                                        m_w_key({c_emb_dim, c_output_dim}),
-                                                                        m_w_value({c_emb_dim, c_output_dim}) {
+                       float dropout, size_t num_heads, bool shortcut) : m_w_query({emb_dim, output_dim}),
+                                                                         m_w_key({emb_dim, output_dim}),
+                                                                         m_w_value({emb_dim, output_dim}),
+                                                                         c_emb_dim(emb_dim), c_output_dim(output_dim), 
+                                                                         c_context_len(context_len), c_num_heads(num_heads),
+                                                                         c_dropout(dropout), c_shortcut(shortcut) {
         // Ensure emb_dim, output_dim, context_len, and num_heads are not zero
         if (emb_dim == 0 || output_dim == 0 || context_len == 0 || num_heads == 0) {
             throw std::invalid_argument("MultiHeadAttention.MultiHeadAttention: emb_dim, output_dim, context_len, and num_heads cannot be zero.\n");
@@ -191,21 +197,33 @@ public:
         if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
             throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Template parameter does not match serialized dtype.\n");
         }
+        // Get m_w_query
+        if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
+        m_w_query = Tensor<T>(s + index);
+        index += m_w_query.s_size();
+        // Get m_w_key
+        if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
+        m_w_key = Tensor<T>(s + index);
+        index += m_w_key.s_size();
+        // Get m_w_value
+        if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
+        m_w_value = Tensor<T>(s + index);
+        index += m_w_value.s_size();
         // Get emb_dim
         if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
         c_emb_dim = Numerics_NS::from_bytes<size_t>(s, index);
         // Get output_dim
         if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
         c_output_dim = Numerics_NS::from_bytes<size_t>(s, index);
-        // Get dropout
-        if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
-        c_dropout = Numerics_NS::int_to_float<float>(Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<float>::serialize_as>(s, index));
         // Get context_len
         if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
         c_context_len = Numerics_NS::from_bytes<size_t>(s, index);
         // Get num_heads
         if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
         c_num_heads = Numerics_NS::from_bytes<size_t>(s, index);
+        // Get dropout
+        if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
+        c_dropout = Numerics_NS::int_to_float<float>(Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<float>::serialize_as>(s, index));
         // Get the shortcut bool
         if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
         c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
@@ -231,26 +249,14 @@ public:
             // end_dim = (i + 1) * c_head_him
             c_heads.emplace_back(i * c_head_dim, (i + 1) * c_head_dim);
         }
-        // Get m_w_query
-        if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
-        m_w_query = Tensor<T>(s + index);
-        index += m_w_query.s_size();
         // Validate m_w_query
         if (m_w_query.rank() != 2 || m_w_query.extent(0) != c_emb_dim || m_w_query.extent(1) != c_output_dim) {
             throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid Tensor instantiated from serialized config.\n");
         }
-        // Get m_w_key
-        if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
-        m_w_key = Tensor<T>(s + index);
-        index += m_w_key.s_size();
         // Validate m_w_key
         if (m_w_key.rank() != 2 || m_w_key.extent(0) != c_emb_dim || m_w_key.extent(1) != c_output_dim) {
             throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid Tensor instantiated from serialized config.\n");
         }
-        // Get m_w_value
-        if (index >= total_size) { throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid index or total size for deserializing.\n"); }
-        m_w_value = Tensor<T>(s + index);
-        index += m_w_value.s_size();
         // Validate m_w_value
         if (m_w_value.rank() != 2 || m_w_value.extent(0) != c_emb_dim || m_w_value.extent(1) != c_output_dim) {
             throw std::runtime_error("MultiHeadAttention.MultiHeadAttention: Invalid Tensor instantiated from serialized config.\n");
@@ -287,6 +293,22 @@ public:
         Tensor<T> result({input.extent(0), c_output_dim});
         forward(input, result);
         return result;
+    }
+
+    /**
+     * Forward pass, saving the output to m_out
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @returns Returns a reference to the output of the layer
+     */
+    Tensor<T> forward_train(const AbstractTensor<T>& input) override {
+        // Use the existing forward method and copy the output to m_out
+        Tensor<T> output = forward(input);
+        // Ensure m_out has the same rank and shape as output, then copy its data
+        if (m_out == nullptr || m_out->rank() != output.rank() || m_out->shape() != output.shape()) {
+            m_out = std::make_unique<Tensor<T>>(output.shape());
+        }
+        m_out->copy_from(output);
+        return output;
     }
 
     // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
@@ -366,6 +388,24 @@ public:
     // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
     /**
+     * Forward function, performing the forward pass on the layer and writing the result
+     * to a defined destination, also copying to m_out for later
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
+     * @returns Returns a reference to the destination Tensor provided
+     */
+    Tensor<T>& forward_train(const AbstractTensor<T>& input, Tensor<T>& dest) override {
+        // Run the forward pass
+        forward(input, dest);
+        // Ensure m_out has the same rank and shape as dest, then copy its data
+        if (m_out == nullptr || m_out->rank() != dest.rank() || m_out->shape() != dest.shape()) {
+            m_out = std::make_unique<Tensor<T>>(dest.shape());
+        }
+        m_out->copy_from(dest);
+        return dest;
+    }
+
+    /**
      * Check to see if a layer has a shortcut
      */
     bool has_shortcut() const override {
@@ -433,54 +473,6 @@ public:
             data[index] = b;
             ++index;
         }
-        // Write the emb_dim
-        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
-            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_emb_dim))) {
-            data[index] = b;
-            ++index;
-        }
-        // Write the output_dim
-        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
-            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_output_dim))) {
-            data[index] = b;
-            ++index;
-        }
-        // Write the dropout rate
-        if (index + Numerics_NS::Accumulator<float>::_s_size >= target_size) {
-            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::float_to_int(c_dropout)))) {
-            data[index] = b;
-            ++index;
-        }
-        // Write the context_len
-        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
-            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_context_len))) {
-            data[index] = b;
-            ++index;
-        }
-        // Write the num_heads
-        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
-            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_num_heads))) {
-            data[index] = b;
-            ++index;
-        }
-        // Write the shortcut bool
-        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
-            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
-            data[index] = b;
-            ++index;
-        }
         // Write m_w_query Tensor
         if (index + m_w_query.s_size() >= target_size) {
             throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
@@ -505,6 +497,54 @@ public:
         std::memcpy(data + index, st.data(), st.size());
         index += st.size();
         st.clear();
+        // Write the emb_dim
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_emb_dim))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the output_dim
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_output_dim))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the context_len
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_context_len))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the num_heads
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_num_heads))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the dropout rate
+        if (index + Numerics_NS::Accumulator<float>::_s_size >= target_size) {
+            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::float_to_int(c_dropout)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the shortcut bool
+        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
+            throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
+            data[index] = b;
+            ++index;
+        }
         // Write the end magic number
         if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
             throw std::runtime_error("MultiHeadAttention.serialize: Error serializing -- invalid index or s_size.\n");

@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-23
+ * @version: 2026-10-26
  *
  * Notes:
  * Layer.hpp defines the interface for all layers used throughout the LLM. All normalization, activations, etc.,
@@ -63,12 +63,28 @@ public:
     virtual Tensor<T> forward(const AbstractTensor<T>& input) const = 0;
 
     /**
+     * Forward pass, saving the output to inside of each layer
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @returns Returns a reference to the output of the layer
+     */
+    virtual Tensor<T> forward_train(const AbstractTensor<T>& input) = 0;
+
+    /**
      * Forward function, performing the forward pass on the layer and writing the result
      * to a defined destination
      * @param input Const ref to an AbstractTensor serving as the input
+     * @param dest Reference to a Tensor to write the result to
      * @returns Returns a reference to the destination Tensor provided
      */
     virtual Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const = 0;
+
+    /**
+     * Forward pass, saving the output to inside of each layer
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @param dest Reference to a Tensor to write the result to
+     * @returns Returns a reference to the output of the layer
+     */
+    virtual Tensor<T>& forward_train(const AbstractTensor<T>& input, Tensor<T>& dest) = 0;
 
     /**
      * Check to see if a layer has a shortcut

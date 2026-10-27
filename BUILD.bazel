@@ -586,6 +586,22 @@ cc_binary(
     ],
 )
 
+# BPET Model Utility
+cc_binary(
+    name = "create-bpet-model",
+    srcs = glob(
+        [
+            "utils/CreateBPETModel.cpp"
+        ]
+    ),
+    copts = ["-Isrc/include"],
+    includes = [],
+    deps = [
+        ":bpe",
+        ":llmlog",
+    ],
+)
+
 cc_test(
     name = "tensor_test",
     size = "small",
@@ -671,4 +687,10 @@ cc_test(
         "@googletest//:gtest_main",
     ],
     tags = ["no-clang-tidy"],
+)
+
+filegroup(
+    name = "clang_tidy_config",
+    srcs = [".clang-tidy"],
+    visibility = ["//visibility:public"],
 )

@@ -50,7 +50,7 @@ int main() {
     try {
         
         log_message(Log_Priority::INFO, "main", "Initializing tokenizer");
-        auto tokenizer_ptr = std::make_shared<BytePairEncoding_NS::BytePairEncodingTokenizer>("./models/BPE.model");
+        auto tokenizer_ptr = std::make_shared<BytePairEncoding_NS::BytePairEncodingTokenizer>("./models/BPE3.model");
         BytePairEncoding_NS::BytePairEncodingTokenizer& BPET = *tokenizer_ptr;
         log_message(Log_Priority::INFO, "main", std::format("Tokenizer initialized with vocab size {}", BPET.vocab_size()));
 

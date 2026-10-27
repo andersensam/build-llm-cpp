@@ -48,6 +48,9 @@ build:clang-tidy --output_groups=report
 build:clang-tidy --cxxopt=-isystem/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/
 build:clang-tidy --build_tag_filters=-no-clang-tidy
 
+# Specialized header check
+build:header-tidy --@bazel_clang_tidy//:clang_tidy_config=//:clang_tidy_config
+
 # Building on Fedora 43 with custom LLVM22
 build:fedora --repo_env=CC=/mnt/kvm-nvme-0/llvm22/bin/clang
 build:fedora --repo_env=CXX=/mnt/kvm-nvme-0/llvm22/bin/clang++
@@ -55,3 +58,4 @@ build:fedora --repo_env=BAZEL_COMPILER=/mnt/kvm-nvme-0/llvm22/bin/clang
 build:fedora --repo_env=BAZEL_CXXOPTS=-stdlib=libc++
 build:fedora --repo_env=BAZEL_LINKOPTS=-stdlib=libc++ 
 build:fedora --cxxopt=-isystemlibc++/
+build:fedora --cxxopt=-march=native

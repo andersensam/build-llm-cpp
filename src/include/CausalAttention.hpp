@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-23
+ * @version: 2026-10-26
  *
  * General Notes:
  *
@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -66,6 +67,26 @@ class CausalAttention final : public Attention<T> {
 /* Private data elemenets */
 private:
     /**
+     * Query weights
+     */
+    Tensor<T> m_w_query = Tensor<T>({1});
+
+    /**
+     * Key weights
+     */
+    Tensor<T> m_w_key = Tensor<T>({1});
+
+    /**
+     * Value weights
+     */
+    Tensor<T> m_w_value = Tensor<T>({1});
+
+    /**
+     * Output of the layer, used in training
+     */
+    std::unique_ptr<Tensor<T>> m_out = nullptr;
+
+    /**
      * Embedding dimension
      */
     size_t c_emb_dim = 0;
@@ -85,21 +106,6 @@ private:
      */
     bool c_shortcut = false;
 
-    /**
-     * Query weights
-     */
-    Tensor<T> m_w_query = Tensor<T>({1});
-
-    /**
-     * Key weights
-     */
-    Tensor<T> m_w_key = Tensor<T>({1});
-
-    /**
-     * Value weights
-     */
-    Tensor<T> m_w_value = Tensor<T>({1});
-
 /* Public functions */
 public:
     // NOLINTBEGIN(bugprone-easily-swappable-parameters)
@@ -109,11 +115,11 @@ public:
      * @param output_dim Output dimension
      * @param dropout Float >= 0, < 1 (set to 0 to disable)
      */
-    CausalAttention(size_t emb_dim, size_t output_dim, float dropout, bool shortcut) : c_emb_dim(emb_dim), c_output_dim(output_dim), 
-                                                                                       c_dropout(dropout), c_shortcut(shortcut),
-                                                                                       m_w_query({emb_dim, output_dim}),
+    CausalAttention(size_t emb_dim, size_t output_dim, float dropout, bool shortcut) : m_w_query({emb_dim, output_dim}),
                                                                                        m_w_key({emb_dim, output_dim}),
-                                                                                       m_w_value({emb_dim, output_dim}) {
+                                                                                       m_w_value({emb_dim, output_dim}),
+                                                                                       c_emb_dim(emb_dim), c_output_dim(output_dim), 
+                                                                                       c_dropout(dropout), c_shortcut(shortcut) {
         // Ensure we get a dropout within the acceptable range
         if (dropout < 0 || dropout >= 1) {
             throw std::invalid_argument("CausalAttention.CausalAttention: Dropout must be >= 0, < 1.\n");
@@ -149,6 +155,18 @@ public:
         if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
             throw std::runtime_error("CausalAttention.CausalAttention: Template parameter does not match serialized dtype.\n");
         }
+        // Get m_w_query
+        if (index >= total_size) { throw std::runtime_error("CausalAttention.CausalAttention: Invalid index or total size for deserializing.\n"); }
+        m_w_query = Tensor<T>(s + index);
+        index += m_w_query.s_size();
+        // Get m_w_key
+        if (index >= total_size) { throw std::runtime_error("CausalAttention.CausalAttention: Invalid index or total size for deserializing.\n"); }
+        m_w_key = Tensor<T>(s + index);
+        index += m_w_key.s_size();
+        // Get m_w_value
+        if (index >= total_size) { throw std::runtime_error("CausalAttention.CausalAttention: Invalid index or total size for deserializing.\n"); }
+        m_w_value = Tensor<T>(s + index);
+        index += m_w_value.s_size();
         // Get emb_dim
         if (index >= total_size) { throw std::runtime_error("CausalAttention.CausalAttention: Invalid index or total size for deserializing.\n"); }
         c_emb_dim = Numerics_NS::from_bytes<size_t>(s, index);
@@ -170,26 +188,14 @@ public:
         if (c_dropout < 0 || c_dropout >= 1 || !std::isfinite(c_dropout)) {
             throw std::invalid_argument("CausalAttention.CausalAttention: Dropout must be >= 0, < 1.\n");
         }
-        // Get m_w_query
-        if (index >= total_size) { throw std::runtime_error("CausalAttention.CausalAttention: Invalid index or total size for deserializing.\n"); }
-        m_w_query = Tensor<T>(s + index);
-        index += m_w_query.s_size();
         // Validate m_w_query
         if (m_w_query.rank() != 2 || m_w_query.extent(0) != c_emb_dim || m_w_query.extent(1) != c_output_dim) {
             throw std::runtime_error("CausalAttention.CausalAttention: Invalid Tensor instantiated from serialized config.\n");
         }
-        // Get m_w_key
-        if (index >= total_size) { throw std::runtime_error("CausalAttention.CausalAttention: Invalid index or total size for deserializing.\n"); }
-        m_w_key = Tensor<T>(s + index);
-        index += m_w_key.s_size();
         // Validate m_w_key
         if (m_w_key.rank() != 2 || m_w_key.extent(0) != c_emb_dim || m_w_key.extent(1) != c_output_dim) {
             throw std::runtime_error("CausalAttention.CausalAttention: Invalid Tensor instantiated from serialized config.\n");
         }
-        // Get m_w_value
-        if (index >= total_size) { throw std::runtime_error("CausalAttention.CausalAttention: Invalid index or total size for deserializing.\n"); }
-        m_w_value = Tensor<T>(s + index);
-        index += m_w_value.s_size();
         // Validate m_w_value
         if (m_w_value.rank() != 2 || m_w_value.extent(0) != c_emb_dim || m_w_value.extent(1) != c_output_dim) {
             throw std::runtime_error("CausalAttention.CausalAttention: Invalid Tensor instantiated from serialized config.\n");
@@ -226,6 +232,22 @@ public:
         Tensor<T> result({input.extent(0), c_output_dim});
         forward(input, result);
         return result;
+    }
+
+    /**
+     * Forward pass, saving the output to m_out
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @returns Returns a reference to the output of the layer
+     */
+    Tensor<T> forward_train(const AbstractTensor<T>& input) override {
+        // Use the existing forward method and copy the output to m_out
+        Tensor<T> output = forward(input);
+        // Ensure m_out has the same rank and shape as output, then copy its data
+        if (m_out == nullptr || m_out->rank() != output.rank() || m_out->shape() != output.shape()) {
+            m_out = std::make_unique<Tensor<T>>(output.shape());
+        }
+        m_out->copy_from(output);
+        return output;
     }
 
     /**
@@ -272,6 +294,24 @@ public:
         }
         // Return the context
         return matmul(attn_scores, values, dest);
+    }
+
+    /**
+     * Forward function, performing the forward pass on the layer and writing the result
+     * to a defined destination, also copying to m_out for later
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
+     * @returns Returns a reference to the destination Tensor provided
+     */
+    Tensor<T>& forward_train(const AbstractTensor<T>& input, Tensor<T>& dest) override {
+        // Run the forward pass
+        forward(input, dest);
+        // Ensure m_out has the same rank and shape as dest, then copy its data
+        if (m_out == nullptr || m_out->rank() != dest.rank() || m_out->shape() != dest.shape()) {
+            m_out = std::make_unique<Tensor<T>>(dest.shape());
+        }
+        m_out->copy_from(dest);
+        return dest;
     }
 
     /**
@@ -341,6 +381,30 @@ public:
             data[index] = b;
             ++index;
         }
+        // Write m_w_query Tensor
+        if (index + m_w_query.s_size() >= target_size) {
+            throw std::runtime_error("CausalAttention.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        std::vector<char> st = m_w_query.serialize();
+        std::memcpy(data + index, st.data(), st.size());
+        index += st.size();
+        st.clear();
+        // Write m_w_key Tensor
+        if (index + m_w_key.s_size() >= target_size) {
+            throw std::runtime_error("CausalAttention.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        st = m_w_key.serialize();
+        std::memcpy(data + index, st.data(), st.size());
+        index += st.size();
+        st.clear();
+        // Write m_w_value Tensor
+        if (index + m_w_value.s_size() >= target_size) {
+            throw std::runtime_error("CausalAttention.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        st = m_w_value.serialize();
+        std::memcpy(data + index, st.data(), st.size());
+        index += st.size();
+        st.clear();
         // Write the emb_dim
         if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
             throw std::runtime_error("CausalAttention.serialize: Error serializing -- invalid index or s_size.\n");
@@ -373,30 +437,6 @@ public:
             data[index] = b;
             ++index;
         }
-        // Write m_w_query Tensor
-        if (index + m_w_query.s_size() >= target_size) {
-            throw std::runtime_error("CausalAttention.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        std::vector<char> st = m_w_query.serialize();
-        std::memcpy(data + index, st.data(), st.size());
-        index += st.size();
-        st.clear();
-        // Write m_w_key Tensor
-        if (index + m_w_key.s_size() >= target_size) {
-            throw std::runtime_error("CausalAttention.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        st = m_w_key.serialize();
-        std::memcpy(data + index, st.data(), st.size());
-        index += st.size();
-        st.clear();
-        // Write m_w_value Tensor
-        if (index + m_w_value.s_size() >= target_size) {
-            throw std::runtime_error("CausalAttention.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        st = m_w_value.serialize();
-        std::memcpy(data + index, st.data(), st.size());
-        index += st.size();
-        st.clear();
         // Write the end magic number
         if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
             throw std::runtime_error("CausalAttention.serialize: Error serializing -- invalid index or s_size.\n");

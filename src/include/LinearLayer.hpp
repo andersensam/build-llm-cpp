@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-23
+ * @version: 2026-10-26
  *
  * Notes:
  * LinearLayer.hpp defines a standard linear layer for use in the feed forward network (FFN)
@@ -26,6 +26,7 @@
 #include <cstring>
 #include <expected>
 #include <format>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -64,6 +65,16 @@ class LinearLayer final : public Layer<T> {
 /* Private data elements */
 private:
     /**
+     * Weight Tensor
+     */
+    Tensor<T> m_w = Tensor<T>({1});
+
+    /**
+     * Output of the layer, used in training
+     */
+    std::unique_ptr<Tensor<T>> m_out = nullptr;
+
+    /**
      * Input dimension
      */
     size_t c_input_dim = 0;
@@ -78,11 +89,6 @@ private:
      */
     bool c_shortcut = false;
 
-    /**
-     * Weight Tensor
-     */
-    Tensor<T> m_w = Tensor<T>({1});
-
 /* Public functions */
 public:
     // NOLINTBEGIN(bugprone-easily-swappable-parameters)
@@ -91,8 +97,8 @@ public:
      * @param in_dim Input dimension
      * @param out_dim Output dimension
      */
-    LinearLayer(size_t in_dim, size_t out_dim, bool shortcut) : c_input_dim(in_dim), c_output_dim(out_dim), c_shortcut(shortcut),
-                                                                m_w({c_input_dim, c_output_dim}) {
+    LinearLayer(size_t in_dim, size_t out_dim, bool shortcut) : m_w({in_dim, out_dim}), c_input_dim(in_dim), 
+                                                                c_output_dim(out_dim), c_shortcut(shortcut) {
         // Ensure we have proper in and out dims
         if (c_input_dim == 0 || c_output_dim == 0) {
             throw std::invalid_argument("LinearLayer.LinearLayer: Input and output dims cannot be 0.\n");
@@ -131,6 +137,10 @@ public:
         if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
             throw std::runtime_error("LinearLayer.LinearLayer: Template parameter does not match serialized dtype.\n");
         }
+        // Initialize the m_w Tensor
+        if (index >= total_size) { throw std::runtime_error("LinearLayer.LinearLayer: Invalid index or total size for deserializing.\n"); }
+        m_w = Tensor<T>(s + index);
+        index += m_w.s_size();
         // Get the input dim
         if (index >= total_size) { throw std::runtime_error("LinearLayer.LinearLayer: Invalid index or total size for deserializing.\n"); }
         c_input_dim = Numerics_NS::from_bytes<size_t>(s, index);
@@ -143,10 +153,6 @@ public:
         // Get c_shortcut and cast to bool
         if (index >= total_size) { throw std::runtime_error("LinearLayer.LinearLayer: Invalid index or total size for deserializing.\n"); }
         c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
-        // Initialize the m_w Tensor
-        if (index >= total_size) { throw std::runtime_error("LinearLayer.LinearLayer: Invalid index or total size for deserializing.\n"); }
-        m_w = Tensor<T>(s + index);
-        index += m_w.s_size();
         // Validate m_w_pos_emb Tensor has the correct properties
         if (m_w.rank() != 2 || m_w.extent(0) != c_input_dim || m_w.extent(1) != c_output_dim) {
             throw std::runtime_error("LinearLayer.LinearLayer: Invalid Tensor instantiated from serialized config.\n");
@@ -194,8 +200,26 @@ public:
     }
 
     /**
+     * Forward pass, saving the output to m_out
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @returns Returns a reference to the output of the layer
+     */
+    Tensor<T> forward_train(const AbstractTensor<T>& input) override {
+        // Use the existing forward method and copy the output to m_out
+        Tensor<T> output = forward(input);
+        // Ensure m_out has the same rank and shape as output, then copy its data
+        if (m_out == nullptr || m_out->rank() != output.rank() || m_out->shape() != output.shape()) {
+            m_out = std::make_unique<Tensor<T>>(output.shape());
+        }
+        m_out->copy_from(output);
+        return output;
+    }
+
+    /**
      * Forward function, performing the forward pass on the layer and writing the result
      * to a defined destination
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
      * @returns Returns a reference to the destination Tensor provided
      */
     Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const override {
@@ -226,6 +250,24 @@ public:
         }
         // Execute the matmul
         return TensorMatmul_NS::matmul(input, m_w, dest);
+    }
+
+    /**
+     * Forward function, performing the forward pass on the layer and writing the result
+     * to a defined destination, also copying to m_out for later
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
+     * @returns Returns a reference to the destination Tensor provided
+     */
+    Tensor<T>& forward_train(const AbstractTensor<T>& input, Tensor<T>& dest) override {
+        // Run the forward pass
+        forward(input, dest);
+        // Ensure m_out has the same rank and shape as dest, then copy its data
+        if (m_out == nullptr || m_out->rank() != dest.rank() || m_out->shape() != dest.shape()) {
+            m_out = std::make_unique<Tensor<T>>(dest.shape());
+        }
+        m_out->copy_from(dest);
+        return dest;
     }
 
     /**
@@ -293,6 +335,14 @@ public:
             data[index] = b;
             ++index;
         }
+        // Add the m_w Tensor
+        if (index + m_w.s_size() >= target_size) {
+            throw std::runtime_error("LinearLayer.serialize: Error serializing LinearLayer -- invalid index or s_size.\n");
+        }
+        std::vector<char> m_w_vector = m_w.serialize();
+        // Copy the contents into our output
+        std::memcpy(data + index, m_w_vector.data(), m_w_vector.size());
+        index += m_w_vector.size();
         // Write the input dim
         if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
             throw std::runtime_error("LinearLayer.serialize: Error serializing LinearLayer -- invalid index or s_size.\n");
@@ -317,14 +367,6 @@ public:
             data[index] = b;
             ++index;
         }
-        // Add the m_w Tensor
-        if (index + m_w.s_size() >= target_size) {
-            throw std::runtime_error("LinearLayer.serialize: Error serializing LinearLayer -- invalid index or s_size.\n");
-        }
-        std::vector<char> m_w_vector = m_w.serialize();
-        // Copy the contents into our output
-        std::memcpy(data + index, m_w_vector.data(), m_w_vector.size());
-        index += m_w_vector.size();
         // Write the LinearLayer start magic number
         if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
             throw std::runtime_error("LinearLayer.serialize: Error serializing LinearLayer -- invalid index or s_size.\n");

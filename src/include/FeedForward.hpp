@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-23
+ * @version: 2026-10-26
  *
  * FeedForward.hpp: The main feed-forward layer
  * 
@@ -70,21 +70,6 @@ class FeedForward final : public Layer<T> {
 /* Private data elements */
 private:
     /**
-     * Input dimension
-     */
-    size_t c_emb_dim = 0;
-
-    /**
-     * Output dimension
-     */
-    size_t c_scale_dim = 0;
-
-    /**
-     * Whether a shortcut connection comes after this layer
-     */
-    bool c_shortcut = false;
-
-    /**
      * First Linear Layer, where we scale up the dims input
      */
     std::unique_ptr<LinearLayer<T>> m_linear_0 = nullptr;
@@ -99,15 +84,30 @@ private:
      */
     std::unique_ptr<LinearLayer<T>> m_linear_1 = nullptr;
 
+    /**
+     * Input dimension
+     */
+    size_t c_emb_dim = 0;
+
+    /**
+     * Output dimension
+     */
+    size_t c_scale_dim = 0;
+
+    /**
+     * Whether a shortcut connection comes after this layer
+     */
+    bool c_shortcut = false;
+
 /* Public functions */
 public:
     /**
      * Default constructor for FeedForward
      */
-    FeedForward(size_t emb_dim, size_t scale_dim, bool shortcut) : c_emb_dim(emb_dim), c_scale_dim(scale_dim), c_shortcut(shortcut),
-                                                                   m_linear_0(std::make_unique<LinearLayer<T>>(emb_dim, scale_dim * emb_dim, false)),
+    FeedForward(size_t emb_dim, size_t scale_dim, bool shortcut) : m_linear_0(std::make_unique<LinearLayer<T>>(emb_dim, scale_dim * emb_dim, false)),
                                                                    m_gelu(std::make_unique<GELULayer<T>>(false)),
-                                                                   m_linear_1(std::make_unique<LinearLayer<T>>(scale_dim * emb_dim, emb_dim, false)) {
+                                                                   m_linear_1(std::make_unique<LinearLayer<T>>(scale_dim * emb_dim, emb_dim, false)),
+                                                                   c_emb_dim(emb_dim), c_scale_dim(scale_dim), c_shortcut(shortcut) {
         // Ensure we have valid embedding and scale dims
         if (c_emb_dim == 0 || c_scale_dim == 0) {
             throw std::invalid_argument("FeedForward.FeedForward: Invalid embedding or scale dim.\n");
@@ -138,19 +138,6 @@ public:
         if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
             throw std::runtime_error("FeedForward.FeedForward: Template parameter does not match serialized dtype.\n");
         }
-        // Get the emb_dim
-        if (index >= total_size) { throw std::runtime_error("FeedForward.FeedForward: Invalid index or total size for deserializing.\n"); }
-        c_emb_dim = Numerics_NS::from_bytes<size_t>(s, index);
-        // Get the scale_dim
-        if (index >= total_size) { throw std::runtime_error("FeedForward.FeedForward: Invalid index or total size for deserializing.\n"); }
-        c_scale_dim = Numerics_NS::from_bytes<size_t>(s, index);
-        // Validate emb_dim and scale_dim
-        if (c_emb_dim == 0 || c_scale_dim == 0) {
-            throw std::invalid_argument("FeedForward.FeedForward: Invalid embedding or scale dim.\n");
-        }
-        // Get the shortcut bool
-        if (index >= total_size) { throw std::runtime_error("FeedForward.FeedForward: Invalid index or total size for deserializing.\n"); }
-        c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
         // Instantiate m_linear_0
         if (index >= total_size) { throw std::runtime_error("FeedForward.FeedForward: Invalid index or total size for deserializing.\n"); }
         m_linear_0 = std::make_unique<LinearLayer<T>>(s + index);
@@ -164,6 +151,19 @@ public:
         if (index >= total_size) { throw std::runtime_error("FeedForward.FeedForward: Invalid index or total size for deserializing.\n"); }
         m_linear_1 = std::make_unique<LinearLayer<T>>(s + index);
         index += m_linear_1->s_size();
+        // Get the emb_dim
+        if (index >= total_size) { throw std::runtime_error("FeedForward.FeedForward: Invalid index or total size for deserializing.\n"); }
+        c_emb_dim = Numerics_NS::from_bytes<size_t>(s, index);
+        // Get the scale_dim
+        if (index >= total_size) { throw std::runtime_error("FeedForward.FeedForward: Invalid index or total size for deserializing.\n"); }
+        c_scale_dim = Numerics_NS::from_bytes<size_t>(s, index);
+        // Validate emb_dim and scale_dim
+        if (c_emb_dim == 0 || c_scale_dim == 0) {
+            throw std::invalid_argument("FeedForward.FeedForward: Invalid embedding or scale dim.\n");
+        }
+        // Get the shortcut bool
+        if (index >= total_size) { throw std::runtime_error("FeedForward.FeedForward: Invalid index or total size for deserializing.\n"); }
+        c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
         // Ensure the end magic number is valid
         if (index >= total_size) { throw std::runtime_error("FeedForward.FeedForward: Invalid index or total size for deserializing.\n"); }
         u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
@@ -204,6 +204,25 @@ public:
     }
 
     /**
+     * Forward pass, saving the output to m_out
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @returns Returns a reference to the output of the layer
+     */
+    Tensor<T> forward_train(const AbstractTensor<T>& input) override {
+        // Ensure we have a rank 2 Tensor
+        if (input.rank() != 2) {
+            throw std::invalid_argument("FeedForward.forward_train: Input Tensor must have rank == 2.\n");
+        }
+        // Ensure that the 2nd dim of input == emb_dim
+        if (input.extent(1) != c_emb_dim) {
+            throw std::invalid_argument("FeedForward.forward_train: Input Tensor's second dim must be emb_dim.\n");
+        }
+        Tensor<T> result(input.shape());
+        forward_train(input, result);
+        return result;
+    }
+
+    /**
      * Forward function, performing the forward pass on the layer and writing the result
      * to a defined destination
      * @param input Const ref to an AbstractTensor serving as the input
@@ -234,6 +253,40 @@ public:
         Tensor<T> int_res = m_linear_0->forward(input);
         m_gelu->forward(int_res, int_res);
         return m_linear_1->forward(int_res, dest);
+    }
+
+    /**
+     * Forward function, performing the forward pass on the layer and writing the result
+     * to a defined destination, also copying to m_out for later
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
+     * @returns Returns a reference to the destination Tensor provided
+     */
+    Tensor<T>& forward_train(const AbstractTensor<T>& input, Tensor<T>& dest) override {
+        // Ensure we have a rank 2 Tensor
+        if (input.rank() != 2 || dest.rank() != 2) {
+            throw std::invalid_argument("FeedForward.forward_train: Input and dest Tensors must have rank == 2.\n");
+        }
+        // Ensure that the 2nd dim of input == emb_dim
+        if (input.extent(1) != c_emb_dim) {
+            throw std::invalid_argument("FeedForward.forward_train: Input Tensor's second dim must be emb_dim.\n");
+        }
+        // Ensure that the 2nd dim of input == emb_dim
+        if (input.shape() != dest.shape()) {
+            throw std::invalid_argument("FeedForward.forward_train: Input and dest must have the same shape.\n");
+        }
+        if (!dest.is_unique(input)) {
+            if constexpr (LAYER_PREFER_TEMP_DESTINATION_OVER_EXCEPTION) {
+                Tensor<T> temp_dest = dest.clone();
+                forward(input, temp_dest);
+                return dest.copy_from(temp_dest);
+            }
+            throw std::invalid_argument("FeedForward.forward_train: Input and destination Tensors must be unique.\n");
+        }
+        // Perform the forward operation: m_linear_0 --> m_gelu --> m_linear_1
+        Tensor<T> int_res = m_linear_0->forward_train(input);
+        m_gelu->forward_train(int_res, int_res);
+        return m_linear_1->forward_train(int_res, dest);
     }
 
     /**
@@ -305,30 +358,6 @@ public:
             data[index] = b;
             ++index;
         }
-        // Write the emb_dim
-        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
-            throw std::runtime_error("FeedForward.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_emb_dim))) {
-            data[index] = b;
-            ++index;
-        }
-        // Write the scale_dim
-        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
-            throw std::runtime_error("FeedForward.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_scale_dim))) {
-            data[index] = b;
-            ++index;
-        }
-        // Write the shortcut bool
-        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
-            throw std::runtime_error("FeedForward.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
-            data[index] = b;
-            ++index;
-        }
         // Write m_linear_0
         if (index + m_linear_0->s_size() >= target_size) {
             throw std::runtime_error("FeedForward.serialize: Error serializing -- invalid index or s_size.\n");
@@ -353,6 +382,30 @@ public:
         std::memcpy(data + index, lin1.data(), lin1.size());
         index += lin1.size();
         lin1.clear();
+        // Write the emb_dim
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("FeedForward.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_emb_dim))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the scale_dim
+        if (index + Numerics_NS::Accumulator<size_t>::_s_size >= target_size) {
+            throw std::runtime_error("FeedForward.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(c_scale_dim))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the shortcut bool
+        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
+            throw std::runtime_error("FeedForward.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
+            data[index] = b;
+            ++index;
+        }
         // Write the end magic number
         if (index + Numerics_NS::Accumulator<uint32_t>::_s_size > target_size) {
             throw std::runtime_error("FeedForward.serialize: Error serializing -- invalid index or s_size.\n");

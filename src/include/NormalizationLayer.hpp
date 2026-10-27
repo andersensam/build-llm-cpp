@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-23
+ * @version: 2026-10-26
  *
  * Notes:
  * NormalizationLayer.hpp
@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -70,14 +71,9 @@ class NormalizationLayer final : public Layer<T> {
 /* Private data elements */
 private:
     /**
-     * Epsilon constant to prevent divide by zero (which shouldn't be possible due to extent())
+     * Output of the layer, used in training
      */
-    static constexpr T eps = 0.00001;
-
-    /**
-     * Whether a shortcut connection comes after this layer
-     */
-    bool c_shortcut = false;
+    std::unique_ptr<Tensor<T>> m_out = nullptr;
 
     /**
      * Scale scalar, used for scaling the output up or down
@@ -88,6 +84,16 @@ private:
      * Shift scalar, used for shifting the output closer to / further from zero
      */
     T m_shift = 0;
+
+    /**
+     * Epsilon constant to prevent divide by zero (which shouldn't be possible due to extent())
+     */
+    static constexpr T eps = 0.00001;
+
+    /**
+     * Whether a shortcut connection comes after this layer
+     */
+    bool c_shortcut = false;
 
 /* Public functions */
 public:
@@ -126,15 +132,15 @@ public:
         if (u32_b != Numerics_NS::Accumulator<T>::_base_type_mn) {
             throw std::runtime_error("NormalizationLayer.NormalizationLayer: Template parameter does not match serialized dtype.\n");
         }
-        // Get the shortcut bool
-        if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
-        c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
         // Get the scale scalar
         if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
         m_scale = Numerics_NS::int_to_float<T>(Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<T>::serialize_as>(s, index));
         // Get the shift scalar
         if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
         m_shift = Numerics_NS::int_to_float<T>(Numerics_NS::from_bytes<typename Numerics_NS::Accumulator<T>::serialize_as>(s, index));
+        // Get the shortcut bool
+        if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
+        c_shortcut = Numerics_NS::from_bytes<uint8_t>(s, index) == 1 ? true : false;
         // Ensure the end magic number is valid
         if (index >= total_size) { throw std::runtime_error("NormalizationLayer.NormalizationLayer: Invalid index or total size for deserializing.\n"); }
         u32_b = Numerics_NS::from_bytes<uint32_t>(s, index);
@@ -157,6 +163,7 @@ public:
     /**
      * Forward function, performing the forward pass on the layer and returning a reference
      * to itself with the computation complete
+     * @param input Const ref to an AbstractTensor serving as the input
      * @returns Returns a new Tensor with the result
      */
     Tensor<T> forward(const AbstractTensor<T>& input) const override {
@@ -170,8 +177,26 @@ public:
     }
 
     /**
+     * Forward pass, saving the output to m_out
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @returns Returns a reference to the output of the layer
+     */
+    Tensor<T> forward_train(const AbstractTensor<T>& input) override {
+        // Use the existing forward method and copy the output to m_out
+        Tensor<T> output = forward(input);
+        // Ensure m_out has the same rank and shape as output, then copy its data
+        if (m_out == nullptr || m_out->rank() != output.rank() || m_out->shape() != output.shape()) {
+            m_out = std::make_unique<Tensor<T>>(output.shape());
+        }
+        m_out->copy_from(output);
+        return output;
+    }
+
+    /**
      * Forward function, performing the forward pass on the layer and writing the result
      * to a defined destination
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
      * @returns Returns a reference to the destination Tensor provided
      */
     Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const override {
@@ -196,7 +221,8 @@ public:
     /**
      * Forward function, performing the forward pass on the layer and writing the result
      * to a defined destination
-     * @param input Const ref to a Tensor serving as the input
+     * @param input Const ref to a Tensor serving as input
+     * @param dest Reference to a Tensor to store the result in
      * @returns Returns a reference to the destination Tensor provided
      */
     Tensor<T>& forward(const Tensor<T>& input, Tensor<T>& dest) const {
@@ -246,6 +272,24 @@ public:
         // Scale and shift the output
         dest *= m_scale;
         dest += m_shift;
+        return dest;
+    }
+
+    /**
+     * Forward function, performing the forward pass on the layer and writing the result
+     * to a defined destination, also copying to m_out for later
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
+     * @returns Returns a reference to the destination Tensor provided
+     */
+    Tensor<T>& forward_train(const AbstractTensor<T>& input, Tensor<T>& dest) override {
+        // Run the forward pass
+        forward(input, dest);
+        // Ensure m_out has the same rank and shape as dest, then copy its data
+        if (m_out == nullptr || m_out->rank() != dest.rank() || m_out->shape() != dest.shape()) {
+            m_out = std::make_unique<Tensor<T>>(dest.shape());
+        }
+        m_out->copy_from(dest);
         return dest;
     }
 
@@ -314,14 +358,6 @@ public:
             data[index] = b;
             ++index;
         }
-        // Write the shortcut bool
-        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
-            throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
-        }
-        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
-            data[index] = b;
-            ++index;
-        }
         // Write the scale scalar
         if (index + Numerics_NS::Accumulator<T>::_s_size >= target_size) {
             throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
@@ -335,6 +371,14 @@ public:
             throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
         }
         for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(Numerics_NS::float_to_int(m_shift)))) {
+            data[index] = b;
+            ++index;
+        }
+        // Write the shortcut bool
+        if (index + Numerics_NS::Accumulator<uint8_t>::_s_size >= target_size) {
+            throw std::runtime_error("NormalizationLayer.serialize: Error serializing -- invalid index or s_size.\n");
+        }
+        for (auto b : Numerics_NS::bytes(Numerics_NS::to_little_endian(static_cast<uint8_t>(c_shortcut ? 1 : 0)))) {
             data[index] = b;
             ++index;
         }

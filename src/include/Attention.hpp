@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-23
+ * @version: 2026-10-26
  *
  * General Notes:
  *
@@ -66,12 +66,28 @@ public:
     Tensor<T> forward(const AbstractTensor<T>& input) const override = 0;
 
     /**
+     * Forward pass, saving the output to inside of each layer
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @returns Returns a reference to the output of the layer
+     */
+    Tensor<T> forward_train(const AbstractTensor<T>& input) override = 0;
+
+    /**
      * Run the forward pass of attention, returning a context Tensor for the inputs
      * @param input Const ref to the input AbstractTensor
      * @param dest Reference to a Tensor to store the output
      * @returns Returns a reference to the dest Tensor with the calculated context
      */
     Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const override = 0;
+
+    /**
+     * Forward function, performing the forward pass on the layer and writing the result
+     * to a defined destination, also copying to m_out for later
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
+     * @returns Returns a reference to the destination Tensor provided
+     */
+    Tensor<T>& forward_train(const AbstractTensor<T>& input, Tensor<T>& dest) override = 0;
 
     /**
      * Check to see if a layer has a shortcut

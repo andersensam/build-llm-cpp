@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-23
+ * @version: 2026-10-26
  *
  * GPTModel.hpp: A GPT-like model implementation
  */
@@ -194,6 +194,13 @@ public:
     Tensor<float> forward(const AbstractTensor<size_t>& input) const override;
 
     /**
+     * Forward pass, saving the output to inside of each layer
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @returns Returns a reference to the output of the layer
+     */
+    Tensor<float> forward_train(const AbstractTensor<size_t>& input) override;
+
+    /**
      * Run the forward pass of the model, accepting an AbstractTensor of input tokens
      * and returning a reference to the destination Tensor, containing the logits
      * @param input Const ref to an AbstractTensor of shape [batch_size, seq_len]
@@ -203,6 +210,14 @@ public:
     Tensor<float>& forward(const AbstractTensor<size_t>& input, Tensor<float>& dest) const override;
 
     /**
+     * Forward pass, saving the output to inside of each layer
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @param dest Reference to a Tensor to write the result to, shape [batch_size, seq_len, vocab_size]
+     * @returns Returns a reference to the dest Tensor
+     */
+    Tensor<float>& forward_train(const AbstractTensor<size_t>& input, Tensor<float>& dest) override;
+
+    /**
      * Run the forward pass of the model, accepting a Tensor of input tokens
      * and returning a reference to the destination Tensor, containing the logits
      * @param input Const ref to a Tensor of shape [batch_size, seq_len]
@@ -210,6 +225,14 @@ public:
      * @returns Returns a reference to the dest Tensor
      */
     Tensor<float>& forward(const Tensor<size_t>& input, Tensor<float>& dest) const;
+
+    /**
+     * Forward pass, saving the output to inside of each layer
+     * @param input Const ref to a Tensor serving as the input
+     * @param dest Reference to a Tensor to write the result to, shape [batch_size, seq_len, vocab_size]
+     * @returns Returns a reference to the dest Tensor
+     */
+    Tensor<float>& forward_train(const Tensor<size_t>& input, Tensor<float>& dest);    
 
     /**
      * Get information about the model

@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-23
+ * @version: 2026-10-26
  *
  * Notes:
  * GELULayer.hpp defines a Gaussian error linear unit activation layer
@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <memory>
 #include <numbers>
 #include <stdexcept>
 #include <string>
@@ -62,6 +63,11 @@ requires std::is_floating_point_v<T>
 class GELULayer final : public Layer<T> {
 /* Private data elements */
 private:
+    /**
+     * Output of the layer, used in training
+     */
+    std::unique_ptr<Tensor<T>> m_out = nullptr;
+
     /**
      * Constant used by the GELU activation function
      */
@@ -149,8 +155,26 @@ public:
     }
 
     /**
+     * Forward pass, saving the output to m_out
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @returns Returns a reference to the output of the layer
+     */
+    Tensor<T> forward_train(const AbstractTensor<T>& input) override {
+        // Use the existing forward method and copy the output to m_out
+        Tensor<T> output = forward(input);
+        // Ensure m_out has the same rank and shape as output, then copy its data
+        if (m_out == nullptr || m_out->rank() != output.rank() || m_out->shape() != output.shape()) {
+            m_out = std::make_unique<Tensor<T>>(output.shape());
+        }
+        m_out->copy_from(output);
+        return output;
+    }
+
+    /**
      * Forward function, performing the forward pass on the layer and writing the result
      * to a defined destination
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
      * @returns Returns a reference to the destination Tensor provided
      */
     Tensor<T>& forward(const AbstractTensor<T>& input, Tensor<T>& dest) const override {
@@ -190,6 +214,24 @@ public:
         x *= _scale_const;
         // Multiply dest * x to get the final result
         dest *= x;
+        return dest;
+    }
+
+    /**
+     * Forward function, performing the forward pass on the layer and writing the result
+     * to a defined destination, also copying to m_out for later
+     * @param input Const ref to an AbstractTensor serving as input
+     * @param dest Reference to a Tensor to store the result in
+     * @returns Returns a reference to the destination Tensor provided
+     */
+    Tensor<T>& forward_train(const AbstractTensor<T>& input, Tensor<T>& dest) override {
+        // Run the forward pass
+        forward(input, dest);
+        // Ensure m_out has the same rank and shape as dest, then copy its data
+        if (m_out == nullptr || m_out->rank() != dest.rank() || m_out->shape() != dest.shape()) {
+            m_out = std::make_unique<Tensor<T>>(dest.shape());
+        }
+        m_out->copy_from(dest);
         return dest;
     }
 
