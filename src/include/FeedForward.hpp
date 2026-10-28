@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-26
+ * @version: 2026-10-27
  *
  * FeedForward.hpp: The main feed-forward layer
  * 
@@ -278,7 +278,7 @@ public:
         if (!dest.is_unique(input)) {
             if constexpr (LAYER_PREFER_TEMP_DESTINATION_OVER_EXCEPTION) {
                 Tensor<T> temp_dest = dest.clone();
-                forward(input, temp_dest);
+                forward_train(input, temp_dest);
                 return dest.copy_from(temp_dest);
             }
             throw std::invalid_argument("FeedForward.forward_train: Input and destination Tensors must be unique.\n");

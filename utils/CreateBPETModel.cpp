@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-24
+ * @version: 2026-10-27
  *
  * General Notes:
  *
@@ -18,6 +18,7 @@
  */
 
 /* Standard dependencies */
+#include <array>
 #include <format>
 #include <iostream>
 #include <stdexcept>
@@ -39,12 +40,27 @@ int main() {
 
     try {
         log_message(Log_Priority::INFO, "main", "Initializing new BPE Tokenizer");
-        std::string path = "models/BPE3.model";
+        std::string path = "models/BPE4.model";
         BytePairEncodingTokenizer BPET;
+        // Create an array of file names
+        const std::string data_path = "./data";
+        std::array<std::string, 9> input_files = {
+            "en_random_0.txt",
+            "pg1342.txt",
+            "pg1661.txt",
+            "pg1727.txt",
+            "pg2600.txt",
+            "pg2701.txt",
+            "pg64317.txt",
+            "the-verdict.txt",
+            "zh_random_0.txt"
+        };
         // Ingest new data into the tokenizer
-        BPET.update_vocabulary_from_file("./data/the-verdict.txt");
-        BPET.update_vocabulary_from_file("./data/en_random_0.txt");
-        BPET.update_vocabulary_from_file("./data/zh_random_0.txt");
+        for (const auto& file : input_files) {
+            log_message(Log_Priority::INFO, "main", std::format("Updating BPE model with data from: {}/{}.", data_path, file));
+            BPET.update_vocabulary_from_file(std::format("{}/{}", data_path, file));
+            log_message(Log_Priority::INFO, "main", std::format("Updated BPE vocabulary. New vocab size: {}", BPET.vocab_size()));
+        }
         // Write the model
         BPET.save_to_file(path);
         log_message(Log_Priority::INFO, "main", std::format("Finished writing BPE model to {}. Vocab size: {}", path, BPET.vocab_size()));

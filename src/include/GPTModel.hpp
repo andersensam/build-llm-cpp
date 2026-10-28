@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-26
+ * @version: 2026-10-27
  *
  * GPTModel.hpp: A GPT-like model implementation
  */
@@ -19,14 +19,9 @@
 #define GPT_MODEL_HPP
 
 /* Standard dependencies */
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <format>
-#include <limits>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -38,12 +33,9 @@
 #include "Embedding.hpp"
 #include "LinearLayer.hpp"
 #include "ListTensorSlice.hpp"
-#include "Log.hpp"
 #include "Model.hpp"
 #include "NormalizationLayer.hpp"
-#include "Numerics.hpp"
 #include "Tensor.hpp"
-#include "TensorUtils.hpp"
 #include "TransformerBlock.hpp"
 
 namespace GPTModel_NS {
@@ -194,13 +186,6 @@ public:
     Tensor<float> forward(const AbstractTensor<size_t>& input) const override;
 
     /**
-     * Forward pass, saving the output to inside of each layer
-     * @param input Const ref to an AbstractTensor serving as the input
-     * @returns Returns a reference to the output of the layer
-     */
-    Tensor<float> forward_train(const AbstractTensor<size_t>& input) override;
-
-    /**
      * Run the forward pass of the model, accepting an AbstractTensor of input tokens
      * and returning a reference to the destination Tensor, containing the logits
      * @param input Const ref to an AbstractTensor of shape [batch_size, seq_len]
@@ -208,14 +193,6 @@ public:
      * @returns Returns a reference to the dest Tensor
      */
     Tensor<float>& forward(const AbstractTensor<size_t>& input, Tensor<float>& dest) const override;
-
-    /**
-     * Forward pass, saving the output to inside of each layer
-     * @param input Const ref to an AbstractTensor serving as the input
-     * @param dest Reference to a Tensor to write the result to, shape [batch_size, seq_len, vocab_size]
-     * @returns Returns a reference to the dest Tensor
-     */
-    Tensor<float>& forward_train(const AbstractTensor<size_t>& input, Tensor<float>& dest) override;
 
     /**
      * Run the forward pass of the model, accepting a Tensor of input tokens
@@ -227,12 +204,13 @@ public:
     Tensor<float>& forward(const Tensor<size_t>& input, Tensor<float>& dest) const;
 
     /**
-     * Forward pass, saving the output to inside of each layer
-     * @param input Const ref to a Tensor serving as the input
-     * @param dest Reference to a Tensor to write the result to, shape [batch_size, seq_len, vocab_size]
-     * @returns Returns a reference to the dest Tensor
+     * Train on an input / batch of inputs, accepting both input for generation
+     * and target token ids to calculate gradients for the backward pass
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @param target Const ref to an AbstractTensor containing the target token ids
+     * @returns Returns a Tensor containing the loss per batch
      */
-    Tensor<float>& forward_train(const Tensor<size_t>& input, Tensor<float>& dest);    
+    Tensor<float> train(const AbstractTensor<size_t>& input, const AbstractTensor<size_t>& target) override; 
 
     /**
      * Get information about the model

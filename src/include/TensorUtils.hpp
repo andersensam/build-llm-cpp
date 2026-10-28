@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-07
+ * @version: 2026-10-27
  *
  * Notes:
  *
@@ -24,6 +24,7 @@
 #define TENSOR_UTILS_HPP
 
 /* Standard dependencies */
+#include <cmath>
 #include <cstddef>
 #include <stdexcept>
 #include <type_traits>
@@ -32,6 +33,7 @@
 /* Local dependencies */
 #include "AbstractTensor.hpp"
 #include "Tensor.hpp"
+#include "TensorMath.hpp"
 
 namespace TensorUtils_NS {
 
@@ -177,6 +179,27 @@ void copy_2d_tensor_filtered_dim(const Tensor<T>& src, size_t src_filter_dim, si
     }
 }
 // NOLINTEND(bugprone-easily-swappable-parameters)
+
+/**
+ * Scan a Tensor and replace values that would result in underflow with a specified value
+ * @param target Reference to a Tensor to apply the transformation to
+ * @returns Returns a reference to the target Tensor
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+Tensor<T>& underflow_to_val(Tensor<T>& target, T replacement_val) {
+    // Use the vectorized kernel in TensorMath if working with contiguous memory
+    if (target.is_contiguous()) {
+        TensorMath_NS::_replace_underflow_with_val(target._data(), target.offset(), target.elements(), replacement_val);
+        return target;
+    }
+    // Otherwise loop over the elements in the Tensor and run the same transformation
+    for (size_t i = 0; i < target.elements(); ++i) {
+        T& val = target.at(i);
+        val = (std::abs(val) < std::numeric_limits<T>::min()) ? replacement_val : val;
+    }
+    return target;
+}
 
 }; // namespace TensorUtils_NS
 

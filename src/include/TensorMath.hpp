@@ -10,7 +10,7 @@
  *                                                                     
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-05
+ * @version: 2026-10-27
  *
  * Notes:
  * This file is full of boilerplate code; however, given the variance on __restrict__ and the ability
@@ -3298,6 +3298,24 @@ void _unsafe_float_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset,
 
     for (size_t i = 0; i < elements; ++i) {
         result_ptr[result_offset + i] = lhs_ptr[lhs_offset + i] / rhs;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for values that would cause underflow for
+ * floating point types, replacing them with a specific value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param replacement_Val Value to replace the tiny ones with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_underflow_with_val(T* lhs_ptr, size_t lhs_offset, size_t elements, T replacement_val) {
+    // Use numeric limits to get the bound
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (std::abs(val) < std::numeric_limits<T>::min()) ? replacement_val : val;
     }
 }
 // NOLINTEND(bugprone-easily-swappable-parameters, cppcoreguidelines-pro-bounds-pointer-arithmetic)

@@ -124,10 +124,12 @@ public:
         if (dropout < 0 || dropout >= 1) {
             throw std::invalid_argument("CausalAttention.CausalAttention: Dropout must be >= 0, < 1.\n");
         }
+        // Calculate the bounds for random weight initialization
+        const T bound = static_cast<T>(1.0 / std::sqrt(static_cast<T>(c_emb_dim)));
         // Initialize the three matrices with random values
-        m_w_query.random(-2, 2);
-        m_w_key.random(-2, 2);
-        m_w_value.random(-2, 2);
+        m_w_query.random(-bound, bound);
+        m_w_key.random(-bound, bound);
+        m_w_value.random(-bound, bound);
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)
 

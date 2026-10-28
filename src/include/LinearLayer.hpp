@@ -104,11 +104,16 @@ public:
             throw std::invalid_argument("LinearLayer.LinearLayer: Input and output dims cannot be 0.\n");
         }
         // Initialize the Tensor to have random weights
-        if constexpr (std::is_unsigned_v<T>) {
+        if constexpr (std::is_floating_point_v<T>) {
+            // Calculate the bounds for random weight initialization
+            const T bound = static_cast<T>(std::sqrt(3.0f / static_cast<float>(c_input_dim)));
+            m_w.random(-bound, bound);
+        }
+        else if constexpr (std::is_unsigned_v<T>) {
             m_w.random(0, 2);
         }
         else {
-            m_w.random(-2, 2);
+            m_w.random(-1, 1);
         }
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)

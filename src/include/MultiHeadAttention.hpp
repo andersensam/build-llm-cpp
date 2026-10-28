@@ -159,9 +159,11 @@ public:
         }
         c_head_dim = c_output_dim / c_num_heads;
         // Initialize the three matrices with random values
-        m_w_query.random(-2, 2);
-        m_w_key.random(-2, 2);
-        m_w_value.random(-2, 2);
+        // Calculate the bounds for random weight initialization
+        const T bound = static_cast<T>(std::sqrt(3.0f / static_cast<float>(c_emb_dim)));
+        m_w_query.random(-bound, bound);
+        m_w_key.random(-bound, bound);
+        m_w_value.random(-bound, bound);
         // Reserve space for the number of attention heads
         c_heads.reserve(c_num_heads);
         // Shard query, key, and value over the number of attention heads

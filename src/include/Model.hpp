@@ -10,7 +10,7 @@
  *                                                                                                               
  * Project: Large Language Model in C++
  * @author : Samuel Andersen
- * @version: 2026-10-26
+ * @version: 2026-10-27
  *
  * Model.hpp: Model interface that all models must implement
  */
@@ -59,13 +59,6 @@ public:
     virtual Tensor<T> forward(const AbstractTensor<size_t>& input) const = 0;
 
     /**
-     * Forward pass, saving the output to inside of each layer
-     * @param input Const ref to an AbstractTensor serving as the input
-     * @returns Returns a reference to the output of the layer
-     */
-    virtual Tensor<T> forward_train(const AbstractTensor<size_t>& input) = 0;
-
-    /**
      * Run the forward pass of the model, accepting an AbstractTensor of input tokens
      * and returning a reference to the destination Tensor, containing the logits
      * @param input Const ref to an AbstractTensor of shape [batch_size, seq_len]
@@ -75,14 +68,13 @@ public:
     virtual Tensor<T>& forward(const AbstractTensor<size_t>& input, Tensor<T>& dest) const = 0;
 
     /**
-     * Run the forward pass of the model, accepting an AbstractTensor of input tokens
-     * and returning a reference to the destination Tensor, containing the logits,
-     * calling forward_train on each layer, which stores the intermediate outputs
-     * @param input Const ref to an AbstractTensor of shape [batch_size, seq_len]
-     * @param dest Reference to a Tensor to write the result to
-     * @returns Returns a reference to the dest Tensor
+     * Train on an input / batch of inputs, accepting both input for generation
+     * and target token ids to calculate gradients for the backward pass
+     * @param input Const ref to an AbstractTensor serving as the input
+     * @param target Const ref to an AbstractTensor containing the target token ids
+     * @returns Returns a Tensor containing the loss per batch
      */
-    virtual Tensor<T>& forward_train(const AbstractTensor<size_t>& input, Tensor<T>& dest) = 0;
+    virtual Tensor<T> train(const AbstractTensor<size_t>& input, const AbstractTensor<size_t>& target) = 0;
 
     /**
      * Get information about the model

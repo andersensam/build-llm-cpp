@@ -96,10 +96,15 @@ public:
         m_w_pos_emb = std::make_shared<Tensor<T>>(std::initializer_list{c_max_seq_len, c_emb_dim});
         // If using a floating point dtype, create random weights with positive and negative values
         if constexpr (std::is_floating_point_v<T>) {
-            m_w_pos_emb->random(-2, 2);
+            // Calculate the bounds for random weight initialization
+            const T bound = static_cast<T>(1.0 / std::sqrt(static_cast<T>(c_emb_dim)));
+            m_w_pos_emb->random(-bound, bound);
+        }
+        else if constexpr (std::is_unsigned_v<T>) {
+            m_w_pos_emb->random(0, 2);
         }
         else {
-            m_w_pos_emb->random(0, 2);
+            m_w_pos_emb->random(-1, 1);
         }
     }
     // NOLINTEND(bugprone-easily-swappable-parameters)

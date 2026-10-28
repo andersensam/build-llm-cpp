@@ -29,18 +29,53 @@
 #include <string>
 #include <vector>
 
+#include "include/AbsolutePositionalEmbedding.hpp"
 #include "include/AbstractTensor.hpp"
+#include "include/DropoutLayer.hpp"
+#include "include/Embedding.hpp"
 #include "include/GPTModel.hpp"
+#include "include/LinearLayer.hpp"
+#include "include/ListTensorSlice.hpp"
 #include "include/Log.hpp"
+#include "include/NormalizationLayer.hpp"
 #include "include/Numerics.hpp"
 #include "include/Tensor.hpp"
 #include "include/TensorUtils.hpp"
+#include "include/TransformerBlock.hpp"
 
+/* Use AbsolutePositionalEmbedding */
+using AbsolutePositionalEmbedding_NS::AbsolutePositionalEmbedding;
+
+/* Use the AbstractTensor interface */
 using AbstractTensor_NS::AbstractTensor;
+
+/* Use Dropout */
+using DropoutLayer_NS::DropoutLayer;
+
+/* Use Embedding */
+using Embedding_NS::Embedding;
+
+/* Use GPTModel */
 using GPTModel_NS::GPTModel;
+
+/* Use LinearLayer */
+using LinearLayer_NS::LinearLayer;
+
+/* Use ListTensorSlice */
+using ListTensorSlice_NS::ListTensorSlice;
+
+/* Use Logging */
 using Log_NS::log_message;
 using Log_NS::Log_Priority;
+
+/* Use Normalization */
+using NormalizationLayer_NS::NormalizationLayer;
+
+/* Use Tensor */
 using Tensor_NS::Tensor;
+
+/* Use TransformerBlock */
+using TransformerBlock_NS::TransformerBlock;
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 GPTModel::GPTModel(size_t vocab_size, size_t num_layers, size_t emb_dim,
@@ -216,17 +251,6 @@ Tensor<float> GPTModel::forward(const AbstractTensor<size_t>& input) const {
     return result;
 }
 
-Tensor<float> GPTModel::forward_train(const AbstractTensor<size_t>& input) {
-    // Ensure the input Tensor has rank == 2
-    if (input.rank() != 2) {
-        throw std::invalid_argument("GPTModel.forward_train: Input must have rank == 2.\n");
-    }
-    // Create the output Tensor with shape [batch_size, seq_len, vocab_size]
-    Tensor<float> result({input.extent(0), input.extent(1), c_vocab_size});
-    forward_train(input, result);
-    return result;
-}
-
 Tensor<float>& GPTModel::forward(const AbstractTensor<size_t>& input, Tensor<float>& dest) const {
     // Ensure the input Tensor has rank == 2
     if (input.rank() != 2) {
@@ -249,30 +273,6 @@ Tensor<float>& GPTModel::forward(const AbstractTensor<size_t>& input, Tensor<flo
     }
     // input_ptr must have been cast successfully, so route to the right function
     return forward(*input_ptr, dest);
-}
-
-Tensor<float>& GPTModel::forward_train(const AbstractTensor<size_t>& input, Tensor<float>& dest) {
-    // Ensure the input Tensor has rank == 2
-    if (input.rank() != 2) {
-        throw std::invalid_argument("GPTModel.forward_train: Input must have rank == 2.\n");
-    }
-    // Ensure the destination Tensor has rank == 3
-    if (dest.rank() != 3) {
-        throw std::invalid_argument("GPTModel.forward_train: Destination Tensor must have rank == 3.\n");
-    }
-    // Ensure the destination Tensor has the correct shape ([batch_size, seq_len, vocab_size])
-    if (dest.extent(0) != input.extent(0) || dest.extent(1) != input.extent(1) || dest.extent(2) != c_vocab_size) {
-        throw std::invalid_argument("GPTModel.forward_train: Destination Tensor must have shape [batch_size, seq_len, vocab_size].\n");
-    }
-    // We need to convert input from AbstractTensor --> Tensor if it isn't one already, due to slicing requirements
-    const Tensor<size_t>* input_ptr = dynamic_cast<const Tensor<size_t>*>(&input);
-    // If we are dealign with ListTensorSlice, convert via to_tensor()
-    if (input_ptr == nullptr) {
-        const Tensor<size_t> input_c = dynamic_cast<const ListTensorSlice<size_t>*>(&input)->to_tensor();
-        return forward_train(input_c, dest);
-    }
-    // input_ptr must have been cast successfully, so route to the right function
-    return forward_train(*input_ptr, dest);
 }
 
 Tensor<float>& GPTModel::forward(const Tensor<size_t>& input, Tensor<float>& dest) const {
@@ -326,19 +326,33 @@ Tensor<float>& GPTModel::forward(const Tensor<size_t>& input, Tensor<float>& des
     return dest;
 }
 
-Tensor<float>& GPTModel::forward_train(const Tensor<size_t>& input, Tensor<float>& dest) {
-        // Ensure the input Tensor has rank == 2
-    if (input.rank() != 2) {
-        throw std::invalid_argument("GPTModel.forward: Input must have rank == 2.\n");
+Tensor<float> GPTModel::train(const AbstractTensor<size_t>& input, const AbstractTensor<size_t>& target) {
+    // Ensure the input Tensor has rank == 2
+    if (input.rank() != 2 || target.rank() != 2) {
+        throw std::invalid_argument("GPTModel.train: Input and target must have rank == 2.\n");
     }
-    // Ensure the destination Tensor has rank == 3
-    if (dest.rank() != 3) {
-        throw std::invalid_argument("GPTModel.forward: Destination Tensor must have rank == 3.\n");
+    // Ensure input and target have the same shape
+    if (input.shape() != target.shape()) {
+        throw std::invalid_argument("GPTModel.train: Input and target must have the same shape.\n");
     }
-    // Ensure the destination Tensor has the correct shape ([batch_size, seq_len, vocab_size])
-    if (dest.extent(0) != input.extent(0) || dest.extent(1) != input.extent(1) || dest.extent(2) != c_vocab_size) {
-        throw std::invalid_argument("GPTModel.forward: Destination Tensor must have shape [batch_size, seq_len, vocab_size].\n");
+    // Convert input and target to Tensors
+    const Tensor<size_t>* input_ptr = dynamic_cast<const Tensor<size_t>*>(&input);
+    const Tensor<size_t>* target_ptr = dynamic_cast<const Tensor<size_t>*>(&target);
+    // Handle failure converting input or target (is a ListTensorSlice)
+    if (input_ptr == nullptr && target_ptr == nullptr) {
+        return train(dynamic_cast<const ListTensorSlice<size_t>*>(&input)->to_tensor(), dynamic_cast<const ListTensorSlice<size_t>*>(&target)->to_tensor());
     }
+    if (input_ptr == nullptr) {
+        return train(dynamic_cast<const ListTensorSlice<size_t>*>(&input)->to_tensor(), target);
+    }
+    if (target_ptr == nullptr) {
+        return train(input, dynamic_cast<const ListTensorSlice<size_t>*>(&target)->to_tensor());
+    }
+    // Convert to refs
+    const Tensor<size_t>& conv_input = *input_ptr;
+    const Tensor<size_t>& conv_target = *target_ptr;
+    // Create a result Tensor with the loss per batch
+    Tensor<float> result({input.extent(0)});
     // Create a Tensor of shape [seq_len, emb_dim] to use for the layers
     Tensor<float> layer_output({input.extent(1), c_emb_dim});
     // Create a Tensor of shape [seq_len] to lookup embeddings with
@@ -351,7 +365,7 @@ Tensor<float>& GPTModel::forward_train(const Tensor<size_t>& input, Tensor<float
     // Since we are dealing with multiple batches, we will need to slice across each batch and run the passes sequentially
     for (size_t i = 0; i < input.extent(0); ++i) {
         // Use the Tensor util to copy the input batch into our 1-D input_batch
-        TensorUtils_NS::copy_2d_tensor_filtered_dim(input, 0, i, input_batch);
+        TensorUtils_NS::copy_2d_tensor_filtered_dim(conv_input, 0, i, input_batch);
         // Get the embeddings for the input batch
         ListTensorSlice<float> tok_emb = m_tok_emb->get_embeddings(input_batch);
         ListTensorSlice<float> pos_emb = m_pos_emb->get_embeddings(input_pos);
@@ -369,12 +383,36 @@ Tensor<float>& GPTModel::forward_train(const Tensor<size_t>& input, Tensor<float
         }
         // Apply normalization
         m_norm->forward_train(layer_output, layer_output);
-        // Create a slice for the final output
-        Tensor<float> final_output = dest.slice({1, 2}, {}, {{0, i}});
         // Project the output into [seq_len, vocab_size]
-        m_linear_output->forward_train(layer_output, final_output);
+        Tensor<float> batch_output = m_linear_output->forward_train(layer_output);
+        // Run softmax on the batch_output Tensor
+        batch_output.softmax(0);
+        // Create a Tensor of [seq_len, vocab_size] to compare output against target
+        Tensor<float> target_prob(batch_output.shape());
+        // Iterate over the correct tokens in the target batch and place a 1 in that index
+        for (size_t j = 0; j < conv_target.extent(1); ++j) {
+            size_t correct_token_id = conv_target.at({i, j});
+            target_prob.at({j, correct_token_id}) = 1;
+        }
+        // Get the loss for the batch, scoped to force a quick deallocation
+        {
+            Tensor<float> output_log = batch_output.clone();
+            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
+            output_log.apply(std::log);
+            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
+            //output_log *= target_prob;
+            // Use the utility function to set tiny values to zero
+            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
+            Tensor_NS::unsafe_uniform_op(output_log, target_prob, output_log, Tensor_NS::SqueezedOpType::MUL);
+            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
+            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
+            result.at({i}) = (-1.0f) * output_log.sum();
+        }
+        // Subtract the correct from the predicted
+        batch_output -= target_prob;
+        // Begin backprop here...
     }
-    return dest;
+    return result;
 }
 
 std::string GPTModel::info() const {
