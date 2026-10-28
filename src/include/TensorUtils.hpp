@@ -190,7 +190,7 @@ requires std::is_floating_point_v<T>
 Tensor<T>& underflow_to_val(Tensor<T>& target, T replacement_val) {
     // Use the vectorized kernel in TensorMath if working with contiguous memory
     if (target.is_contiguous()) {
-        TensorMath_NS::_replace_underflow_with_val(target._data(), target.offset(), target.elements(), replacement_val);
+        TensorMath_NS::_replace_abs_lte(target._data(), target.offset(), target.elements(), std::numeric_limits<T>::min(), replacement_val);
         return target;
     }
     // Otherwise loop over the elements in the Tensor and run the same transformation

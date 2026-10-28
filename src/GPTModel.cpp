@@ -397,15 +397,8 @@ Tensor<float> GPTModel::train(const AbstractTensor<size_t>& input, const Abstrac
         // Get the loss for the batch, scoped to force a quick deallocation
         {
             Tensor<float> output_log = batch_output.clone();
-            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
             output_log.apply(std::log);
-            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
-            //output_log *= target_prob;
-            // Use the utility function to set tiny values to zero
-            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
-            Tensor_NS::unsafe_uniform_op(output_log, target_prob, output_log, Tensor_NS::SqueezedOpType::MUL);
-            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
-            //std::cerr << "max: " << output_log.max() << ". min: " << output_log.min() << '\n';
+            output_log *= target_prob;
             result.at({i}) = (-1.0f) * output_log.sum();
         }
         // Subtract the correct from the predicted

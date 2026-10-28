@@ -3302,20 +3302,202 @@ void _unsafe_float_tensor_div_contiguous(const T* lhs_ptr, size_t lhs_offset,
 }
 
 /**
- * Run a pass over a contiguous Tensor, scanning for values that would cause underflow for
- * floating point types, replacing them with a specific value
+ * Run a pass over a contiguous Tensor, scanning for values under the threshold
+ * and replacing with another replacement value
  * @param lhs_ptr Pointer to raw data underlying the Tensor
  * @param lhs_offset Offset to the beginning of the data block for the Tensor
  * @param elements Number of elements to traverse
- * @param replacement_Val Value to replace the tiny ones with
+ * @param threshold_val Value to replace if less than this value
+ * @param replacement_val Value to replace with
  */
 template <typename T>
 requires std::is_floating_point_v<T>
-void _replace_underflow_with_val(T* lhs_ptr, size_t lhs_offset, size_t elements, T replacement_val) {
-    // Use numeric limits to get the bound
+void _replace_abs_lt(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                     T threshold_val, T replacement_val) {
+    // Iterate over the values
     for (size_t i = 0; i < elements; ++i) {
         T val = lhs_ptr[lhs_offset + i];
-        lhs_ptr[lhs_offset + i] = (std::abs(val) < std::numeric_limits<T>::min()) ? replacement_val : val;
+        lhs_ptr[lhs_offset + i] = (std::abs(val) < threshold_val) ? replacement_val : val;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for values under or equal to the threshold
+ * and replacing with another replacement value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param threshold_val Value to replace if less than or equal to this value
+ * @param replacement_val Value to replace with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_abs_lte(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                      T threshold_val, T replacement_val) {
+    // Iterate over the values
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (std::abs(val) <= threshold_val) ? replacement_val : val;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for values over the threshold
+ * and replacing with another replacement value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param threshold_val Value to replace if more than this value
+ * @param replacement_val Value to replace with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_abs_gt(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                     T threshold_val, T replacement_val) {
+    // Iterate over the values
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (std::abs(val) > threshold_val) ? replacement_val : val;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for values over or equal to the threshold
+ * and replacing with another replacement value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param threshold_val Value to replace if more than this value
+ * @param replacement_val Value to replace with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_abs_gte(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                      T threshold_val, T replacement_val) {
+    // Iterate over the values
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (std::abs(val) >= threshold_val) ? replacement_val : val;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for matching values
+ * and replacing them as needed
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param threshold_val Value to replace if found
+ * @param replacement_val Value to replace with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_abs_eq(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                     T threshold_val, T replacement_val) {
+    // Iterate over the values
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (std::abs(val) == threshold_val) ? replacement_val : val;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for values under the threshold
+ * and replacing with another replacement value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param threshold_val Value to replace if less than this value
+ * @param replacement_val Value to replace with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_lt(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                 T threshold_val, T replacement_val) {
+    // Iterate over the values
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (val < threshold_val) ? replacement_val : val;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for values under or equal to the threshold
+ * and replacing with another replacement value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param threshold_val Value to replace if less than or equal to this value
+ * @param replacement_val Value to replace with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_lte(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                  T threshold_val, T replacement_val) {
+    // Iterate over the values
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (val <= threshold_val) ? replacement_val : val;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for values over the threshold
+ * and replacing with another replacement value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param threshold_val Value to replace if more than this value
+ * @param replacement_val Value to replace with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_gt(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                 T threshold_val, T replacement_val) {
+    // Iterate over the values
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (val > threshold_val) ? replacement_val : val;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for values over or equal to the threshold
+ * and replacing with another replacement value
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param threshold_val Value to replace if more than this value
+ * @param replacement_val Value to replace with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_gte(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                  T threshold_val, T replacement_val) {
+    // Iterate over the values
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (val >= threshold_val) ? replacement_val : val;
+    }
+}
+
+/**
+ * Run a pass over a contiguous Tensor, scanning for matching values
+ * and replacing them as needed
+ * @param lhs_ptr Pointer to raw data underlying the Tensor
+ * @param lhs_offset Offset to the beginning of the data block for the Tensor
+ * @param elements Number of elements to traverse
+ * @param threshold_val Value to replace if found
+ * @param replacement_val Value to replace with
+ */
+template <typename T>
+requires std::is_floating_point_v<T>
+void _replace_eq(T* lhs_ptr, size_t lhs_offset, size_t elements, 
+                 T threshold_val, T replacement_val) {
+    // Iterate over the values
+    for (size_t i = 0; i < elements; ++i) {
+        T val = lhs_ptr[lhs_offset + i];
+        lhs_ptr[lhs_offset + i] = (val == threshold_val) ? replacement_val : val;
     }
 }
 // NOLINTEND(bugprone-easily-swappable-parameters, cppcoreguidelines-pro-bounds-pointer-arithmetic)
